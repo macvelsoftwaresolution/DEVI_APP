@@ -1,0 +1,752 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../services/app_state.dart';
+import '../theme/app_colors.dart';
+import 'history_screen.dart';
+import 'no_contacts_screen.dart';
+import 'settings_screen.dart';
+
+class SosScreen extends StatefulWidget {
+  const SosScreen({super.key});
+
+  @override
+  State<SosScreen> createState() => _SosScreenState();
+}
+
+class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMixin {
+  final AppState _appState = AppState.instance;
+
+  bool _isEmergencyActive = false;
+  bool _isSoundPlaying = false;
+  Timer? _holdTimer;
+  double _holdProgress = 0.0;
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _appState.addListener(_onStateChange);
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _appState.removeListener(_onStateChange);
+    _holdTimer?.cancel();
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  void _onStateChange() {
+    if (mounted) setState(() {});
+  }
+
+  // --- Handle SOS Action ---
+  void _onSosTriggered() {
+    if (_appState.isGuest) {
+      // Guest user has no contacts added yet -> navigate to No Contacts Added screen
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => const NoContactsScreen(autoStartCountdown: true),
+        ),
+      );
+    } else {
+      // Registered user -> directly send alert to contacts (no confirm popup)
+      _triggerSosAlert();
+    }
+  }
+
+  void _onHoldStart() {
+    _holdTimer?.cancel();
+    _holdProgress = 0.0;
+    _holdTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      setState(() {
+        _holdProgress += 0.05;
+        if (_holdProgress >= 1.0) {
+          _holdTimer?.cancel();
+          _onSosTriggered();
+        }
+      });
+    });
+  }
+
+  void _onHoldEnd() {
+    _holdTimer?.cancel();
+    if (_holdProgress < 1.0) {
+      setState(() {
+        _holdProgress = 0.0;
+      });
+    }
+  }
+
+  // --- Registered user: Alert only registered contacts (no 112) ---
+  void _triggerSosAlert() {
+    setState(() {
+      _isEmergencyActive = true;
+      _holdProgress = 0.0;
+    });
+
+    if (_appState.isGuest) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Color(0xFFB91C1C), size: 28),
+              SizedBox(width: 8),
+              Text(
+                'No Contacts Added',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'No contacts added',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  _isEmergencyActive = false;
+                });
+              },
+              child: const Text(
+                'OK',
+                style: TextStyle(
+                  color: AppColors.emergencyRed,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final guardiansList = _appState.guardians;
+    final guardianTexts = guardiansList.isEmpty
+        ? '• No contacts registered'
+        : guardiansList.map((g) => '• ${g.name} (+91 ${g.phone})').join('\n');
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.emergencyRed, size: 28),
+            SizedBox(width: 8),
+            Text(
+              'EMERGENCY ALERT',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.emergencyRed,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Emergency alert and live GPS location dispatched to your registered contacts:\n\n$guardianTexts\n\nSMS sent successfully.',
+          style: const TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() {
+                _isEmergencyActive = false;
+              });
+            },
+            child: const Text(
+              'Cancel Alert',
+              style: TextStyle(
+                color: AppColors.emergencyRed,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toggleEmergencySound() {
+    setState(() {
+      _isSoundPlaying = !_isSoundPlaying;
+    });
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              _isSoundPlaying ? Icons.volume_up : Icons.volume_off,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _isSoundPlaying
+                    ? 'Siren activated! Playing loud emergency sound.'
+                    : 'Emergency sound stopped.',
+              ),
+            ),
+          ],
+        ),
+        action: _isSoundPlaying
+            ? SnackBarAction(
+                label: 'CANCEL',
+                textColor: Colors.yellowAccent,
+                onPressed: _toggleEmergencySound,
+              )
+            : null,
+        backgroundColor:
+            _isSoundPlaying ? AppColors.emergencySoundOrange : AppColors.primaryNavy,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  // --- Demo Mode Bottom Sheet (Matches Screenshot 2) ---
+  void _showDemoModeSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top Handle Bar
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Title and Close Button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Demo Mode',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primaryNavy,
+                  ),
+                ),
+                InkWell(
+                  onTap: () => Navigator.of(ctx).pop(),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF1F5F9),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            // Option 1: SOS Test Card
+            InkWell(
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _triggerSosAlert();
+              },
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE50914),
+                        borderRadius: BorderRadius.all(Radius.circular(14)),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.shield_outlined,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Text(
+                      'SOS Test',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primaryNavy,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Option 2: Emergency Sound Card
+            InkWell(
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _toggleEmergencySound();
+              },
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: _isSoundPlaying ? const Color(0xFFDC2626) : const Color(0xFFE2E8F0),
+                    width: _isSoundPlaying ? 1.5 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: _isSoundPlaying ? const Color(0xFFDC2626) : const Color(0xFFFF521D),
+                        borderRadius: const BorderRadius.all(Radius.circular(14)),
+                      ),
+                      child: Center(
+                        child: Icon(
+                          _isSoundPlaying ? Icons.volume_up : Icons.volume_up_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _isSoundPlaying ? 'Emergency Sound (Playing)' : 'Emergency Sound',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primaryNavy,
+                            ),
+                          ),
+                          if (_isSoundPlaying)
+                            const Text(
+                              'Tap to cancel sound',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFFDC2626),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (_isSoundPlaying)
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          _toggleEmergencySound();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFDC2626),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Cancel', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _navigateToSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const SettingsScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FC),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 10.0),
+          child: Column(
+            children: [
+              // Top Bar
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.shield_outlined,
+                        color: AppColors.emergencyRed,
+                        size: 20,
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'Sos',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primaryNavy,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(
+                          Icons.history,
+                          color: AppColors.primaryNavy,
+                          size: 22,
+                        ),
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                          );
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.settings_outlined,
+                          color: AppColors.primaryNavy,
+                          size: 22,
+                        ),
+                        onPressed: _navigateToSettings,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 6),
+
+              // Demo Pill
+              GestureDetector(
+                onTap: _showDemoModeSheet,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8EEF5),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.play_arrow, size: 13, color: AppColors.demoPillText),
+                      SizedBox(width: 4),
+                      Text(
+                        'Demo',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.demoPillText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // SOS Home Card (Presented for both Registered and Guest User)
+              Expanded(
+                child: GestureDetector(
+                  onTap: _onSosTriggered,
+                  onLongPressStart: (_) => _onHoldStart(),
+                  onLongPressEnd: (_) => _onHoldEnd(),
+                  child: Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: _isEmergencyActive
+                            ? [const Color(0xFFFF1E38), const Color(0xFFB00010)]
+                            : [const Color(0xFFE80B1E), const Color(0xFFD60719)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                      borderRadius: BorderRadius.circular(32),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.emergencyRed.withValues(alpha: 0.35),
+                          blurRadius: 24,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            AnimatedScale(
+                              scale: _isEmergencyActive ? 1.15 : 1.0,
+                              duration: const Duration(milliseconds: 300),
+                              child: Container(
+                                width: 74,
+                                height: 74,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFBF0818),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.18),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.crisis_alert,
+                                    color: Colors.white,
+                                    size: 36,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            const Text(
+                              'SOS',
+                              style: TextStyle(
+                                fontSize: 44,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 28.0),
+                              child: Text(
+                                'Tap or hold to alert emergency\nservices & contacts',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        // Hold Progress Indicator
+                        if (_holdProgress > 0)
+                          Positioned(
+                            bottom: 20,
+                            left: 30,
+                            right: 30,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: _holdProgress,
+                                backgroundColor: Colors.white.withValues(alpha: 0.3),
+                                valueColor:
+                                    const AlwaysStoppedAnimation<Color>(Colors.white),
+                                minHeight: 6,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // Bottom Emergency Sound Card
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _toggleEmergencySound,
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14.0),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF222B38),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 58,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            color: _isSoundPlaying
+                                ? const Color(0xFFFF2200)
+                                : const Color(0xFFFF521D),
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFF521D).withValues(alpha: 0.4),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            _isSoundPlaying ? Icons.volume_up : Icons.volume_up_rounded,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _isSoundPlaying ? 'Playing Sound...' : 'Emergency Sound',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                _isSoundPlaying
+                                    ? 'Tap Cancel or card to stop siren'
+                                    : 'Play a loud emergency sound',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.white.withValues(alpha: 0.65),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_isSoundPlaying) ...[
+                          const SizedBox(width: 8),
+                          ElevatedButton.icon(
+                            onPressed: _toggleEmergencySound,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFDC2626),
+                              foregroundColor: Colors.white,
+                              elevation: 2,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            icon: const Icon(Icons.stop_circle_outlined, size: 16, color: Colors.white),
+                            label: const Text(
+                              'Cancel',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 6),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
