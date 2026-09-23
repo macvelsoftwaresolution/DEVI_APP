@@ -25,20 +25,41 @@ class DeviApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'DEVI Women Safety',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      home: const SplashScreen(),
-      routes: {
-        '/login': (context) => const LoginScreen(),
-        '/profile': (context) => const ProfileScreen(),
-        '/sos': (context) => const SosScreen(),
-        '/settings': (context) => const SettingsScreen(),
-        '/guest': (context) => const GuestScreen(),
-        '/no-contacts': (context) => const GuestScreen(),
-        '/history': (context) => const HistoryScreen(),
-      },
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.white,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: MaterialApp(
+        title: 'DEVI Women Safety',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        builder: (context, child) {
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: const SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness: Brightness.dark,
+              statusBarBrightness: Brightness.light,
+              systemNavigationBarColor: Colors.white,
+              systemNavigationBarIconBrightness: Brightness.dark,
+            ),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        home: const SplashScreen(),
+        routes: {
+          '/login': (context) => const LoginScreen(),
+          '/profile': (context) => const ProfileScreen(),
+          '/sos': (context) => const SosScreen(),
+          '/settings': (context) => const SettingsScreen(),
+          '/guest': (context) => const GuestScreen(),
+          '/no-contacts': (context) => const GuestScreen(),
+          '/history': (context) => const HistoryScreen(),
+        },
+      ),
     );
   }
 }

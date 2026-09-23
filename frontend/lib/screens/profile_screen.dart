@@ -509,7 +509,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         titleSpacing: 0,
       ),
       body: SafeArea(
-        child: Center(
+        child: Align(
+          alignment: Alignment.topCenter,
           child: SingleChildScrollView(
             padding: EdgeInsets.symmetric(horizontal: horizontalPad, vertical: 12.0),
             child: ConstrainedBox(
