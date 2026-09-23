@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -35,6 +36,7 @@ class _GuestScreenState extends State<GuestScreen> {
   @override
   void dispose() {
     _guestCountdownTimer?.cancel();
+    SoundService.instance.stopSiren();
     super.dispose();
   }
 
@@ -161,56 +163,36 @@ class _GuestScreenState extends State<GuestScreen> {
     );
   }
 
-  void _toggleEmergencySound() {
+  void _toggleEmergencySound() async {
+    final playing = await SoundService.instance.toggleSiren();
+    if (!mounted) return;
     setState(() {
-      _isSoundPlaying = !_isSoundPlaying;
+      _isSoundPlaying = playing;
     });
 
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              _isSoundPlaying ? Icons.volume_up : Icons.volume_off,
-              color: Colors.white,
-              size: 20,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                _isSoundPlaying
-                    ? 'Siren activated! Playing loud emergency sound.'
-                    : 'Emergency sound stopped.',
-              ),
-            ),
-          ],
-        ),
-        action: _isSoundPlaying
-            ? SnackBarAction(
-                label: 'CANCEL',
-                textColor: Colors.yellowAccent,
-                onPressed: _toggleEmergencySound,
-              )
-            : null,
-        backgroundColor:
-            _isSoundPlaying ? AppColors.emergencySoundOrange : AppColors.primaryNavy,
-        duration: const Duration(seconds: 4),
-      ),
-    );
   }
 
   void _showDemoModeSheet() {
     showModalBottomSheet(
       context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            12,
+            20,
+            24 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
           children: [
             Center(
               child: Container(
@@ -389,11 +371,14 @@ class _GuestScreenState extends State<GuestScreen> {
                 ),
               ),
             ),
+
+            const SizedBox(height: 6),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -714,95 +699,161 @@ class _GuestScreenState extends State<GuestScreen> {
 
                   SizedBox(height: isShortScreen ? 8 : 14),
 
-                  // Bottom Emergency Sound Card
+                  // Bottom Emergency Sound Card (Interactive Toggle Highlight)
                   Material(
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: _toggleEmergencySound,
-                      borderRadius: BorderRadius.circular(22),
-                      child: Container(
+                      borderRadius: BorderRadius.circular(24),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
                         width: double.infinity,
                         padding: EdgeInsets.all(isSmallScreen ? 11.0 : 14.0),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF222B38),
-                          borderRadius: BorderRadius.circular(22),
+                          gradient: _isSoundPlaying
+                              ? const LinearGradient(
+                                  colors: [Color(0xFFDC2626), Color(0xFF991B1B)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                )
+                              : null,
+                          color: _isSoundPlaying ? null : const Color(0xFF222B38),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: _isSoundPlaying
+                                ? const Color(0xFFFCA5A5)
+                                : const Color(0xFF334155),
+                            width: _isSoundPlaying ? 2.0 : 1.0,
+                          ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.1),
-                              blurRadius: 12,
+                              color: _isSoundPlaying
+                                  ? const Color(0xFFDC2626).withValues(alpha: 0.45)
+                                  : Colors.black.withValues(alpha: 0.12),
+                              blurRadius: _isSoundPlaying ? 18 : 10,
                               offset: const Offset(0, 4),
                             ),
                           ],
                         ),
                         child: Row(
                           children: [
-                            Container(
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
                               width: isSmallScreen ? 48 : 56,
                               height: isSmallScreen ? 48 : 56,
                               decoration: BoxDecoration(
                                 color: _isSoundPlaying
-                                    ? const Color(0xFFFF2200)
+                                    ? Colors.white
                                     : const Color(0xFFFF521D),
                                 borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: (_isSoundPlaying
+                                            ? Colors.white
+                                            : const Color(0xFFFF521D))
+                                        .withValues(alpha: 0.35),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
                               ),
                               child: Icon(
                                 _isSoundPlaying ? Icons.volume_up : Icons.volume_up_rounded,
-                                color: Colors.white,
+                                color: _isSoundPlaying
+                                    ? const Color(0xFFDC2626)
+                                    : Colors.white,
                                 size: isSmallScreen ? 24 : 28,
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 14),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    _isSoundPlaying ? 'Playing Sound...' : 'Emergency Sound',
-                                    style: TextStyle(
-                                      fontSize: isSmallScreen ? 14 : 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                      letterSpacing: -0.2,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        _isSoundPlaying
+                                            ? 'Siren Playing...'
+                                            : 'Emergency Sound',
+                                        style: TextStyle(
+                                          fontSize: isSmallScreen ? 14 : 15,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white,
+                                          letterSpacing: -0.2,
+                                        ),
+                                      ),
+                                      if (_isSoundPlaying) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          width: 8,
+                                          height: 8,
+                                          decoration: const BoxDecoration(
+                                            color: Colors.yellowAccent,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
-                                  const SizedBox(height: 2),
+                                  const SizedBox(height: 3),
                                   Text(
                                     _isSoundPlaying
-                                        ? 'Tap Cancel or card to stop siren'
-                                        : 'Play a loud emergency sound',
+                                        ? 'Tap card to stop siren'
+                                        : 'Tap to sound loud siren',
                                     style: TextStyle(
                                       fontSize: isSmallScreen ? 11 : 12,
-                                      fontWeight: FontWeight.w400,
-                                      color: Colors.white.withValues(alpha: 0.65),
+                                      fontWeight: FontWeight.w500,
+                                      color: _isSoundPlaying
+                                          ? Colors.white.withValues(alpha: 0.9)
+                                          : Colors.white.withValues(alpha: 0.65),
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
                             ),
-                            if (_isSoundPlaying) ...[
-                              const SizedBox(width: 8),
-                              ElevatedButton.icon(
-                                onPressed: _toggleEmergencySound,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFDC2626),
-                                  foregroundColor: Colors.white,
-                                  elevation: 2,
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                ),
-                                icon: const Icon(Icons.stop_circle_outlined, size: 15, color: Colors.white),
-                                label: const Text(
-                                  'Cancel',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: _isSoundPlaying
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: _isSoundPlaying
+                                      ? Colors.white
+                                      : Colors.white.withValues(alpha: 0.2),
                                 ),
                               ),
-                            ],
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _isSoundPlaying
+                                        ? Icons.stop_circle
+                                        : Icons.play_arrow_rounded,
+                                    size: 16,
+                                    color: _isSoundPlaying
+                                        ? const Color(0xFFDC2626)
+                                        : Colors.white,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _isSoundPlaying ? 'STOP' : 'PLAY',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: _isSoundPlaying
+                                          ? const Color(0xFFDC2626)
+                                          : Colors.white,
+                                      letterSpacing: 0.4,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
