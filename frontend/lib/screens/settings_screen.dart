@@ -61,20 +61,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
           key: formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const Text(
+                'Guardian Name',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: nameController,
                 textCapitalization: TextCapitalization.words,
                 decoration: InputDecoration(
-                  labelText: 'Guardian Name',
                   hintText: 'Enter guardian name',
+                  hintStyle: TextStyle(
+                    color: AppColors.textMuted.withValues(alpha: 0.6),
+                    fontSize: 14,
+                  ),
+                  floatingLabelBehavior: FloatingLabelBehavior.never,
                   filled: true,
                   fillColor: AppColors.inputFill,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
                   ),
-                  prefixIcon: const Icon(Icons.person_outline, size: 18),
+                  prefixIcon: const Icon(Icons.person_outline, size: 20, color: AppColors.textMuted),
                 ),
                 validator: (val) {
                   final text = val?.trim() ?? '';
@@ -86,7 +101,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
+              const Text(
+                'Mobile Number',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 6),
               TextFormField(
                 controller: phoneController,
                 keyboardType: TextInputType.phone,
@@ -95,16 +119,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   LengthLimitingTextInputFormatter(10),
                 ],
                 decoration: InputDecoration(
-                  labelText: 'Mobile Number',
-                  hintText: 'Enter mobile number',
+                  hintText: '9042024830',
+                  hintStyle: TextStyle(
+                    color: AppColors.textMuted.withValues(alpha: 0.6),
+                    fontSize: 14,
+                  ),
+                  floatingLabelBehavior: FloatingLabelBehavior.never,
                   prefixText: '+91 ',
+                  prefixStyle: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: AppColors.textDark,
+                  ),
                   filled: true,
                   fillColor: AppColors.inputFill,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(14),
                     borderSide: BorderSide.none,
                   ),
-                  prefixIcon: const Icon(Icons.phone_outlined, size: 18),
+                  prefixIcon: const Icon(Icons.phone_outlined, size: 20, color: AppColors.textMuted),
                 ),
                 validator: (val) {
                   final phone = val?.trim() ?? '';

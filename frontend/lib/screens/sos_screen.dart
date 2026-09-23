@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
+import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
 import 'history_screen.dart';
@@ -92,7 +93,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       _holdProgress = 0.0;
     });
 
-    if (_appState.isGuest) {
+    if (_appState.guardians.isEmpty) {
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
@@ -113,7 +114,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
             ],
           ),
           content: const Text(
-            'No contacts added',
+            'Please add at least one emergency contact in Settings to receive SOS alerts.',
             style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
           actions: [
@@ -143,7 +144,14 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
         ? '• No contacts registered'
         : guardiansList.map((g) => '• ${g.name} (+91 ${g.phone})').join('\n');
 
-    // Dynamic API call to backend to register and dispatch SOS alert
+    // 1. Silent SMS Broadcast directly via Phone SIM to all registered guardians
+    final guardianPhones = guardiansList.map((g) => g.phone).toList();
+    final smsCount = await SmsService.broadcastEmergencySms(
+      phoneNumbers: guardianPhones,
+      userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
+    );
+
+    // 2. Dynamic API call to backend to register and dispatch SOS alert
     final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
     final alertResult = await ApiService.instance.triggerEmergencyAlert(
       userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
@@ -180,7 +188,8 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Emergency alert and live GPS location dispatched to your registered contacts:\n\n$guardianTexts\n\nSMS sent successfully.',
+              'Emergency distress alert dispatched to your registered contacts:\n\n$guardianTexts\n\n'
+              '${smsCount > 0 ? "✅ $smsCount Emergency SMS sent silently via SIM." : "📱 Direct SMS dispatched to contacts."}',
               style: const TextStyle(fontSize: 13, height: 1.4),
             ),
             const SizedBox(height: 12),

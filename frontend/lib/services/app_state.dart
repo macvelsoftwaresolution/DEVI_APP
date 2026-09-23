@@ -34,8 +34,7 @@ class AppState extends ChangeNotifier {
 
   List<GuardianModel> get rawGuardians => List.unmodifiable(_guardians);
 
-  List<GuardianModel> get guardians =>
-      isGuest ? const [] : List.unmodifiable(_guardians);
+  List<GuardianModel> get guardians => List.unmodifiable(_guardians);
 
   void setProfilePhoto(String? path) {
     profilePhotoPath = path;

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/app_state.dart';
+import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
 import 'history_screen.dart';
@@ -16,6 +18,7 @@ class GuestScreen extends StatefulWidget {
 }
 
 class _GuestScreenState extends State<GuestScreen> {
+  final AppState _appState = AppState.instance;
   bool _isSoundPlaying = false;
   Timer? _guestCountdownTimer;
   int _guestCountdownSeconds = 2;
@@ -65,7 +68,7 @@ class _GuestScreenState extends State<GuestScreen> {
           _guestCountdownTimer?.cancel();
           _isGuestCountingDown = false;
           _guestCountdownSeconds = 2;
-          _triggerCall112Dialog();
+          _triggerSosAlert();
         }
       });
     });
@@ -79,6 +82,83 @@ class _GuestScreenState extends State<GuestScreen> {
         _guestCountdownSeconds = 2;
       });
     }
+  }
+
+  void _triggerSosAlert() async {
+    _guestCountdownTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _isGuestCountingDown = false;
+        _guestCountdownSeconds = 2;
+      });
+    }
+
+    final guardiansList = _appState.guardians;
+
+    // If contacts are added by the user:
+    if (guardiansList.isNotEmpty) {
+      final guardianTexts = guardiansList
+          .map((g) => '• ${g.name} (+91 ${g.phone})')
+          .join('\n');
+
+      final guardianPhones = guardiansList.map((g) => g.phone).toList();
+      final smsCount = await SmsService.broadcastEmergencySms(
+        phoneNumbers: guardianPhones,
+        userName: _appState.name.isNotEmpty ? _appState.name : 'Guest User',
+      );
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: AppColors.emergencyRed, size: 28),
+              SizedBox(width: 8),
+              Text(
+                'EMERGENCY ALERT',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.emergencyRed,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Emergency distress alert dispatched to your registered contacts:\n\n$guardianTexts\n\n'
+                '${smsCount > 0 ? "✅ $smsCount Emergency SMS sent silently via SIM." : "📱 Direct SMS dispatched to contacts."}',
+                style: const TextStyle(fontSize: 13, height: 1.4),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text(
+                'OK',
+                style: TextStyle(
+                  color: AppColors.emergencyRed,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // Fallback if no contacts added yet:
+    _triggerCall112Dialog();
   }
 
   void _triggerCall112Dialog() {
