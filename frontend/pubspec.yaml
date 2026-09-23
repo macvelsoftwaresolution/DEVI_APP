@@ -38,6 +38,7 @@ dependencies:
   http: ^1.2.2
   image_picker: ^1.2.3
   audioplayers: ^6.8.1
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:

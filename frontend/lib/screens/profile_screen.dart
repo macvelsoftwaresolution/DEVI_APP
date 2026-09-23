@@ -11,7 +11,8 @@ import '../widgets/devi_logo.dart';
 import 'sos_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final bool isEditing;
+  const ProfileScreen({super.key, this.isEditing = false});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -35,9 +36,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     final state = AppState.instance;
-    _selectedPhotoPath = state.profilePhotoPath;
+    _selectedPhotoPath = widget.isEditing ? state.profilePhotoPath : null;
     // If registered user is editing profile from settings, show current values
-    final isEditing = state.name.isNotEmpty && !state.isGuest;
+    final isEditing = widget.isEditing && state.name.isNotEmpty && !state.isGuest;
     _nameController = TextEditingController(text: isEditing ? state.name : '');
     _phoneController = TextEditingController(text: isEditing ? state.phone : '');
     _address1Controller = TextEditingController(text: isEditing ? state.address1 : '');
@@ -456,22 +457,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Persist chosen profile photo locally in AppState
     AppState.instance.setProfilePhoto(_selectedPhotoPath);
 
+    // Save session to SharedPreferences for persistent auto-login
+    await AppState.instance.saveSession(phone);
+
     if (!mounted) return;
     setState(() => _isSaving = false);
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Profile saved to database successfully!'),
+      SnackBar(
+        content: Text(
+          widget.isEditing
+              ? 'Profile updated successfully!'
+              : 'Registration successful! Welcome to DEVI.',
+        ),
         backgroundColor: AppColors.primaryNavy,
-        duration: Duration(seconds: 1),
+        duration: const Duration(seconds: 2),
       ),
     );
 
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
+    if (widget.isEditing) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const SosScreen()),
+        );
+      }
     } else {
-      Navigator.of(context).pushReplacement(
+      // Direct entry to main SOS screen for registered user. Never goes back to Login!
+      Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const SosScreen()),
+        (route) => false,
       );
     }
   }
@@ -503,7 +519,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   // Screen Title
                   Text(
-                    'Create Your Profile',
+                    widget.isEditing ? 'Edit Your Profile' : 'Create Your Profile',
                     style: TextStyle(
                       fontSize: isSmallScreen ? 20 : 22,
                       fontWeight: FontWeight.w800,
@@ -742,7 +758,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   // Finish Button
                   DeviPrimaryButton(
-                    text: _isSaving ? 'Saving...' : 'Finish',
+                    text: _isSaving
+                        ? 'Saving...'
+                        : (widget.isEditing ? 'Save Changes' : 'Complete Registration'),
                     height: 50,
                     trailing: _isSaving
                         ? const SizedBox(

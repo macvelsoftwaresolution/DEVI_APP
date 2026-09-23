@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 
 class GuardianModel {
@@ -49,6 +50,68 @@ class AppState extends ChangeNotifier {
   void toggleGuestMode() {
     isGuest = !isGuest;
     notifyListeners();
+  }
+
+  // --- Persistent Session Management ---
+  static const String _keyLoggedInPhone = 'devi_logged_in_phone';
+  static const String _keyIsLoggedIn = 'devi_is_logged_in';
+  static const String _keyProfilePhoto = 'devi_profile_photo';
+
+  Future<void> saveSession(String userPhone) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyIsLoggedIn, true);
+      await prefs.setString(_keyLoggedInPhone, userPhone);
+      if (profilePhotoPath != null) {
+        await prefs.setString(_keyProfilePhoto, profilePhotoPath!);
+      }
+    } catch (e) {
+      debugPrint('Error saving session: $e');
+    }
+  }
+
+  Future<void> clearSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyIsLoggedIn);
+      await prefs.remove(_keyLoggedInPhone);
+      await prefs.remove(_keyProfilePhoto);
+    } catch (e) {
+      debugPrint('Error clearing session: $e');
+    }
+
+    // Reset local state
+    name = '';
+    phone = '';
+    address1 = '';
+    address2 = '';
+    profilePhotoPath = null;
+    isGuest = false;
+    _guardians.clear();
+    notifyListeners();
+  }
+
+  Future<bool> checkAutoLogin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isLoggedIn = prefs.getBool(_keyIsLoggedIn) ?? false;
+      final savedPhone = prefs.getString(_keyLoggedInPhone);
+      final savedPhoto = prefs.getString(_keyProfilePhoto);
+
+      if (savedPhoto != null && savedPhoto.isNotEmpty) {
+        profilePhotoPath = savedPhoto;
+      }
+
+      if (isLoggedIn && savedPhone != null && savedPhone.isNotEmpty) {
+        phone = savedPhone;
+        // Load latest profile from backend
+        await loadUserProfile(savedPhone);
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Error checking auto-login: $e');
+    }
+    return false;
   }
 
   // --- Dynamic Backend Sync: Load User Profile ---
