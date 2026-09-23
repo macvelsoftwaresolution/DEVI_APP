@@ -26,6 +26,7 @@ class AppState extends ChangeNotifier {
   String phone = '';
   String address1 = '';
   String address2 = '';
+  String? profilePhotoPath;
   bool isGuest = false;
   bool isLoading = false;
 
@@ -35,6 +36,11 @@ class AppState extends ChangeNotifier {
 
   List<GuardianModel> get guardians =>
       isGuest ? const [] : List.unmodifiable(_guardians);
+
+  void setProfilePhoto(String? path) {
+    profilePhotoPath = path;
+    notifyListeners();
+  }
 
   void setGuestMode(bool guest) {
     isGuest = guest;

@@ -129,7 +129,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             itemBuilder: (context, index) {
                               final item = _alerts[index];
                               final timeStr = item['displayTime'] ?? item['timestamp'] ?? 'Recent';
-                              final location = item['location'] ?? 'GPS Location Shared';
                               final contacts = (item['contactsAlerted'] as List<dynamic>?)
                                       ?.map((c) => c.toString())
                                       .join(', ') ??
@@ -158,83 +157,81 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Expanded(
-                                          child: Text(
-                                            timeStr,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w700,
-                                              color: AppColors.primaryNavy,
-                                              letterSpacing: -0.2,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          width: 32,
+                                          height: 32,
                                           decoration: BoxDecoration(
                                             color: isRecent
                                                 ? AppColors.emergencyRed.withValues(alpha: 0.1)
-                                                : Colors.grey.shade100,
-                                            borderRadius: BorderRadius.circular(6),
+                                                : const Color(0xFFF1F5F9),
+                                            shape: BoxShape.circle,
                                           ),
-                                          child: Text(
-                                            item['status'] ?? 'DISPATCHED',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                              color: isRecent ? AppColors.emergencyRed : Colors.grey.shade700,
-                                            ),
+                                          child: Icon(
+                                            Icons.crisis_alert,
+                                            size: 16,
+                                            color: isRecent ? AppColors.emergencyRed : AppColors.primaryNavy,
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.location_on_outlined,
-                                          size: 15,
-                                          color: isRecent ? AppColors.emergencyRed : AppColors.pinTeal,
-                                        ),
-                                        const SizedBox(width: 4),
+                                        const SizedBox(width: 10),
                                         Expanded(
-                                          child: Text(
-                                            location,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w500,
-                                              color: AppColors.textMuted,
-                                            ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                timeStr,
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: AppColors.primaryNavy,
+                                                  letterSpacing: -0.2,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                isRecent ? 'Emergency Alert Triggered' : 'Alert Triggered',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: isRecent ? AppColors.emergencyRed : AppColors.textMuted,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ],
                                     ),
                                     if (contacts.isNotEmpty) ...[
-                                      const SizedBox(height: 6),
-                                      Row(
-                                        children: [
-                                          const Icon(
-                                            Icons.people_outline,
-                                            size: 14,
-                                            color: AppColors.textLight,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Expanded(
-                                            child: Text(
-                                              'Alerted: $contacts',
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w400,
-                                                color: AppColors.textLight,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
+                                      const SizedBox(height: 10),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF8FAFC),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.people_outline,
+                                              size: 14,
+                                              color: AppColors.textMuted,
                                             ),
-                                          ),
-                                        ],
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              child: Text(
+                                                'Alerted: $contacts',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: AppColors.textMuted,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ],

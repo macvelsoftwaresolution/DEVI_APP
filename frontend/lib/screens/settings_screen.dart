@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/app_state.dart';
@@ -217,6 +219,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildAvatarImage() {
+    final photo = _appState.profilePhotoPath;
+    final isGuest = _appState.isGuest;
+    if (photo != null && photo.isNotEmpty && !isGuest) {
+      if (photo.startsWith('assets/')) {
+        return Image.asset(photo, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => _buildAvatarFallback());
+      } else if (kIsWeb) {
+        return Image.network(photo, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => _buildAvatarFallback());
+      } else {
+        final file = File(photo);
+        if (file.existsSync()) {
+          return Image.file(file, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => _buildAvatarFallback());
+        }
+      }
+    }
+    return _buildAvatarFallback();
+  }
+
+  Widget _buildAvatarFallback() {
+    final isGuest = _appState.isGuest;
+    return Center(
+      child: Text(
+        isGuest ? 'G' : (_appState.name.isNotEmpty ? _appState.name[0].toUpperCase() : 'S'),
+        style: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFFDB2777),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final guardians = _appState.guardians;
@@ -305,15 +339,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               color: Color(0xFFFCE7F3),
                               shape: BoxShape.circle,
                             ),
-                            child: Center(
-                              child: Text(
-                                isGuest ? 'G' : (_appState.name.isNotEmpty ? _appState.name[0].toUpperCase() : 'S'),
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFFDB2777),
-                                ),
-                              ),
+                            child: ClipOval(
+                              child: _buildAvatarImage(),
                             ),
                           ),
                           Positioned(

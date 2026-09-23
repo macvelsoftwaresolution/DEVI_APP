@@ -145,7 +145,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
     final alertResult = await ApiService.instance.triggerEmergencyAlert(
       userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
-      location: '143 Anna Salai, Near Metro Station, Chennai',
+      location: '',
       contactsAlerted: contactStrings,
     );
 

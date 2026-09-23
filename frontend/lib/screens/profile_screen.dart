@@ -1,5 +1,8 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/input_field.dart';
@@ -21,6 +24,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late final TextEditingController _address2Controller;
   late final List<TextEditingController> _guardianControllers;
 
+  String? _selectedPhotoPath;
   String? _nameError;
   String? _phoneError;
   String? _address1Error;
@@ -31,6 +35,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     final state = AppState.instance;
+    _selectedPhotoPath = state.profilePhotoPath;
     // If registered user is editing profile from settings, show current values
     final isEditing = state.name.isNotEmpty && !state.isGuest;
     _nameController = TextEditingController(text: isEditing ? state.name : '');
@@ -77,6 +82,266 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<String> _persistImageLocally(XFile pickedFile) async {
+    try {
+      if (!kIsWeb) {
+        // Try local assets/images directory if available (desktop/dev environment)
+        final assetsDir = Directory('assets/images');
+        if (await assetsDir.exists()) {
+          final ext = pickedFile.name.contains('.') ? pickedFile.name.split('.').last : 'jpg';
+          final targetPath = 'assets/images/user_profile_${DateTime.now().millisecondsSinceEpoch}.$ext';
+          final file = File(pickedFile.path);
+          final copied = await file.copy(targetPath);
+          return copied.path;
+        }
+
+        // Also support saving alongside the picked file with persistent name
+        final sourceFile = File(pickedFile.path);
+        final parentDir = sourceFile.parent;
+        final persistentFile = File('${parentDir.path}/devi_user_profile.jpg');
+        await sourceFile.copy(persistentFile.path);
+        return persistentFile.path;
+      }
+    } catch (e) {
+      debugPrint('Error saving local profile image: $e');
+    }
+    return pickedFile.path;
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+
+      if (image == null) return;
+
+      final savedPath = await _persistImageLocally(image);
+      setState(() {
+        _selectedPhotoPath = savedPath;
+      });
+      AppState.instance.setProfilePhoto(savedPath);
+
+      _showToast('Profile photo updated successfully!');
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load image: $e'),
+            backgroundColor: AppColors.emergencyRed,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showToast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.primaryNavy,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  void _showPhotoOptionsModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+        ),
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 38,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const Text(
+                  'Profile Photo',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primaryNavy,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Upload your photo for responder recognition',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  dense: true,
+                  visualDensity: const VisualDensity(horizontal: 0, vertical: -2),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryNavy.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.camera_alt_outlined, color: AppColors.primaryNavy, size: 20),
+                  ),
+                  title: const Text('Take Photo', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                  subtitle: const Text('Use camera to capture photo', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                  trailing: const Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _pickImage(ImageSource.camera);
+                  },
+                ),
+                const SizedBox(height: 4),
+                ListTile(
+                  dense: true,
+                  visualDensity: const VisualDensity(horizontal: 0, vertical: -2),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryNavy.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.photo_library_outlined, color: AppColors.primaryNavy, size: 20),
+                  ),
+                  title: const Text('Choose from Gallery', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                  subtitle: const Text('Select an image from device gallery', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                  trailing: const Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _pickImage(ImageSource.gallery);
+                  },
+                ),
+                const SizedBox(height: 4),
+                ListTile(
+                  dense: true,
+                  visualDensity: const VisualDensity(horizontal: 0, vertical: -2),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.image_outlined, color: AppColors.verifiedGreen, size: 20),
+                  ),
+                  title: const Text('Default Avatar', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                  subtitle: const Text('Use default DEVI profile photo', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                  trailing: const Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    setState(() {
+                      _selectedPhotoPath = 'assets/images/profile_avatar.jpg';
+                    });
+                    AppState.instance.setProfilePhoto(_selectedPhotoPath);
+                    _showToast('Reset to default avatar');
+                  },
+                ),
+                if (_selectedPhotoPath != null && _selectedPhotoPath != 'assets/images/profile_avatar.jpg') ...[
+                  const SizedBox(height: 4),
+                  ListTile(
+                    dense: true,
+                    visualDensity: const VisualDensity(horizontal: 0, vertical: -2),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.delete_outline, color: AppColors.emergencyRed, size: 20),
+                    ),
+                    title: const Text('Remove Photo', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.emergencyRed)),
+                    subtitle: const Text('Remove custom uploaded photo', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                    onTap: () {
+                      Navigator.of(ctx).pop();
+                      setState(() {
+                        _selectedPhotoPath = null;
+                      });
+                      AppState.instance.setProfilePhoto(null);
+                      _showToast('Profile photo removed');
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatarImage() {
+    final photoPath = _selectedPhotoPath;
+    if (photoPath != null && photoPath.isNotEmpty) {
+      if (photoPath.startsWith('assets/')) {
+        return Image.asset(
+          photoPath,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) =>
+              const Icon(Icons.person, size: 50, color: AppColors.textMuted),
+        );
+      } else if (kIsWeb) {
+        return Image.network(
+          photoPath,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) =>
+              const Icon(Icons.person, size: 50, color: AppColors.textMuted),
+        );
+      } else {
+        final file = File(photoPath);
+        if (file.existsSync()) {
+          return Image.file(
+            file,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) =>
+                const Icon(Icons.person, size: 50, color: AppColors.textMuted),
+          );
+        }
+      }
+    }
+
+    return Image.asset(
+      'assets/images/profile_avatar.jpg',
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) =>
+          const Icon(Icons.person, size: 50, color: AppColors.textMuted),
+    );
+  }
+
   Future<void> _onFinish() async {
     final name = _nameController.text.trim();
     final phone = _phoneController.text.trim();
@@ -85,9 +350,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     bool hasError = false;
 
-    // 1. Full Legal Name Validation
+    // 1. Name  Validation
     if (name.isEmpty) {
-      _nameError = 'Full legal name is required';
+      _nameError = 'Name is required';
       hasError = true;
     } else if (name.length < 3) {
       _nameError = 'Name must be at least 3 characters';
@@ -188,6 +453,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       newGuardians: newGuardians,
     );
 
+    // Persist chosen profile photo locally in AppState
+    AppState.instance.setProfilePhoto(_selectedPhotoPath);
+
     if (!mounted) return;
     setState(() => _isSaving = false);
 
@@ -250,61 +518,83 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Center(
                     child: Column(
                       children: [
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              width: 86,
-                              height: 86,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.grey.shade200,
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 3,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.08),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
+                        GestureDetector(
+                          onTap: _showPhotoOptionsModal,
+                          child: Tooltip(
+                            message: 'Change profile photo',
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 90,
+                                  height: 90,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.grey.shade100,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 3.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.1),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: ClipOval(
-                                child: Image.asset(
-                                  'assets/images/profile_avatar.jpg',
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(
-                                    Icons.person,
-                                    size: 50,
-                                    color: AppColors.textMuted,
+                                  child: ClipOval(
+                                    child: _buildAvatarImage(),
                                   ),
                                 ),
-                              ),
-                            ),
-                            Positioned(
-                              right: -2,
-                              bottom: 0,
-                              child: Container(
-                                width: 26,
-                                height: 26,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryNavy,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 2),
+                                Positioned(
+                                  right: -2,
+                                  bottom: 2,
+                                  child: Container(
+                                    width: 30,
+                                    height: 30,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryNavy,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 2.5),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.15),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.camera_alt,
+                                      size: 15,
+                                      color: Colors.white,
+                                    ),
+                                  ),
                                 ),
-                                child: const Icon(
-                                  Icons.camera_alt,
-                                  size: 13,
-                                  color: Colors.white,
-                                ),
-                              ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
+                        // Explicit "Upload Photo" Action Button
+                        TextButton.icon(
+                          onPressed: _showPhotoOptionsModal,
+                          icon: const Icon(Icons.add_a_photo_outlined, size: 14, color: AppColors.primaryNavy),
+                          label: Text(
+                            _selectedPhotoPath != null ? 'Change Photo' : 'Upload Photo',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primaryNavy,
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: const [
@@ -335,7 +625,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   // Form Fields
                   CustomTextField(
-                    label: 'Full Legal Name',
+                    label: 'Name',
                     hintText: 'Enter your name',
                     controller: _nameController,
                     prefixIcon: Icons.person_outline,

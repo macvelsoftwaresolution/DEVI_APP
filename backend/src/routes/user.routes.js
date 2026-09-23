@@ -50,7 +50,7 @@ router.put('/profile', async (req, res, next) => {
     if (name !== undefined && typeof name === 'string' && name.trim().length > 0 && name.trim().length < 2) {
       return res.status(400).json({
         success: false,
-        message: 'Full legal name must be at least 2 characters',
+        message: 'Name must be at least 2 characters',
       });
     }
 
