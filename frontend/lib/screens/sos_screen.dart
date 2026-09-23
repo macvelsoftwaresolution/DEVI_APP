@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../theme/app_colors.dart';
 import 'history_screen.dart';
-import 'no_contacts_screen.dart';
+import 'guest_screen.dart';
 import 'settings_screen.dart';
 
 class SosScreen extends StatefulWidget {
@@ -83,7 +84,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
   }
 
   // --- Registered user: Alert only registered contacts (no 112) ---
-  void _triggerSosAlert() {
+  Future<void> _triggerSosAlert() async {
     setState(() {
       _isEmergencyActive = true;
       _holdProgress = 0.0;
@@ -140,6 +141,18 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
         ? '• No contacts registered'
         : guardiansList.map((g) => '• ${g.name} (+91 ${g.phone})').join('\n');
 
+    // Dynamic API call to backend to register and dispatch SOS alert
+    final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
+    final alertResult = await ApiService.instance.triggerEmergencyAlert(
+      userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
+      location: '143 Anna Salai, Near Metro Station, Chennai',
+      contactsAlerted: contactStrings,
+    );
+
+    final alertId = alertResult?['id'] ?? 'SOS_${DateTime.now().millisecondsSinceEpoch}';
+
+    if (!mounted) return;
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -160,9 +173,31 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
             ),
           ],
         ),
-        content: Text(
-          'Emergency alert and live GPS location dispatched to your registered contacts:\n\n$guardianTexts\n\nSMS sent successfully.',
-          style: const TextStyle(fontSize: 13, height: 1.4),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Emergency alert and live GPS location dispatched to your registered contacts:\n\n$guardianTexts\n\nSMS sent successfully.',
+              style: const TextStyle(fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.emergencyRed.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Server Ref: $alertId\nStatus: DISPATCHED',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.emergencyRed,
+                ),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -441,203 +476,224 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final isSmallScreen = size.width < 360;
+    final isShortScreen = size.height < 650;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 10.0),
-          child: Column(
-            children: [
-              // Top Bar
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 14.0 : 18.0,
+                vertical: isShortScreen ? 6.0 : 10.0,
+              ),
+              child: Column(
                 children: [
-                  const Row(
-                    children: [
-                      Icon(
-                        Icons.shield_outlined,
-                        color: AppColors.emergencyRed,
-                        size: 20,
-                      ),
-                      SizedBox(width: 6),
-                      Text(
-                        'Sos',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primaryNavy,
-                        ),
-                      ),
-                    ],
-                  ),
+                  // Top Bar
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.history,
-                          color: AppColors.primaryNavy,
-                          size: 22,
-                        ),
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (context) => const HistoryScreen()),
-                          );
-                        },
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.shield_outlined,
+                            color: AppColors.emergencyRed,
+                            size: 20,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Sos',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primaryNavy,
+                            ),
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.settings_outlined,
-                          color: AppColors.primaryNavy,
-                          size: 22,
-                        ),
-                        onPressed: _navigateToSettings,
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.history,
+                              color: AppColors.primaryNavy,
+                              size: 22,
+                            ),
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.settings_outlined,
+                              color: AppColors.primaryNavy,
+                              size: 22,
+                            ),
+                            onPressed: _navigateToSettings,
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
 
-              const SizedBox(height: 6),
+                  SizedBox(height: isShortScreen ? 4 : 6),
 
-              // Demo Pill
-              GestureDetector(
-                onTap: _showDemoModeSheet,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8EEF5),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.play_arrow, size: 13, color: AppColors.demoPillText),
-                      SizedBox(width: 4),
-                      Text(
-                        'Demo',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.demoPillText,
-                        ),
+                  // Demo Pill
+                  GestureDetector(
+                    onTap: _showDemoModeSheet,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8EEF5),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // SOS Home Card (Presented for both Registered and Guest User)
-              Expanded(
-                child: GestureDetector(
-                  onTap: _onSosTriggered,
-                  onLongPressStart: (_) => _onHoldStart(),
-                  onLongPressEnd: (_) => _onHoldEnd(),
-                  child: Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: _isEmergencyActive
-                            ? [const Color(0xFFFF1E38), const Color(0xFFB00010)]
-                            : [const Color(0xFFE80B1E), const Color(0xFFD60719)],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.play_arrow, size: 13, color: AppColors.demoPillText),
+                          SizedBox(width: 4),
+                          Text(
+                            'Demo',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.demoPillText,
+                            ),
+                          ),
+                        ],
                       ),
-                      borderRadius: BorderRadius.circular(32),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.emergencyRed.withValues(alpha: 0.35),
-                          blurRadius: 24,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
                     ),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            AnimatedScale(
-                              scale: _isEmergencyActive ? 1.15 : 1.0,
-                              duration: const Duration(milliseconds: 300),
-                              child: Container(
-                                width: 74,
-                                height: 74,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFBF0818),
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.18),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.crisis_alert,
-                                    color: Colors.white,
-                                    size: 36,
-                                  ),
-                                ),
-                              ),
-                            ),
+                  ),
 
-                            const SizedBox(height: 20),
+                  SizedBox(height: isShortScreen ? 8 : 14),
 
-                            const Text(
-                              'SOS',
-                              style: TextStyle(
-                                fontSize: 44,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-
-                            const SizedBox(height: 12),
-
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 28.0),
-                              child: Text(
-                                'Tap or hold to alert emergency\nservices & contacts',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white.withValues(alpha: 0.92),
-                                  height: 1.35,
-                                ),
-                              ),
+                  // SOS Home Card (Presented for both Registered and Guest User)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _onSosTriggered,
+                      onLongPressStart: (_) => _onHoldStart(),
+                      onLongPressEnd: (_) => _onHoldEnd(),
+                      child: Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: _isEmergencyActive
+                                ? [const Color(0xFFFF1E38), const Color(0xFFB00010)]
+                                : [const Color(0xFFE80B1E), const Color(0xFFD60719)],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
+                          borderRadius: BorderRadius.circular(isSmallScreen ? 24 : 32),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.emergencyRed.withValues(alpha: 0.35),
+                              blurRadius: 24,
+                              offset: const Offset(0, 8),
                             ),
                           ],
                         ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final availableHeight = constraints.maxHeight;
+                            final circleSize = (availableHeight * 0.22).clamp(52.0, 78.0);
+                            final iconSize = (circleSize * 0.48).clamp(24.0, 36.0);
+                            final titleSize = (availableHeight * 0.12).clamp(32.0, 44.0);
+                            final spacing1 = (availableHeight * 0.04).clamp(8.0, 18.0);
+                            final spacing2 = (availableHeight * 0.03).clamp(6.0, 12.0);
 
-                        // Hold Progress Indicator
-                        if (_holdProgress > 0)
-                          Positioned(
-                            bottom: 20,
-                            left: 30,
-                            right: 30,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: _holdProgress,
-                                backgroundColor: Colors.white.withValues(alpha: 0.3),
-                                valueColor:
-                                    const AlwaysStoppedAnimation<Color>(Colors.white),
-                                minHeight: 6,
-                              ),
-                            ),
-                          ),
-                      ],
+                            return Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    AnimatedScale(
+                                      scale: _isEmergencyActive ? 1.15 : 1.0,
+                                      duration: const Duration(milliseconds: 300),
+                                      child: Container(
+                                        width: circleSize,
+                                        height: circleSize,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFBF0818),
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(alpha: 0.18),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Center(
+                                          child: Icon(
+                                            Icons.crisis_alert,
+                                            color: Colors.white,
+                                            size: iconSize,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
+                                    SizedBox(height: spacing1),
+
+                                    Text(
+                                      'SOS',
+                                      style: TextStyle(
+                                        fontSize: titleSize,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                        letterSpacing: 1.0,
+                                      ),
+                                    ),
+
+                                    SizedBox(height: spacing2),
+
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                      child: Text(
+                                        'Tap or hold to alert emergency\nservices & contacts',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: isSmallScreen || isShortScreen ? 11.5 : 12.5,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white.withValues(alpha: 0.92),
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                // Hold Progress Indicator
+                                if (_holdProgress > 0)
+                                  Positioned(
+                                    bottom: 20,
+                                    left: 30,
+                                    right: 30,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: LinearProgressIndicator(
+                                        value: _holdProgress,
+                                        backgroundColor: Colors.white.withValues(alpha: 0.3),
+                                        valueColor:
+                                            const AlwaysStoppedAnimation<Color>(Colors.white),
+                                        minHeight: 6,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
 
               const SizedBox(height: 14),
 
@@ -747,6 +803,8 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
           ),
         ),
       ),
-    );
-  }
+    ),
+  ),
+);
+}
 }

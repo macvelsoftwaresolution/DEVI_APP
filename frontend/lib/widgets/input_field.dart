@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
+
+typedef InputField = CustomTextField;
 
 class CustomTextField extends StatelessWidget {
   final String? label;
@@ -11,6 +14,10 @@ class CustomTextField extends StatelessWidget {
   final TextInputType? keyboardType;
   final bool isWhiteBackground;
   final ValueChanged<String>? onChanged;
+  final String? errorText;
+  final List<TextInputFormatter>? inputFormatters;
+  final int? maxLength;
+  final TextCapitalization textCapitalization;
 
   const CustomTextField({
     super.key,
@@ -23,10 +30,16 @@ class CustomTextField extends StatelessWidget {
     this.keyboardType,
     this.isWhiteBackground = true,
     this.onChanged,
+    this.errorText,
+    this.inputFormatters,
+    this.maxLength,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasError = errorText != null && errorText!.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -35,13 +48,15 @@ class CustomTextField extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                label!,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primaryNavy,
-                  letterSpacing: -0.2,
+              Expanded(
+                child: Text(
+                  label!,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primaryNavy,
+                    letterSpacing: -0.2,
+                  ),
                 ),
               ),
               ?labelTrailing,
@@ -55,15 +70,19 @@ class CustomTextField extends StatelessWidget {
             color: isWhiteBackground ? Colors.white : AppColors.inputFill,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: isWhiteBackground
-                  ? AppColors.borderCard
-                  : Colors.transparent,
-              width: 1.2,
+              color: hasError
+                  ? AppColors.emergencyRed
+                  : (isWhiteBackground
+                      ? AppColors.borderCard
+                      : Colors.transparent),
+              width: hasError ? 1.4 : 1.2,
             ),
             boxShadow: isWhiteBackground
                 ? [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
+                      color: hasError
+                          ? AppColors.emergencyRed.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.02),
                       blurRadius: 6,
                       offset: const Offset(0, 2),
                     ),
@@ -77,17 +96,17 @@ class CustomTextField extends StatelessWidget {
                 Icon(
                   prefixIcon,
                   size: 18,
-                  color: AppColors.textMuted,
+                  color: hasError ? AppColors.emergencyRed : AppColors.textMuted,
                 ),
                 const SizedBox(width: 8),
               ],
               if (prefixText != null) ...[
                 Text(
                   prefixText!,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.primaryNavy,
+                    color: hasError ? AppColors.emergencyRed : AppColors.primaryNavy,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -97,6 +116,10 @@ class CustomTextField extends StatelessWidget {
                   controller: controller,
                   keyboardType: keyboardType,
                   onChanged: onChanged,
+                  inputFormatters: inputFormatters,
+                  maxLength: maxLength,
+                  buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                  textCapitalization: textCapitalization,
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -118,6 +141,20 @@ class CustomTextField extends StatelessWidget {
             ],
           ),
         ),
+        if (hasError) ...[
+          const SizedBox(height: 5),
+          Padding(
+            padding: const EdgeInsets.only(left: 14),
+            child: Text(
+              errorText!,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.emergencyRed,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

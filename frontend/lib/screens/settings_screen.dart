@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/app_state.dart';
 import '../theme/app_colors.dart';
 import 'login_screen.dart';
@@ -61,6 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               TextFormField(
                 controller: nameController,
+                textCapitalization: TextCapitalization.words,
                 decoration: InputDecoration(
                   labelText: 'Guardian Name',
                   hintText: 'Enter guardian name',
@@ -72,13 +74,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   prefixIcon: const Icon(Icons.person_outline, size: 18),
                 ),
-                validator: (val) =>
-                    (val == null || val.trim().isEmpty) ? 'Please enter a name' : null,
+                validator: (val) {
+                  final text = val?.trim() ?? '';
+                  if (text.isEmpty) return 'Please enter guardian name';
+                  if (text.length < 2) return 'Name must be at least 2 characters';
+                  if (!RegExp(r"^[a-zA-Z\s\.]+$").hasMatch(text)) {
+                    return 'Name should only contain letters';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: phoneController,
                 keyboardType: TextInputType.phone,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
                 decoration: InputDecoration(
                   labelText: 'Mobile Number',
                   hintText: 'Enter mobile number',
@@ -92,11 +105,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   prefixIcon: const Icon(Icons.phone_outlined, size: 18),
                 ),
                 validator: (val) {
-                  if (val == null || val.trim().isEmpty) {
-                    return 'Please enter phone number';
+                  final phone = val?.trim() ?? '';
+                  if (phone.isEmpty) return 'Please enter mobile number';
+                  if (phone.length != 10) return 'Enter exactly 10 digits';
+                  if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
+                    return 'Starts with 6, 7, 8, or 9';
                   }
-                  if (val.trim().length < 10) {
-                    return 'Enter a valid 10-digit number';
+                  if (phone == _appState.phone) {
+                    return 'Cannot be your own mobile number';
+                  }
+                  if (_appState.rawGuardians.any((g) => g.phone == phone)) {
+                    return 'Guardian is already added';
                   }
                   return null;
                 },
@@ -203,6 +222,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final guardians = _appState.guardians;
     final isGuest = _appState.isGuest;
 
+    final mediaQuery = MediaQuery.of(context);
+    final isSmallScreen = mediaQuery.size.width < 360;
+    final horizontalPad = isSmallScreen ? 12.0 : 18.0;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFC),
       appBar: AppBar(
@@ -246,13 +269,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 12.0),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+        child: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPad, vertical: 12.0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 // Profile Card (Matches Image 1)
                 Container(
                   width: double.infinity,
@@ -328,6 +352,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 color: AppColors.primaryNavy,
                                 letterSpacing: -0.2,
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 3),
                             RichText(
@@ -402,15 +427,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'MY GUARDIANS',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textMuted,
-                        letterSpacing: 0.6,
+                    const Flexible(
+                      child: Text(
+                        'MY GUARDIANS',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textMuted,
+                          letterSpacing: 0.6,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 8),
 
                     // + Add Guardian Button (Pill shaped with crimson bg)
                     InkWell(
@@ -584,6 +613,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
