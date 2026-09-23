@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/devi_logo.dart';
 import 'login_screen.dart';
+import 'sos_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -18,10 +20,14 @@ class _SplashScreenState extends State<SplashScreen>
   late final Animation<Offset> _slideAnimation;
   Timer? _navigationTimer;
   bool _hasNavigated = false;
+  bool _isLoggedIn = false;
+  bool _authCheckComplete = false;
 
   @override
   void initState() {
     super.initState();
+
+    _checkAuth();
 
     _controller = AnimationController(
       vsync: this,
@@ -54,22 +60,44 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    // Auto-navigate to login screen after 2.6 seconds
-    _navigationTimer = Timer(const Duration(milliseconds: 2600), () {
-      _goToLogin();
+    // Auto-navigate after splash animation
+    _navigationTimer = Timer(const Duration(milliseconds: 2400), () {
+      _navigateNext();
     });
   }
 
-  void _goToLogin() {
+  void _checkAuth() async {
+    try {
+      final loggedIn = await AppState.instance.checkAutoLogin();
+      if (mounted) {
+        _isLoggedIn = loggedIn;
+        _authCheckComplete = true;
+      }
+    } catch (_) {
+      if (mounted) {
+        _authCheckComplete = true;
+      }
+    }
+  }
+
+  Future<void> _navigateNext() async {
     if (_hasNavigated || !mounted) return;
     _hasNavigated = true;
     _navigationTimer?.cancel();
 
+    if (!_authCheckComplete) {
+      _isLoggedIn = await AppState.instance.checkAutoLogin();
+    }
+
+    if (!mounted) return;
+
+    final Widget targetScreen =
+        _isLoggedIn ? const SosScreen() : const LoginScreen();
+
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 500),
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const LoginScreen(),
+        pageBuilder: (context, animation, secondaryAnimation) => targetScreen,
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -91,7 +119,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     return Scaffold(
       body: GestureDetector(
-        onTap: _goToLogin,
+        onTap: _navigateNext,
         child: Container(
           width: double.infinity,
           height: double.infinity,

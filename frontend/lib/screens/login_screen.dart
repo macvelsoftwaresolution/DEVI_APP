@@ -90,6 +90,9 @@ class _LoginScreenState extends State<LoginScreen> {
       // Load user profile & guardians dynamically from backend
       await AppState.instance.loadUserProfile(phone);
 
+      // Save session for auto-login persistence
+      await AppState.instance.saveSession(phone);
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -134,7 +137,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _navigateToSignUp() {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const ProfileScreen()),
+      MaterialPageRoute(
+        builder: (context) => const ProfileScreen(isEditing: false),
+      ),
     );
   }
 
