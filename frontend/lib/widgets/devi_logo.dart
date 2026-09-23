@@ -33,7 +33,7 @@ class DeviLogoBadge extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(size * 0.22),
         child: Image.asset(
-          'assets/images/devi_logo.png',
+          'assets/images/devi-logo.png',
           fit: BoxFit.contain,
           errorBuilder: (context, error, stackTrace) => _FallbackLogo(size: size * 0.65),
         ),
@@ -66,7 +66,7 @@ class DeviAppBarBadge extends StatelessWidget {
             ],
           ),
           child: Image.asset(
-            'assets/images/devi_logo.png',
+            'assets/images/devi-logo.png',
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) => const _FallbackLogo(size: 28),
           ),
