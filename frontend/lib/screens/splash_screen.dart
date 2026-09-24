@@ -1,10 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../services/app_state.dart';
-import '../theme/app_colors.dart';
-import '../widgets/devi_logo.dart';
+import 'package:flutter/services.dart';
 import 'login_screen.dart';
-import 'sos_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -12,92 +9,52 @@ class SplashScreen extends StatefulWidget {
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
+
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final Animation<double> _scaleAnimation;
   late final Animation<double> _fadeAnimation;
-  late final Animation<Offset> _slideAnimation;
+  late final Animation<double> _scaleAnimation;
+
   Timer? _navigationTimer;
   bool _hasNavigated = false;
-  bool _isLoggedIn = false;
-  bool _authCheckComplete = false;
 
   @override
   void initState() {
     super.initState();
 
-    _checkAuth();
-
+    // Fast and smooth fade-in
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 800),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutBack,
-      ),
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
     );
 
-    _fadeAnimation = Tween<double>(begin: 0.2, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeIn,
-      ),
-    );
-
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutCubic,
-      ),
+    _scaleAnimation = Tween<double>(begin: 0.94, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
     );
 
     _controller.forward();
 
-    // Auto-navigate after splash animation
-    _navigationTimer = Timer(const Duration(milliseconds: 2400), () {
-      _navigateNext();
+    // Smooth navigation to LoginScreen after 2.0 seconds
+    _navigationTimer = Timer(const Duration(milliseconds: 2000), () {
+      _navigateToLogin();
     });
   }
 
-  void _checkAuth() async {
-    try {
-      final loggedIn = await AppState.instance.checkAutoLogin();
-      if (mounted) {
-        _isLoggedIn = loggedIn;
-        _authCheckComplete = true;
-      }
-    } catch (_) {
-      if (mounted) {
-        _authCheckComplete = true;
-      }
-    }
-  }
-
-  Future<void> _navigateNext() async {
+  void _navigateToLogin() {
     if (_hasNavigated || !mounted) return;
     _hasNavigated = true;
     _navigationTimer?.cancel();
 
-    if (!_authCheckComplete) {
-      _isLoggedIn = await AppState.instance.checkAutoLogin();
-    }
-
-    if (!mounted) return;
-
-    final Widget targetScreen =
-        _isLoggedIn ? const SosScreen() : const LoginScreen();
-
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 500),
-        pageBuilder: (context, animation, secondaryAnimation) => targetScreen,
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const LoginScreen(),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -115,168 +72,92 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final isSmallScreen = size.width < 360;
+    final isShortScreen = size.height < 680;
+    final isVeryShort = size.height < 580;
 
-    return Scaffold(
-      body: GestureDetector(
-        onTap: _navigateNext,
-        child: Container(
-          width: double.infinity,
-          height: double.infinity,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFF0F172A), // Midnight Navy slate
-                Color(0xFF1E1B4B), // Deep Indigo
-                Color(0xFF0A0F1D), // Deep Dark Navy
-              ],
+    // Responsive dimensions for the framed image
+    final double cardWidth = (size.width * 0.78).clamp(260.0, 340.0);
+    final double cardHeight = isVeryShort
+        ? 240.0
+        : isShortScreen
+            ? 320.0
+            : (size.height * 0.50).clamp(320.0, 440.0);
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarColor: Color(0xFFFAF6EE),
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFAF6EE),
+        body: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _navigateToLogin,
+          child: Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFFFCF9F2),
+                  Color(0xFFFAF6EE),
+                  Color(0xFFF6F0E4),
+                ],
+              ),
             ),
-          ),
-          child: SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      const Spacer(flex: 3),
-
-                      // DEVI Logo with ambient red/coral glow
-                      AnimatedBuilder(
-                        animation: _controller,
-                        builder: (context, child) {
-                          return FadeTransition(
-                            opacity: _fadeAnimation,
-                            child: ScaleTransition(
-                              scale: _scaleAnimation,
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.emergencyRed
-                                          .withValues(alpha: 0.35),
-                                      blurRadius: 40,
-                                      spreadRadius: 8,
-                                    ),
-                                  ],
-                                ),
-                                child: DeviLogoBadge(
-                                  size: isSmallScreen ? 100 : 120,
-                                  showShadow: true,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-
-                      const SizedBox(height: 32),
-
-                      // Animated "DEVI" Title
-                      SlideTransition(
-                        position: _slideAnimation,
-                        child: FadeTransition(
-                          opacity: _fadeAnimation,
-                          child: const Column(
-                            children: [
-                              Text(
-                                'DEVI',
-                                style: TextStyle(
-                                  fontSize: 40,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                  letterSpacing: 4.0,
-                                ),
-                              ),
-                            ],
-                          ),
+            child: SafeArea(
+              child: Center(
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: ScaleTransition(
+                    scale: _scaleAnimation,
+                    child: Container(
+                      width: cardWidth,
+                      height: cardHeight,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF070B14),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: const Color(0xFFDFD1B3),
+                          width: 1.5,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFC9A048)
+                                .withValues(alpha: 0.24),
+                            blurRadius: 36,
+                            spreadRadius: 4,
+                            offset: const Offset(0, 12),
+                          ),
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
-
-                      const SizedBox(height: 12),
-
-                      // "Your Guardian" Pill with Shield icon
-                      SlideTransition(
-                        position: _slideAnimation,
-                        child: FadeTransition(
-                          opacity: _fadeAnimation,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.emergencyRed.withValues(alpha: 0.16),
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(
-                                color: AppColors.emergencyRed.withValues(alpha: 0.4),
-                                width: 1.2,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.shield,
-                                  size: 18,
-                                  color: AppColors.emergencyRed,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Your Guardian',
-                                  style: TextStyle(
-                                    fontSize: isSmallScreen ? 15 : 17,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFFFF5252),
-                                    letterSpacing: 0.6,
-                                  ),
-                                ),
-                              ],
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(22.5),
+                        child: Image.asset(
+                          'assets/images/devi-logo.png',
+                          width: cardWidth,
+                          height: cardHeight,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Center(
+                            child: Icon(
+                              Icons.shield_rounded,
+                              size: 72,
+                              color: Color(0xFFD4AF37),
                             ),
                           ),
                         ),
                       ),
-
-                      const Spacer(flex: 3),
-
-                      // Bottom Tag & Loading indicator
-                      FadeTransition(
-                        opacity: _fadeAnimation,
-                        child: const Column(
-                          children: [
-                            SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  AppColors.emergencyRed,
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: 14),
-                            Text(
-                              'Women Safety & Emergency Assistance',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white60,
-                                letterSpacing: 0.4,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 28),
-                    ],
+                    ),
                   ),
                 ),
               ),
