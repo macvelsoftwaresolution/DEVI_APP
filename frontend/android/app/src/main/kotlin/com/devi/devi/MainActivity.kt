@@ -1,7 +1,9 @@
 package com.devi.devi
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.telephony.SmsManager
 import androidx.core.app.ActivityCompat
@@ -21,24 +23,36 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "checkPermission" -> {
-                    val hasPermission = ContextCompat.checkSelfPermission(
+                    val hasSms = ContextCompat.checkSelfPermission(
                         this,
                         Manifest.permission.SEND_SMS
                     ) == PackageManager.PERMISSION_GRANTED
-                    result.success(hasPermission)
+                    val hasCall = ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.CALL_PHONE
+                    ) == PackageManager.PERMISSION_GRANTED
+                    result.success(hasSms && hasCall)
                 }
                 "requestPermission" -> {
-                    val hasPermission = ContextCompat.checkSelfPermission(
+                    val hasSms = ContextCompat.checkSelfPermission(
                         this,
                         Manifest.permission.SEND_SMS
                     ) == PackageManager.PERMISSION_GRANTED
-                    if (hasPermission) {
+                    val hasCall = ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.CALL_PHONE
+                    ) == PackageManager.PERMISSION_GRANTED
+
+                    if (hasSms && hasCall) {
                         result.success(true)
                     } else {
                         pendingPermissionResult = result
                         ActivityCompat.requestPermissions(
                             this,
-                            arrayOf(Manifest.permission.SEND_SMS),
+                            arrayOf(
+                                Manifest.permission.SEND_SMS,
+                                Manifest.permission.CALL_PHONE
+                            ),
                             SMS_PERMISSION_CODE
                         )
                     }
@@ -86,6 +100,36 @@ class MainActivity : FlutterActivity() {
                         result.error("SMS_ERROR", e.localizedMessage ?: "Failed to send SMS", null)
                     }
                 }
+                "makeCall" -> {
+                    val rawPhone = call.argument<String>("phone") ?: "112"
+                    val phone = rawPhone.replace(Regex("[^0-9+]"), "")
+
+                    val hasCallPermission = ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.CALL_PHONE
+                    ) == PackageManager.PERMISSION_GRANTED
+
+                    try {
+                        if (hasCallPermission) {
+                            // Directly dial without showing dial pad
+                            val callIntent = Intent(Intent.ACTION_CALL).apply {
+                                data = Uri.parse("tel:$phone")
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(callIntent)
+                        } else {
+                            // Fallback to dial pad if permission not yet granted
+                            val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                                data = Uri.parse("tel:$phone")
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(dialIntent)
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("CALL_ERROR", e.localizedMessage ?: "Failed to make call", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -98,7 +142,7 @@ class MainActivity : FlutterActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == SMS_PERMISSION_CODE) {
-            val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            val granted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
             pendingPermissionResult?.success(granted)
             pendingPermissionResult = null
         }

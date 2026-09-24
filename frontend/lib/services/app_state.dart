@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
@@ -44,11 +45,17 @@ class AppState extends ChangeNotifier {
 
   void setGuestMode(bool guest) {
     isGuest = guest;
+    if (guest) {
+      initGuestSession();
+    }
     notifyListeners();
   }
 
   void toggleGuestMode() {
     isGuest = !isGuest;
+    if (isGuest) {
+      initGuestSession();
+    }
     notifyListeners();
   }
 
@@ -56,6 +63,46 @@ class AppState extends ChangeNotifier {
   static const String _keyLoggedInPhone = 'devi_logged_in_phone';
   static const String _keyIsLoggedIn = 'devi_is_logged_in';
   static const String _keyProfilePhoto = 'devi_profile_photo';
+  static const String _keyGuestId = 'devi_guest_id';
+  static const String _keyGuestGuardians = 'devi_guest_guardians';
+
+  /// Initializes anonymous guest session with unique ID and syncs to Supabase
+  Future<void> initGuestSession() async {
+    isGuest = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? guestId = prefs.getString(_keyGuestId);
+      if (guestId == null || guestId.isEmpty) {
+        final rand = DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase();
+        guestId = 'GUEST_$rand';
+        await prefs.setString(_keyGuestId, guestId);
+      }
+      phone = guestId;
+
+      // Restore locally saved guest guardians if any
+      final localGuardiansJson = prefs.getString(_keyGuestGuardians);
+      if (localGuardiansJson != null && localGuardiansJson.isNotEmpty) {
+        final list = jsonDecode(localGuardiansJson) as List<dynamic>?;
+        if (list != null && list.isNotEmpty) {
+          _guardians.clear();
+          for (var item in list) {
+            _guardians.add(GuardianModel.fromMap(Map<String, dynamic>.from(item as Map)));
+          }
+        }
+      }
+
+      notifyListeners();
+
+      // Sync guest user with is_guest = true in Supabase
+      final guardiansPayload = _guardians.map((g) => g.toMap()).toList();
+      await ApiService.instance.syncGuestUser(
+        guestId: guestId,
+        guardians: guardiansPayload,
+      );
+    } catch (e) {
+      debugPrint('Error initializing guest session: $e');
+    }
+  }
 
   Future<void> saveSession(String userPhone) async {
     try {
@@ -107,6 +154,23 @@ class AppState extends ChangeNotifier {
         // Load latest profile from backend
         await loadUserProfile(savedPhone);
         return true;
+      } else {
+        // Restore guest session and local guardians if app was used in guest mode
+        final guestId = prefs.getString(_keyGuestId);
+        if (guestId != null && guestId.isNotEmpty) {
+          phone = guestId;
+          isGuest = true;
+          final localG = prefs.getString(_keyGuestGuardians);
+          if (localG != null && localG.isNotEmpty) {
+            final list = jsonDecode(localG) as List<dynamic>?;
+            if (list != null && list.isNotEmpty) {
+              _guardians.clear();
+              for (var item in list) {
+                _guardians.add(GuardianModel.fromMap(Map<String, dynamic>.from(item as Map)));
+              }
+            }
+          }
+        }
       }
     } catch (e) {
       debugPrint('Error checking auto-login: $e');
@@ -215,8 +279,24 @@ class AppState extends ChangeNotifier {
     _autoSyncGuardians();
   }
 
-  void _autoSyncGuardians() {
-    if (phone.isNotEmpty && !isGuest) {
+  void _autoSyncGuardians() async {
+    if (isGuest && phone.isNotEmpty) {
+      // 1. Save guest guardians locally in SharedPreferences so they never vanish on app restart
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final list = _guardians.map((g) => g.toMap()).toList();
+        await prefs.setString(_keyGuestGuardians, jsonEncode(list));
+      } catch (e) {
+        debugPrint('Error saving guest guardians locally: $e');
+      }
+
+      // 2. Sync to Supabase in background
+      final guardiansPayload = _guardians.map((g) => g.toMap()).toList();
+      ApiService.instance.syncGuestUser(
+        guestId: phone,
+        guardians: guardiansPayload,
+      );
+    } else if (phone.isNotEmpty && !isGuest) {
       saveProfileToBackend();
     }
   }

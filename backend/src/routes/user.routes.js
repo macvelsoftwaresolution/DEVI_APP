@@ -105,4 +105,24 @@ router.put('/profile', async (req, res, next) => {
   }
 });
 
+// POST /api/user/guest - Tracks anonymous guest users with is_guest = true
+router.post('/guest', async (req, res, next) => {
+  try {
+    const { guestId, guardians } = req.body;
+    const idToUse = (guestId && typeof guestId === 'string' && guestId.trim().length > 0)
+      ? guestId.trim()
+      : `GUEST_${Date.now().toString(36).toUpperCase()}`;
+
+    const guestUser = await DataService.createOrGetGuestUser(idToUse, guardians);
+
+    res.status(200).json({
+      success: true,
+      message: 'Guest user tracked in database',
+      data: guestUser,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

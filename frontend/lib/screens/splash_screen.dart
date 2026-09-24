@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/app_state.dart';
+import '../services/sms_service.dart';
 import 'login_screen.dart';
+import 'sos_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -18,10 +21,14 @@ class _SplashScreenState extends State<SplashScreen>
 
   Timer? _navigationTimer;
   bool _hasNavigated = false;
+  bool _isLoggedIn = false;
 
   @override
   void initState() {
     super.initState();
+
+    // 1. Request SMS & Call Phone permissions upfront upon launch
+    _initAppFlow();
 
     // Fast and smooth fade-in
     _controller = AnimationController(
@@ -39,22 +46,44 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    // Smooth navigation to LoginScreen after 2.0 seconds
+    // Smooth navigation after 2.0 seconds
     _navigationTimer = Timer(const Duration(milliseconds: 2000), () {
-      _navigateToLogin();
+      _navigateToNext();
     });
   }
 
-  void _navigateToLogin() {
+  void _initAppFlow() async {
+    try {
+      final permitted = await SmsService.hasPermission();
+      if (!permitted) {
+        await SmsService.requestPermission();
+      }
+    } catch (e) {
+      debugPrint('Error requesting initial permissions: $e');
+    }
+
+    try {
+      final loggedIn = await AppState.instance.checkAutoLogin();
+      if (mounted) {
+        setState(() {
+          _isLoggedIn = loggedIn;
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _navigateToNext() {
     if (_hasNavigated || !mounted) return;
     _hasNavigated = true;
     _navigationTimer?.cancel();
 
+    final Widget targetScreen =
+        _isLoggedIn ? const SosScreen() : const LoginScreen();
+
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 500),
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const LoginScreen(),
+        pageBuilder: (context, animation, secondaryAnimation) => targetScreen,
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -94,7 +123,7 @@ class _SplashScreenState extends State<SplashScreen>
         backgroundColor: const Color(0xFFFAF6EE),
         body: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: _navigateToLogin,
+          onTap: _navigateToNext,
           child: Container(
             width: double.infinity,
             height: double.infinity,

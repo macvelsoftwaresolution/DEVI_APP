@@ -97,9 +97,9 @@ class _GuestScreenState extends State<GuestScreen> {
 
     // If contacts are added by the user:
     if (guardiansList.isNotEmpty) {
-      final guardianTexts = guardiansList
-          .map((g) => '• ${g.name} (+91 ${g.phone})')
-          .join('\n');
+      final primary = guardiansList.first;
+      final primaryName = primary.name.trim().isNotEmpty ? primary.name.trim() : 'Guardian 1';
+      final primaryPhone = primary.phone;
 
       final guardianPhones = guardiansList.map((g) => g.phone).toList();
       final smsCount = await SmsService.broadcastEmergencySms(
@@ -107,51 +107,30 @@ class _GuestScreenState extends State<GuestScreen> {
         userName: _appState.name.isNotEmpty ? _appState.name : 'Guest User',
       );
 
+      // Call 1st guardian
+      await SmsService.makePhoneCall(primaryPhone);
+
       if (!mounted) return;
 
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          title: const Row(
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
             children: [
-              Icon(Icons.warning_amber_rounded, color: AppColors.emergencyRed, size: 28),
-              SizedBox(width: 8),
-              Text(
-                'EMERGENCY ALERT',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.emergencyRed,
+              const Icon(Icons.phone_in_talk, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '📞 Calling $primaryName (+91 $primaryPhone)... ${smsCount > 0 ? "$smsCount SMS sent." : ""}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Emergency distress alert dispatched to your registered contacts:\n\n$guardianTexts\n\n'
-                '${smsCount > 0 ? "✅ $smsCount Emergency SMS sent silently via SIM." : "📱 Direct SMS dispatched to contacts."}',
-                style: const TextStyle(fontSize: 13, height: 1.4),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text(
-                'OK',
-                style: TextStyle(
-                  color: AppColors.emergencyRed,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
+          backgroundColor: const Color(0xFF1E2532),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 4),
         ),
       );
       return;
@@ -161,7 +140,7 @@ class _GuestScreenState extends State<GuestScreen> {
     _triggerCall112Dialog();
   }
 
-  void _triggerCall112Dialog() {
+  void _triggerCall112Dialog() async {
     _guestCountdownTimer?.cancel();
     if (mounted) {
       setState(() {
@@ -170,75 +149,37 @@ class _GuestScreenState extends State<GuestScreen> {
       });
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: const Row(
+    final hasGuardians = _appState.guardians.isNotEmpty;
+    final targetPhone = hasGuardians ? _appState.guardians.first.phone : '112';
+    final targetLabel = hasGuardians
+        ? (_appState.guardians.first.name.trim().isNotEmpty
+            ? _appState.guardians.first.name.trim()
+            : 'Guardian 1')
+        : 'Emergency 112';
+
+    await SmsService.makePhoneCall(targetPhone);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
           children: [
-            Icon(Icons.phone_in_talk, color: AppColors.emergencyRed, size: 26),
-            SizedBox(width: 10),
-            Text(
-              'Calling 112...',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: AppColors.emergencyRed,
+            const Icon(Icons.phone_in_talk, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '📞 Calling $targetLabel (${hasGuardians ? "+91 $targetPhone" : targetPhone})...',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
               ),
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Connecting to National Emergency Response Support System (112).\n\nDirect emergency dispatch line activated for guest user.',
-              style: TextStyle(fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF2F2),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFFECACA)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.wifi_calling_3, color: AppColors.emergencyRed, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    'Emergency Line Active',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.emergencyRed,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton.icon(
-            onPressed: () => Navigator.of(ctx).pop(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.emergencyRed,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            ),
-            icon: const Icon(Icons.call_end, size: 18),
-            label: const Text(
-              'End Call',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
+        backgroundColor: hasGuardians ? const Color(0xFF1E2532) : AppColors.emergencyRed,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -644,101 +585,119 @@ class _GuestScreenState extends State<GuestScreen> {
                           const Spacer(flex: 2),
 
                           // "No Contacts Added" with Red Warning Icon
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.warning_amber_rounded,
-                                color: Color(0xFFB91C1C),
-                                size: 22,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'No Contacts Added',
-                                style: TextStyle(
-                                  fontSize: isSmallScreen ? 16 : 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: const Color(0xFF1E293B),
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                            ],
-                          ),
+                          Builder(
+                            builder: (context) {
+                              final hasGuardians = _appState.guardians.isNotEmpty;
+                              final primaryG = hasGuardians ? _appState.guardians.first : null;
+                              final callBtnLabel = hasGuardians
+                                  ? 'CALL ${primaryG!.name.trim().isNotEmpty ? primaryG.name.trim().toUpperCase() : "GUARDIAN"}'
+                                  : 'CALL 112';
+                              final callBtnSub = hasGuardians
+                                  ? 'Primary contact (+91 ${primaryG!.phone})'
+                                  : 'Direct emergency line (tel:112)';
 
-                          SizedBox(height: isShortScreen ? 10 : 16),
-
-                          // CALL 112 Red Button
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 14.0 : 24.0),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: _triggerCall112Dialog,
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: isShortScreen ? 10 : 12,
-                                    horizontal: isSmallScreen ? 12 : 16,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFDC2626),
-                                    borderRadius: BorderRadius.circular(20),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFFDC2626).withValues(alpha: 0.35),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Row(
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Container(
-                                        width: 36,
-                                        height: 36,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.2),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.phone,
-                                          color: Colors.white,
-                                          size: 19,
-                                        ),
+                                      Icon(
+                                        hasGuardians ? Icons.verified_user : Icons.warning_amber_rounded,
+                                        color: hasGuardians ? const Color(0xFF15803D) : const Color(0xFFB91C1C),
+                                        size: 22,
                                       ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'CALL 112',
-                                              style: TextStyle(
-                                                fontSize: isSmallScreen ? 14.5 : 16,
-                                                fontWeight: FontWeight.w900,
-                                                color: Colors.white,
-                                                letterSpacing: 0.5,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              'Direct emergency line (tel:112)',
-                                              style: TextStyle(
-                                                fontSize: isSmallScreen ? 10 : 11,
-                                                fontWeight: FontWeight.w500,
-                                                color: Colors.white70,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        hasGuardians ? 'Primary Contact Ready' : 'No Contacts Added',
+                                        style: TextStyle(
+                                          fontSize: isSmallScreen ? 16 : 18,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFF1E293B),
+                                          letterSpacing: -0.3,
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ),
-                            ),
+
+                                  SizedBox(height: isShortScreen ? 10 : 16),
+
+                                  // CALL Red Button (Calls 1st Guardian if available, else 112)
+                                  Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 14.0 : 24.0),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: _triggerCall112Dialog,
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: Container(
+                                          width: double.infinity,
+                                          padding: EdgeInsets.symmetric(
+                                            vertical: isShortScreen ? 10 : 12,
+                                            horizontal: isSmallScreen ? 12 : 16,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFDC2626),
+                                            borderRadius: BorderRadius.circular(20),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: const Color(0xFFDC2626).withValues(alpha: 0.35),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 4),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 36,
+                                                height: 36,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white.withValues(alpha: 0.2),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.phone,
+                                                  color: Colors.white,
+                                                  size: 19,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      callBtnLabel,
+                                                      style: TextStyle(
+                                                        fontSize: isSmallScreen ? 14.5 : 16,
+                                                        fontWeight: FontWeight.w900,
+                                                        color: Colors.white,
+                                                        letterSpacing: 0.5,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      callBtnSub,
+                                                      style: TextStyle(
+                                                        fontSize: isSmallScreen ? 10 : 11,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Colors.white70,
+                                                      ),
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
 
                           const Spacer(flex: 2),

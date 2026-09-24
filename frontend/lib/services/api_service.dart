@@ -109,6 +109,33 @@ class ApiService {
     }
   }
 
+  // --- Guest: Sync Anonymous Guest User in Supabase ---
+  Future<Map<String, dynamic>?> syncGuestUser({
+    required String guestId,
+    List<Map<String, String>>? guardians,
+  }) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/user/guest'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'guestId': guestId,
+              'guardians': ?guardians,
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final body = jsonDecode(res.body);
+        return body['data'];
+      }
+    } catch (e) {
+      debugPrint('API Guest Sync Error: $e');
+    }
+    return null;
+  }
+
   // --- SOS: Trigger Emergency ---
   Future<Map<String, dynamic>?> triggerEmergencyAlert({
     required String userPhone,

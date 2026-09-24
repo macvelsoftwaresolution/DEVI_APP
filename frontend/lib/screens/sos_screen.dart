@@ -50,6 +50,29 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
   // --- Handle SOS Action ---
   void _onSosTriggered() {
+    if (_isEmergencyActive) {
+      setState(() {
+        _isEmergencyActive = false;
+      });
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text('SOS Alert deactivated.', style: TextStyle(fontWeight: FontWeight.w600)),
+            ],
+          ),
+          backgroundColor: AppColors.primaryNavy,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     if (_appState.isGuest) {
       // Guest user has no contacts added yet -> navigate to No Contacts Added screen
       Navigator.of(context).push(
@@ -58,7 +81,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
         ),
       );
     } else {
-      // Registered user -> directly send alert to contacts (no confirm popup)
+      // Registered user -> directly send alert to contacts (no popup)
       _triggerSosAlert();
     }
   }
@@ -86,7 +109,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     }
   }
 
-  // --- Registered user: Alert only registered contacts (no 112) ---
+  // --- Registered user: Alert registered contacts silently without blocking dialog ---
   Future<void> _triggerSosAlert() async {
     setState(() {
       _isEmergencyActive = true;
@@ -94,55 +117,42 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     });
 
     if (_appState.guardians.isEmpty) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: const Row(
+      await SmsService.makePhoneCall('112');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
             children: [
-              Icon(Icons.warning_amber_rounded, color: Color(0xFFB91C1C), size: 28),
-              SizedBox(width: 8),
-              Text(
-                'No Contacts Added',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1E293B),
+              Icon(Icons.phone_in_talk, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '⚠️ No guardians added. Calling Emergency 112...',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                 ),
               ),
             ],
           ),
-          content: const Text(
-            'Please add at least one emergency contact in Settings to receive SOS alerts.',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          backgroundColor: AppColors.emergencyRed,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          action: SnackBarAction(
+            label: 'Settings',
+            textColor: Colors.white,
+            onPressed: _navigateToSettings,
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() {
-                  _isEmergencyActive = false;
-                });
-              },
-              child: const Text(
-                'OK',
-                style: TextStyle(
-                  color: AppColors.emergencyRed,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
         ),
       );
       return;
     }
 
     final guardiansList = _appState.guardians;
-    final guardianTexts = guardiansList.isEmpty
-        ? '• No contacts registered'
-        : guardiansList.map((g) => '• ${g.name} (+91 ${g.phone})').join('\n');
+    final primaryGuardian = guardiansList.first;
+    final primaryName = primaryGuardian.name.trim().isNotEmpty
+        ? primaryGuardian.name.trim()
+        : 'Guardian 1';
+    final primaryPhone = primaryGuardian.phone;
 
     // 1. Silent SMS Broadcast directly via Phone SIM to all registered guardians
     final guardianPhones = guardiansList.map((g) => g.phone).toList();
@@ -153,80 +163,37 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
     // 2. Dynamic API call to backend to register and dispatch SOS alert
     final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
-    final alertResult = await ApiService.instance.triggerEmergencyAlert(
+    await ApiService.instance.triggerEmergencyAlert(
       userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
       location: '',
       contactsAlerted: contactStrings,
     );
 
-    final alertId = alertResult?['id'] ?? 'SOS_${DateTime.now().millisecondsSinceEpoch}';
+    // 3. Immediately initiate phone call to the 1st Guardian
+    await SmsService.makePhoneCall(primaryPhone);
 
     if (!mounted) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Row(
+    // Non-intrusive floating feedback banner indicating call & SMS
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.emergencyRed, size: 28),
-            SizedBox(width: 8),
-            Text(
-              'EMERGENCY ALERT',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppColors.emergencyRed,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Emergency distress alert dispatched to your registered contacts:\n\n$guardianTexts\n\n'
-              '${smsCount > 0 ? "✅ $smsCount Emergency SMS sent silently via SIM." : "📱 Direct SMS dispatched to contacts."}',
-              style: const TextStyle(fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.emergencyRed.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
+            const Icon(Icons.phone_in_talk, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
               child: Text(
-                'Server Ref: $alertId\nStatus: DISPATCHED',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.emergencyRed,
-                ),
+                '📞 Calling $primaryName (+91 $primaryPhone)... ${smsCount > 0 ? "$smsCount SMS sent." : ""}',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
               ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              setState(() {
-                _isEmergencyActive = false;
-              });
-            },
-            child: const Text(
-              'Cancel Alert',
-              style: TextStyle(
-                color: AppColors.emergencyRed,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
+        backgroundColor: const Color(0xFF1E2532),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 4),
       ),
     );
   }
@@ -611,12 +578,13 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                       onTap: _onSosTriggered,
                       onLongPressStart: (_) => _onHoldStart(),
                       onLongPressEnd: (_) => _onHoldEnd(),
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
                         width: double.infinity,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: _isEmergencyActive
-                                ? [const Color(0xFFFF1E38), const Color(0xFFB00010)]
+                                ? [const Color(0xFFF05252), const Color(0xFFE04444)]
                                 : [const Color(0xFFE80B1E), const Color(0xFFD60719)],
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
@@ -624,7 +592,10 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                           borderRadius: BorderRadius.circular(isSmallScreen ? 24 : 32),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.emergencyRed.withValues(alpha: 0.35),
+                              color: (_isEmergencyActive
+                                      ? const Color(0xFFF05252)
+                                      : AppColors.emergencyRed)
+                                  .withValues(alpha: 0.35),
                               blurRadius: 24,
                               offset: const Offset(0, 8),
                             ),
@@ -648,11 +619,14 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                     AnimatedScale(
                                       scale: _isEmergencyActive ? 1.15 : 1.0,
                                       duration: const Duration(milliseconds: 300),
-                                      child: Container(
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 300),
                                         width: circleSize,
                                         height: circleSize,
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFBF0818),
+                                          color: _isEmergencyActive
+                                              ? const Color(0xFFD83A3A)
+                                              : const Color(0xFFBF0818),
                                           shape: BoxShape.circle,
                                           boxShadow: [
                                             BoxShadow(

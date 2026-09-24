@@ -96,4 +96,23 @@ class SmsService {
     }
     return successCount;
   }
+
+  /// Initiates a phone call to the primary guardian or emergency number (112)
+  static Future<bool> makePhoneCall(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    if (clean.isEmpty) return false;
+
+    if (kIsWeb) {
+      debugPrint('🌐 [WEB PHONE CALL SIMULATED] Calling: $clean');
+      return true;
+    }
+
+    try {
+      final bool? res = await _channel.invokeMethod('makeCall', {'phone': clean});
+      return res ?? true;
+    } catch (e) {
+      debugPrint('Error making phone call to $clean: $e');
+      return false;
+    }
+  }
 }

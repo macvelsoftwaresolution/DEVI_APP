@@ -96,6 +96,70 @@ export const DataService = {
     }
   },
 
+  async createOrGetGuestUser(guestIdentifier, guardians = []) {
+    if (!guestIdentifier) return null;
+    const cleanId = guestIdentifier.trim();
+
+    try {
+      // 1. Check if this guest user already exists in Supabase
+      let user = await this.findUserByPhone(cleanId);
+
+      if (!user) {
+        // Insert new anonymous guest user into users table with is_guest = true
+        const { data: newUser, error } = await supabase
+          .from('users')
+          .insert([
+            {
+              mobile_number: cleanId,
+              full_name: 'Guest User',
+              address_1: 'Guest Session',
+              address_2: 'Unregistered',
+              is_guest: true,
+            },
+          ])
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Supabase create guest user error:', error.message);
+          throw error;
+        }
+
+        user = {
+          id: newUser.id,
+          phone: newUser.mobile_number,
+          name: newUser.full_name,
+          address1: newUser.address_1,
+          address2: newUser.address_2,
+          isGuest: true,
+          guardians: [],
+          createdAt: newUser.created_at,
+        };
+      }
+
+      // If guest provided guardians, sync them to guardians table
+      if (Array.isArray(guardians) && guardians.length > 0) {
+        await supabase.from('guardians').delete().eq('user_id', user.id);
+        const rows = guardians
+          .filter((g) => g.phone && g.phone.trim() !== '')
+          .map((g) => ({
+            user_id: user.id,
+            name: g.name || 'Guardian',
+            mobile_number: g.phone.trim(),
+          }));
+        if (rows.length > 0) {
+          await supabase.from('guardians').insert(rows);
+        }
+        return await this.findUserByPhone(cleanId);
+      }
+
+      return user;
+    } catch (err) {
+      console.error('Unexpected error in createOrGetGuestUser:', err);
+      throw err;
+    }
+  },
+
   async updateUserProfile(phone, { name, address1, address2, guardians }) {
     if (!phone) throw new Error('Phone is required');
     const cleanPhone = phone.trim();
