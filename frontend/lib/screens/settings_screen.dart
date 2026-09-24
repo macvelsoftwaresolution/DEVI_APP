@@ -339,9 +339,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
       body: SafeArea(
-        child: Center(
+        child: Align(
+          alignment: Alignment.topCenter,
           child: SingleChildScrollView(
-            padding: EdgeInsets.symmetric(horizontal: horizontalPad, vertical: 12.0),
+            padding: EdgeInsets.symmetric(horizontal: horizontalPad, vertical: 16.0),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
               child: Column(
