@@ -39,6 +39,7 @@ yarn-error.log*
 **/android/app/debug
 **/android/app/profile
 **/android/app/release
+**/.kotlin/
 
 # Widget Preview related
 .widget_preview/
