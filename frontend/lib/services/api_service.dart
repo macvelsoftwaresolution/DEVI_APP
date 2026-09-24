@@ -7,16 +7,11 @@ class ApiService {
   factory ApiService() => instance;
   ApiService._internal();
 
-  // Dynamic baseUrl depending on platform
-  static String get baseUrl {
-    if (kIsWeb) {
-      return 'http://localhost:5000/api';
-    } else if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:5000/api';
-    } else {
-      return 'http://localhost:5000/api';
-    }
-  }
+  // Live Hostinger VPS Server URL
+  static const String liveServerUrl = 'http://187.127.182.169:5005/api';
+
+  // Base URL for all API requests
+  static String get baseUrl => liveServerUrl;
 
   // --- Check API Server Health ---
   Future<bool> checkHealth() async {
