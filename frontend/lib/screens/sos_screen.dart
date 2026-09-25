@@ -170,10 +170,18 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     }
   }
 
+  void _sendNow() {
+    _countdownTimer?.cancel();
+    setState(() {
+      _isCountingDown = false;
+      _countdownSeconds = _defaultCountdownSeconds;
+    });
+    _triggerSosAlert();
+  }
+
   // --- Complete Press-and-Hold: Smooth 1.5s Hold with Circular Progress Feedback ---
   void _onHoldStart() {
-    if (_isCountingDown) {
-      _cancelSosCountdown();
+    if (_isCountingDown || _isEmergencyActive) {
       return;
     }
     _pressStartTime = DateTime.now();
@@ -698,11 +706,15 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                   // SOS Home Card (Presented for both Registered and Guest User)
                   Expanded(
                     child: GestureDetector(
-                      onTap: _onSosTriggered,
-                      onTapDown: (_) {
+                      onTap: () {
                         if (_isCountingDown) {
                           _cancelSosCountdown();
                         } else {
+                          _onSosTriggered();
+                        }
+                      },
+                      onTapDown: (_) {
+                        if (!_isCountingDown && !_isEmergencyActive) {
                           _onHoldStart();
                         }
                       },
@@ -859,6 +871,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
                                           GestureDetector(
+                                            behavior: HitTestBehavior.opaque,
                                             onTap: _cancelSosCountdown,
                                             child: Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -893,14 +906,8 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                           ),
                                           const SizedBox(width: 10),
                                           GestureDetector(
-                                            onTap: () {
-                                              _countdownTimer?.cancel();
-                                              setState(() {
-                                                _isCountingDown = false;
-                                                _countdownSeconds = _defaultCountdownSeconds;
-                                              });
-                                              _triggerSosAlert();
-                                            },
+                                            behavior: HitTestBehavior.opaque,
+                                            onTap: _sendNow,
                                             child: Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                               decoration: BoxDecoration(
