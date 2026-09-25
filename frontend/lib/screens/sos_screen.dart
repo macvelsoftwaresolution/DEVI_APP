@@ -7,7 +7,6 @@ import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
 import 'history_screen.dart';
-import 'guest_screen.dart';
 import 'settings_screen.dart';
 
 class SosScreen extends StatefulWidget {
@@ -26,6 +25,17 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
   double _holdProgress = 0.0;
   late AnimationController _pulseController;
 
+  // --- False Alarm Prevention Countdown ---
+  static const int _defaultCountdownSeconds = 5;
+  Timer? _countdownTimer;
+  int _countdownSeconds = _defaultCountdownSeconds;
+  bool _isCountingDown = false;
+
+  // --- Complete Press-and-Hold Animation State ---
+  DateTime? _pressStartTime;
+  bool _isHolding = false;
+  bool _didTriggerViaHold = false;
+
   @override
   void initState() {
     super.initState();
@@ -40,6 +50,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
   void dispose() {
     _appState.removeListener(_onStateChange);
     _holdTimer?.cancel();
+    _countdownTimer?.cancel();
     _pulseController.dispose();
     SoundService.instance.stopSiren();
     super.dispose();
@@ -51,6 +62,27 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
   // --- Handle SOS Action ---
   void _onSosTriggered() {
+    // If triggered by a full 1.5s hold, ignore subsequent tap
+    if (_didTriggerViaHold) {
+      _didTriggerViaHold = false;
+      return;
+    }
+
+    final holdDuration = _pressStartTime != null
+        ? DateTime.now().difference(_pressStartTime!).inMilliseconds
+        : 0;
+
+    // If finger was held for > 350ms but not completed to 1.5s, it was an aborted hold
+    if (holdDuration > 350) {
+      return;
+    }
+
+    // If countdown is active, tapping cancels the false alarm immediately
+    if (_isCountingDown) {
+      _cancelSosCountdown();
+      return;
+    }
+
     if (_isEmergencyActive) {
       setState(() {
         _isEmergencyActive = false;
@@ -75,28 +107,99 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       return;
     }
 
-    if (_appState.isGuest) {
-      // Guest user has no contacts added yet -> navigate to No Contacts Added screen
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => const NoContactsScreen(autoStartCountdown: true),
+    // Both Registered and Guest users get the identical 5-second countdown with visual seconds display
+    _startSosCountdown();
+  }
+
+  void _startSosCountdown() {
+    if (!mounted) return;
+    if (_isCountingDown) {
+      _cancelSosCountdown();
+      return;
+    }
+
+    setState(() {
+      _isCountingDown = true;
+      _countdownSeconds = _defaultCountdownSeconds;
+      _holdProgress = 0.0;
+      _isHolding = false;
+    });
+
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_countdownSeconds > 1) {
+          _countdownSeconds--;
+        } else {
+          _countdownTimer?.cancel();
+          _isCountingDown = false;
+          _countdownSeconds = _defaultCountdownSeconds;
+          _triggerSosAlert();
+        }
+      });
+    });
+  }
+
+  void _cancelSosCountdown() {
+    _countdownTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _isCountingDown = false;
+        _countdownSeconds = _defaultCountdownSeconds;
+      });
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text('SOS cancelled. False alarm prevented.', style: TextStyle(fontWeight: FontWeight.w600)),
+            ],
+          ),
+          backgroundColor: AppColors.primaryNavy,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 2),
         ),
       );
-    } else {
-      // Registered user -> directly send alert to contacts (no popup)
-      _triggerSosAlert();
     }
   }
 
+  // --- Complete Press-and-Hold: Smooth 1.5s Hold with Circular Progress Feedback ---
   void _onHoldStart() {
+    if (_isCountingDown) {
+      _cancelSosCountdown();
+      return;
+    }
+    _pressStartTime = DateTime.now();
     _holdTimer?.cancel();
-    _holdProgress = 0.0;
-    _holdTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+    _didTriggerViaHold = false;
+
+    setState(() {
+      _isHolding = true;
+      _holdProgress = 0.0;
+    });
+
+    // 1500ms total duration, updates every 25ms (very smooth 60fps animation)
+    _holdTimer = Timer.periodic(const Duration(milliseconds: 25), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       setState(() {
-        _holdProgress += 0.05;
+        _holdProgress += 25 / 1500;
         if (_holdProgress >= 1.0) {
           _holdTimer?.cancel();
-          _onSosTriggered();
+          _isHolding = false;
+          _holdProgress = 0.0;
+          _didTriggerViaHold = true;
+          // Completed 100% full hold -> immediate SOS trigger!
+          _triggerSosAlert();
         }
       });
     });
@@ -104,8 +207,9 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
   void _onHoldEnd() {
     _holdTimer?.cancel();
-    if (_holdProgress < 1.0) {
+    if (mounted) {
       setState(() {
+        _isHolding = false;
         _holdProgress = 0.0;
       });
     }
@@ -595,8 +699,15 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                   Expanded(
                     child: GestureDetector(
                       onTap: _onSosTriggered,
-                      onLongPressStart: (_) => _onHoldStart(),
-                      onLongPressEnd: (_) => _onHoldEnd(),
+                      onTapDown: (_) {
+                        if (_isCountingDown) {
+                          _cancelSosCountdown();
+                        } else {
+                          _onHoldStart();
+                        }
+                      },
+                      onTapUp: (_) => _onHoldEnd(),
+                      onTapCancel: _onHoldEnd,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
                         width: double.infinity,
@@ -604,14 +715,16 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                           gradient: LinearGradient(
                             colors: _isEmergencyActive
                                 ? [const Color(0xFFF05252), const Color(0xFFE04444)]
-                                : [const Color(0xFFE80B1E), const Color(0xFFD60719)],
+                                : _isCountingDown
+                                    ? [const Color(0xFFFF3366), const Color(0xFFCC0826)]
+                                    : [const Color(0xFFE80B1E), const Color(0xFFD60719)],
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                           ),
                           borderRadius: BorderRadius.circular(isSmallScreen ? 24 : 32),
                           boxShadow: [
                             BoxShadow(
-                              color: (_isEmergencyActive
+                              color: (_isEmergencyActive || _isCountingDown
                                       ? const Color(0xFFF05252)
                                       : AppColors.emergencyRed)
                                   .withValues(alpha: 0.35),
@@ -636,41 +749,82 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     AnimatedScale(
-                                      scale: _isEmergencyActive ? 1.15 : 1.0,
-                                      duration: const Duration(milliseconds: 300),
-                                      child: AnimatedContainer(
-                                        duration: const Duration(milliseconds: 300),
-                                        width: circleSize,
-                                        height: circleSize,
-                                        decoration: BoxDecoration(
-                                          color: _isEmergencyActive
-                                              ? const Color(0xFFD83A3A)
-                                              : const Color(0xFFBF0818),
-                                          shape: BoxShape.circle,
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withValues(alpha: 0.18),
-                                              blurRadius: 10,
-                                              offset: const Offset(0, 4),
+                                      scale: (_isEmergencyActive || _isCountingDown)
+                                          ? 1.15
+                                          : _isHolding
+                                              ? 0.94
+                                              : 1.0,
+                                      duration: const Duration(milliseconds: 200),
+                                      child: Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          // Circular Progress Ring when holding
+                                          if (_holdProgress > 0)
+                                            SizedBox(
+                                              width: circleSize + 16,
+                                              height: circleSize + 16,
+                                              child: CircularProgressIndicator(
+                                                value: _holdProgress,
+                                                strokeWidth: 4.5,
+                                                strokeCap: StrokeCap.round,
+                                                valueColor:
+                                                    const AlwaysStoppedAnimation<Color>(Colors.white),
+                                                backgroundColor:
+                                                    Colors.white.withValues(alpha: 0.25),
+                                              ),
                                             ),
-                                          ],
-                                        ),
-                                        child: Center(
-                                          child: Icon(
-                                            Icons.crisis_alert,
-                                            color: Colors.white,
-                                            size: iconSize,
+                                          AnimatedContainer(
+                                            duration: const Duration(milliseconds: 200),
+                                            width: circleSize,
+                                            height: circleSize,
+                                            decoration: BoxDecoration(
+                                              color: _isEmergencyActive
+                                                  ? const Color(0xFFD83A3A)
+                                                  : _isCountingDown
+                                                      ? Colors.white
+                                                      : const Color(0xFFBF0818),
+                                              shape: BoxShape.circle,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black.withValues(alpha: 0.18),
+                                                  blurRadius: 10,
+                                                  offset: const Offset(0, 4),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Center(
+                                              child: _isCountingDown
+                                                  ? Text(
+                                                      '${_countdownSeconds}s',
+                                                      style: TextStyle(
+                                                        fontSize: iconSize,
+                                                        fontWeight: FontWeight.w900,
+                                                        color: const Color(0xFFDC2626),
+                                                      ),
+                                                    )
+                                                  : Icon(
+                                                      Icons.crisis_alert,
+                                                      color: Colors.white,
+                                                      size: iconSize,
+                                                    ),
+                                            ),
                                           ),
-                                        ),
+                                        ],
                                       ),
                                     ),
 
                                     SizedBox(height: spacing1),
 
                                     Text(
-                                      'SOS',
+                                      _isHolding
+                                          ? 'HOLDING FOR SOS'
+                                          : _isCountingDown
+                                              ? 'ALERT IN ${_countdownSeconds}S'
+                                              : 'SOS',
                                       style: TextStyle(
-                                        fontSize: titleSize,
+                                        fontSize: (_isHolding || _isCountingDown)
+                                            ? (titleSize * 0.72).clamp(24.0, 34.0)
+                                            : titleSize,
                                         fontWeight: FontWeight.w900,
                                         color: Colors.white,
                                         letterSpacing: 1.0,
@@ -682,7 +836,13 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                     Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 24.0),
                                       child: Text(
-                                        'Tap or hold to alert emergency\nservices & contacts',
+                                        _isHolding
+                                            ? 'Keep holding to trigger SOS instantly\nRelease finger to cancel'
+                                            : _isCountingDown
+                                                ? 'Auto-dispatching alert in ${_countdownSeconds}s\nTap anywhere or press Cancel'
+                                                : _isEmergencyActive
+                                                    ? 'EMERGENCY ALERT ACTIVE\nTap to deactivate'
+                                                    : 'Tap for 5s countdown or hold to trigger\nemergency contacts',
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           fontSize: isSmallScreen || isShortScreen ? 11.5 : 12.5,
@@ -692,23 +852,100 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                         ),
                                       ),
                                     ),
+
+                                    if (_isCountingDown) ...[
+                                      SizedBox(height: spacing2),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          GestureDetector(
+                                            onTap: _cancelSosCountdown,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius: BorderRadius.circular(20),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: Colors.black.withValues(alpha: 0.2),
+                                                    blurRadius: 6,
+                                                    offset: const Offset(0, 2),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.close, color: Color(0xFFDC2626), size: 16),
+                                                  SizedBox(width: 4),
+                                                  Text(
+                                                    'CANCEL',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w800,
+                                                      color: Color(0xFFDC2626),
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          GestureDetector(
+                                            onTap: () {
+                                              _countdownTimer?.cancel();
+                                              setState(() {
+                                                _isCountingDown = false;
+                                                _countdownSeconds = _defaultCountdownSeconds;
+                                              });
+                                              _triggerSosAlert();
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withValues(alpha: 0.22),
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(color: Colors.white, width: 1.5),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.send_rounded, color: Colors.white, size: 15),
+                                                  SizedBox(width: 4),
+                                                  Text(
+                                                    'SEND NOW',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w800,
+                                                      color: Colors.white,
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ],
                                 ),
 
-                                // Hold Progress Indicator
+                                // Hold Progress Indicator (Bottom Bar)
                                 if (_holdProgress > 0)
                                   Positioned(
                                     bottom: 20,
-                                    left: 30,
-                                    right: 30,
+                                    left: 40,
+                                    right: 40,
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(4),
                                       child: LinearProgressIndicator(
                                         value: _holdProgress,
-                                        backgroundColor: Colors.white.withValues(alpha: 0.3),
+                                        backgroundColor: Colors.white.withValues(alpha: 0.25),
                                         valueColor:
                                             const AlwaysStoppedAnimation<Color>(Colors.white),
-                                        minHeight: 6,
+                                        minHeight: 5,
                                       ),
                                     ),
                                   ),
