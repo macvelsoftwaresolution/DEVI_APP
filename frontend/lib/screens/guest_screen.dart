@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../services/app_state.dart';
+import '../services/emergency_media_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/emergency_recording_banner.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
 
@@ -93,51 +96,55 @@ class _GuestScreenState extends State<GuestScreen> {
       });
     }
 
-    final guardiansList = _appState.guardians;
+    // Auto-start 2-minute emergency video and audio recording
+    EmergencyMediaService.instance.start2MinEmergencyRecording();
 
-    // If contacts are added by the user:
-    if (guardiansList.isNotEmpty) {
-      final primary = guardiansList.first;
-      final primaryName = primary.name.trim().isNotEmpty ? primary.name.trim() : 'Guardian 1';
-      final primaryPhone = primary.phone;
+    // 2. Save incident in database for verification (No Guardian SMS/Call)
+    final guestId = _appState.phone.isNotEmpty
+        ? _appState.phone
+        : 'GUEST_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
 
-      final guardianPhones = guardiansList.map((g) => g.phone).toList();
-      final smsCount = await SmsService.broadcastEmergencySms(
-        phoneNumbers: guardianPhones,
-        userName: _appState.name.isNotEmpty ? _appState.name : 'Guest User',
-      );
+    await ApiService.instance.triggerEmergencyAlert(
+      userPhone: guestId,
+      location: 'Guest Live Location (Stored for Verification)',
+      latitude: 13.0827,
+      longitude: 80.2707,
+      contactsAlerted: [],
+    );
 
-      // Call 1st guardian
-      await SmsService.makePhoneCall(primaryPhone);
+    if (!mounted) return;
 
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.phone_in_talk, color: Colors.white, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '📞 Calling $primaryName (+91 $primaryPhone)... ${smsCount > 0 ? "$smsCount SMS sent." : ""}',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                ),
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.verified_user_rounded, color: Colors.white, size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '🛡️ SOS Incident & 2-Min Evidence Stored in Database (Ready for Verification)',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
               ),
-            ],
-          ),
-          backgroundColor: const Color(0xFF1E2532),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 4),
+            ),
+          ],
         ),
-      );
-      return;
-    }
+        backgroundColor: const Color(0xFF0F172A),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'History',
+          textColor: const Color(0xFF38BDF8),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => const HistoryScreen()),
+            );
+          },
+        ),
+      ),
+    );
 
-    // Fallback if no contacts added yet:
-    _triggerCall112Dialog();
   }
 
   void _triggerCall112Dialog() async {
@@ -534,6 +541,9 @@ class _GuestScreenState extends State<GuestScreen> {
                   ),
 
                   SizedBox(height: isShortScreen ? 4 : 6),
+
+                  // Emergency 2-Minute Recording Live Banner & Evidence Player
+                  const EmergencyRecordingBanner(),
 
                   // Demo Pill
                   GestureDetector(

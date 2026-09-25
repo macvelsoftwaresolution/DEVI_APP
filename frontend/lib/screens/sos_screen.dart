@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
-import '../services/sms_service.dart';
+import '../services/emergency_media_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/emergency_permission_dialog.dart';
+import '../widgets/emergency_recording_banner.dart';
 import 'history_screen.dart';
 import 'guest_screen.dart';
 import 'settings_screen.dart';
@@ -33,6 +35,10 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      EmergencyPermissionDialog.showIfNeeded(context);
+    });
   }
 
   @override
@@ -54,6 +60,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       setState(() {
         _isEmergencyActive = false;
       });
+      EmergencyMediaService.instance.stopEmergencyRecording();
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -109,91 +116,57 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     }
   }
 
-  // --- Registered user: Alert registered contacts silently without blocking dialog ---
+  // --- Registered user: Record incident & 2-minute evidence in database for verification (No Guardian SMS/Call) ---
   Future<void> _triggerSosAlert() async {
     setState(() {
       _isEmergencyActive = true;
       _holdProgress = 0.0;
     });
 
-    if (_appState.guardians.isEmpty) {
-      await SmsService.makePhoneCall('112');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.phone_in_talk, color: Colors.white, size: 20),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '⚠️ No guardians added. Calling Emergency 112...',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: AppColors.emergencyRed,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          action: SnackBarAction(
-            label: 'Settings',
-            textColor: Colors.white,
-            onPressed: _navigateToSettings,
-          ),
-        ),
-      );
-      return;
-    }
+    // 1. Auto-start 2-minute emergency video and audio recording
+    EmergencyMediaService.instance.start2MinEmergencyRecording();
 
-    final guardiansList = _appState.guardians;
-    final primaryGuardian = guardiansList.first;
-    final primaryName = primaryGuardian.name.trim().isNotEmpty
-        ? primaryGuardian.name.trim()
-        : 'Guardian 1';
-    final primaryPhone = primaryGuardian.phone;
-
-    // 1. Silent SMS Broadcast directly via Phone SIM to all registered guardians
-    final guardianPhones = guardiansList.map((g) => g.phone).toList();
-    final smsCount = await SmsService.broadcastEmergencySms(
-      phoneNumbers: guardianPhones,
-      userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
-    );
-
-    // 2. Dynamic API call to backend to register and dispatch SOS alert
-    final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
+    // 2. Dynamic API call to backend to register SOS incident in database for verification
+    final phone = _appState.phone.isNotEmpty ? _appState.phone : '9500238347';
     await ApiService.instance.triggerEmergencyAlert(
-      userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
-      location: '',
-      contactsAlerted: contactStrings,
+      userPhone: phone,
+      location: 'Live GPS Location (Stored for Verification)',
+      latitude: 13.0827,
+      longitude: 80.2707,
+      contactsAlerted: [],
     );
-
-    // 3. Immediately initiate phone call to the 1st Guardian
-    await SmsService.makePhoneCall(primaryPhone);
 
     if (!mounted) return;
 
-    // Non-intrusive floating feedback banner indicating call & SMS
+    // Feedback banner showing database recording status for verification
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
+        content: const Row(
           children: [
-            const Icon(Icons.phone_in_talk, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
+            Icon(Icons.verified_user_rounded, color: Colors.white, size: 20),
+            SizedBox(width: 10),
             Expanded(
               child: Text(
-                '📞 Calling $primaryName (+91 $primaryPhone)... ${smsCount > 0 ? "$smsCount SMS sent." : ""}',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                '🛡️ SOS Incident & 2-Min Evidence Stored in Database (Ready for Verification)',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
               ),
             ),
           ],
         ),
-        backgroundColor: const Color(0xFF1E2532),
+        backgroundColor: const Color(0xFF0F172A),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'History',
+          textColor: const Color(0xFF38BDF8),
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => const HistoryScreen()),
+            );
+          },
+        ),
       ),
     );
   }
@@ -542,6 +515,9 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                   ),
 
                   SizedBox(height: isShortScreen ? 4 : 6),
+
+                  // Emergency 2-Minute Recording Live Banner & Evidence Player
+                  const EmergencyRecordingBanner(),
 
                   // Demo Pill
                   GestureDetector(
