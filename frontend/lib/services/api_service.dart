@@ -164,6 +164,53 @@ class ApiService {
     return null;
   }
 
+  // --- SOS: Push Real-Time Live Location Update ---
+  Future<bool> updateLiveLocation({
+    required String alertId,
+    required double latitude,
+    required double longitude,
+    String? address,
+    String status = 'ACTIVE',
+  }) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/sos/live-update'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'alertId': alertId,
+              'latitude': latitude,
+              'longitude': longitude,
+              'address': address,
+              'status': status,
+            }),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('API Live Location Update Error: $e');
+      return false;
+    }
+  }
+
+  // --- SOS: Resolve / Deactivate Alert ---
+  Future<bool> resolveEmergencyAlert(String alertId) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/sos/resolve/$alertId'),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 5));
+
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('API SOS Resolve Error: $e');
+      return false;
+    }
+  }
+
   // --- SOS: Get Emergency History ---
   Future<List<Map<String, dynamic>>> getHistory([String? userPhone]) async {
     try {

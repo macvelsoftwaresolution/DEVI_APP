@@ -265,16 +265,29 @@ export const DataService = {
       const ampm = hours >= 12 ? 'PM' : 'AM';
       const formattedHour = hours % 12 || 12;
 
-      return {
-        id: alert.id,
+      const sessionData = {
+        id: alert.id.toString(),
         userId: alert.user_id,
+        userPhone: userPhone || '',
         timestamp: alert.created_at,
         displayTime: `Today, ${formattedHour}:${minutes} ${ampm}`,
         location: alert.location_address || `GPS: ${alert.latitude}, ${alert.longitude}`,
         latitude: alert.latitude,
         longitude: alert.longitude,
-        status: alert.status || 'DISPATCHED',
+        status: alert.status || 'ACTIVE',
+        lastUpdated: alert.created_at || new Date().toISOString(),
+        breadcrumbs: [
+          {
+            latitude: alert.latitude,
+            longitude: alert.longitude,
+            timestamp: alert.created_at || new Date().toISOString(),
+          },
+        ],
       };
+
+      liveTrackSessions.set(alert.id.toString(), sessionData);
+
+      return sessionData;
     } catch (err) {
       console.error('Unexpected error in createSosAlert:', err);
       throw err;
@@ -322,4 +335,128 @@ export const DataService = {
       return [];
     }
   },
+
+  // --- LIVE LOCATION TRACKING ---
+  async updateLiveLocation({ alertId, latitude, longitude, address, status = 'ACTIVE' }) {
+    if (!alertId) return null;
+    const key = alertId.toString();
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+
+    let session = liveTrackSessions.get(key);
+    const nowIso = new Date().toISOString();
+
+    if (!session) {
+      session = {
+        id: key,
+        latitude: lat,
+        longitude: lng,
+        status,
+        lastUpdated: nowIso,
+        breadcrumbs: [],
+      };
+      liveTrackSessions.set(key, session);
+    } else {
+      session.latitude = lat;
+      session.longitude = lng;
+      session.status = status;
+      session.lastUpdated = nowIso;
+    }
+
+    if (!isNaN(lat) && !isNaN(lng)) {
+      session.breadcrumbs.push({
+        latitude: lat,
+        longitude: lng,
+        timestamp: nowIso,
+      });
+      // Keep last 100 breadcrumb points
+      if (session.breadcrumbs.length > 100) {
+        session.breadcrumbs.shift();
+      }
+    }
+
+    // Also update supabase asynchronously if possible
+    try {
+      supabase
+        .from('sos_history')
+        .update({
+          latitude: lat,
+          longitude: lng,
+          location_address: address || `GPS Location (${lat}, ${lng})`,
+          status,
+        })
+        .eq('id', alertId)
+        .then(() => {})
+        .catch((e) => console.error('Supabase live update error:', e));
+    } catch (e) {
+      // ignore
+    }
+
+    return session;
+  },
+
+  async getLiveLocation(alertId) {
+    if (!alertId) return null;
+    const key = alertId.toString();
+    let session = liveTrackSessions.get(key);
+
+    if (!session) {
+      // Fallback query from supabase
+      try {
+        const { data, error } = await supabase
+          .from('sos_history')
+          .select('*')
+          .eq('id', alertId)
+          .maybeSingle();
+
+        if (data && !error) {
+          session = {
+            id: data.id,
+            latitude: data.latitude || 13.0827,
+            longitude: data.longitude || 80.2707,
+            status: data.status || 'ACTIVE',
+            lastUpdated: data.created_at || new Date().toISOString(),
+            breadcrumbs: [
+              {
+                latitude: data.latitude || 13.0827,
+                longitude: data.longitude || 80.2707,
+                timestamp: data.created_at || new Date().toISOString(),
+              },
+            ],
+          };
+          liveTrackSessions.set(key, session);
+        }
+      } catch (e) {
+        console.error('Error fetching fallback live location:', e);
+      }
+    }
+
+    return session;
+  },
+
+  async resolveSosAlert(alertId) {
+    if (!alertId) return null;
+    const key = alertId.toString();
+    let session = liveTrackSessions.get(key);
+    const nowIso = new Date().toISOString();
+
+    if (session) {
+      session.status = 'RESOLVED';
+      session.lastUpdated = nowIso;
+    }
+
+    try {
+      await supabase
+        .from('sos_history')
+        .update({ status: 'RESOLVED' })
+        .eq('id', alertId);
+    } catch (e) {
+      console.error('Supabase resolve alert error:', e);
+    }
+
+    return session || { id: key, status: 'RESOLVED', lastUpdated: nowIso };
+  },
 };
+
+// Real-time live tracking sessions store
+const liveTrackSessions = new Map();

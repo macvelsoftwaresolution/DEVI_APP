@@ -71,7 +71,7 @@ class SmsService {
 
     final String name = userName.trim().isNotEmpty ? userName.trim() : 'User';
     final String locPart = (location != null && location.trim().isNotEmpty)
-        ? ' Location: $location'
+        ? '\n📍 Location: $location'
         : '';
 
     final now = DateTime.now();
@@ -80,7 +80,7 @@ class SmsService {
     final alertRef = now.millisecondsSinceEpoch.toString().substring(7);
 
     final String distressMessage =
-        'EMERGENCY ALERT from DEVI App!\n'
+        '🚨 EMERGENCY ALERT from DEVI App!\n'
         '$name is in danger and triggered SOS at $timeStr (Ref: #$alertRef).$locPart\n'
         'Please call or reach out immediately!';
 
