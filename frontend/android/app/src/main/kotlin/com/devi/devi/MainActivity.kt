@@ -57,6 +57,28 @@ class MainActivity : FlutterActivity() {
                         )
                     }
                 }
+                "requestAllSafetyPermissions" -> {
+                    val required = arrayOf(
+                        Manifest.permission.SEND_SMS,
+                        Manifest.permission.CALL_PHONE,
+                        Manifest.permission.CAMERA,
+                        Manifest.permission.RECORD_AUDIO,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                    )
+                    val allGranted = required.all {
+                        ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+                    }
+                    if (allGranted) {
+                        result.success(true)
+                    } else {
+                        pendingPermissionResult = result
+                        ActivityCompat.requestPermissions(
+                            this,
+                            required,
+                            SMS_PERMISSION_CODE
+                        )
+                    }
+                }
                 "sendSms" -> {
                     val phone = call.argument<String>("phone")
                     val message = call.argument<String>("message")
