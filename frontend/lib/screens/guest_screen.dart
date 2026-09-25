@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../services/app_state.dart';
+import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
@@ -101,10 +103,32 @@ class _GuestScreenState extends State<GuestScreen> {
       final primaryName = primary.name.trim().isNotEmpty ? primary.name.trim() : 'Guardian 1';
       final primaryPhone = primary.phone;
 
+      final locResult = await LocationService.getCurrentLocation();
+      final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
+
+      final alertData = await ApiService.instance.triggerEmergencyAlert(
+        userPhone: _appState.phone.isNotEmpty ? _appState.phone : 'Guest',
+        location: locResult.mapsUrl ?? locResult.displayText,
+        latitude: locResult.latitude,
+        longitude: locResult.longitude,
+        contactsAlerted: contactStrings,
+      );
+
+      final alertId = alertData != null && alertData['id'] != null
+          ? alertData['id'].toString()
+          : DateTime.now().millisecondsSinceEpoch.toString();
+
+      final trackingUrl = (alertData != null && alertData['trackingUrl'] != null)
+          ? alertData['trackingUrl'].toString()
+          : (locResult.mapsUrl ?? 'https://maps.google.com/?q=${locResult.latitude ?? 13.0827},${locResult.longitude ?? 80.2707}');
+
+      LocationService.startLiveTracking(alertId: alertId);
+
       final guardianPhones = guardiansList.map((g) => g.phone).toList();
       final smsCount = await SmsService.broadcastEmergencySms(
         phoneNumbers: guardianPhones,
         userName: _appState.name.isNotEmpty ? _appState.name : 'Guest User',
+        location: trackingUrl,
       );
 
       // Call 1st guardian

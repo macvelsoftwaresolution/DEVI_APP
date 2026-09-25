@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>DEVI app requires access to your location to share your live GPS coordinates with your emergency guardians during an SOS alert.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>DEVI app requires location access to send your location to emergency contacts when SOS is triggered.</string>
 </dict>
 </plist>

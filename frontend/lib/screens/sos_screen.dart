@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
+import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
@@ -54,20 +55,21 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       setState(() {
         _isEmergencyActive = false;
       });
+      LocationService.stopLiveTracking(resolveBackend: true);
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Row(
             children: [
-              Icon(Icons.info_outline, color: Colors.white, size: 20),
+              Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
               SizedBox(width: 8),
-              Text('SOS Alert deactivated.', style: TextStyle(fontWeight: FontWeight.w600)),
+              Text('SOS Deactivated. Live tracking stopped.', style: TextStyle(fontWeight: FontWeight.w600)),
             ],
           ),
           backgroundColor: AppColors.primaryNavy,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 2),
+          duration: const Duration(seconds: 3),
         ),
       );
       return;
@@ -154,22 +156,39 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
         : 'Guardian 1';
     final primaryPhone = primaryGuardian.phone;
 
-    // 1. Silent SMS Broadcast directly via Phone SIM to all registered guardians
+    // 1. Fetch current GPS location
+    final locResult = await LocationService.getCurrentLocation();
+    final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
+
+    // 2. Register SOS alert in Backend to obtain unique Live Tracking URL
+    final alertData = await ApiService.instance.triggerEmergencyAlert(
+      userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
+      location: locResult.mapsUrl ?? locResult.displayText,
+      latitude: locResult.latitude,
+      longitude: locResult.longitude,
+      contactsAlerted: contactStrings,
+    );
+
+    final alertId = alertData != null && alertData['id'] != null
+        ? alertData['id'].toString()
+        : DateTime.now().millisecondsSinceEpoch.toString();
+
+    final trackingUrl = (alertData != null && alertData['trackingUrl'] != null)
+        ? alertData['trackingUrl'].toString()
+        : (locResult.mapsUrl ?? 'https://maps.google.com/?q=${locResult.latitude ?? 13.0827},${locResult.longitude ?? 80.2707}');
+
+    // 3. Start real-time continuous GPS tracking stream in background
+    LocationService.startLiveTracking(alertId: alertId);
+
+    // 4. Send single SMS broadcast with unique Live Tracking Link to guardians
     final guardianPhones = guardiansList.map((g) => g.phone).toList();
     final smsCount = await SmsService.broadcastEmergencySms(
       phoneNumbers: guardianPhones,
       userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
+      location: trackingUrl,
     );
 
-    // 2. Dynamic API call to backend to register and dispatch SOS alert
-    final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
-    await ApiService.instance.triggerEmergencyAlert(
-      userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
-      location: '',
-      contactsAlerted: contactStrings,
-    );
-
-    // 3. Immediately initiate phone call to the 1st Guardian
+    // 5. Immediately initiate phone call to the 1st Guardian
     await SmsService.makePhoneCall(primaryPhone);
 
     if (!mounted) return;
