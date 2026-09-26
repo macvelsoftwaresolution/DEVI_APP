@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/app_state.dart';
-import '../services/sms_service.dart';
+import '../services/permission_service.dart';
 import 'login_screen.dart';
 import 'sos_screen.dart';
 
@@ -27,7 +27,7 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    // 1. Request SMS & Call Phone permissions upfront upon launch
+    // 1. Request Camera, Mic, SMS & Call Phone permissions upfront upon launch
     _initAppFlow();
 
     // Fast and smooth fade-in
@@ -54,12 +54,9 @@ class _SplashScreenState extends State<SplashScreen>
 
   void _initAppFlow() async {
     try {
-      final permitted = await SmsService.hasPermission();
-      if (!permitted) {
-        await SmsService.requestPermission();
-      }
+      await PermissionService.requestAllSafetyPermissions();
     } catch (e) {
-      debugPrint('Error requesting initial permissions: $e');
+      debugPrint('Error requesting initial safety permissions: $e');
     }
 
     try {
