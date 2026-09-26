@@ -560,6 +560,8 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
         return;
       }
 
+      let hasAutoFitted = false;
+
       navigator.geolocation.watchPosition((pos) => {
         guardianLat = pos.coords.latitude;
         guardianLng = pos.coords.longitude;
@@ -572,6 +574,13 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
 
         // Update connecting route line between Guardian and Victim
         connectionLine.setLatLngs([[guardianLat, guardianLng], [victimLat, victimLng]]);
+
+        // Auto-fit bounds on first connect so both Guardian & Victim appear on screen together
+        if (!hasAutoFitted && guardianLat && guardianLng && victimLat && victimLng) {
+          hasAutoFitted = true;
+          const bounds = L.latLngBounds([[victimLat, victimLng], [guardianLat, guardianLng]]);
+          map.fitBounds(bounds, { padding: [70, 70], maxZoom: 17 });
+        }
 
         // Calculate Distance between Guardian & Victim
         const distMeters = map.distance([guardianLat, guardianLng], [victimLat, victimLng]);
