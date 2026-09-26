@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
+import '../services/emergency_media_service.dart';
 import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
@@ -241,9 +242,6 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
     final guardiansList = _appState.guardians;
     final primaryGuardian = guardiansList.first;
-    final primaryName = primaryGuardian.name.trim().isNotEmpty
-        ? primaryGuardian.name.trim()
-        : 'Guardian 1';
     final primaryPhone = primaryGuardian.phone;
 
     // 1. Fetch current GPS location
@@ -272,7 +270,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
     // 4. Send single SMS broadcast with unique Live Tracking Link to guardians
     final guardianPhones = guardiansList.map((g) => g.phone).toList();
-    final smsCount = await SmsService.broadcastEmergencySms(
+    await SmsService.broadcastEmergencySms(
       phoneNumbers: guardianPhones,
       userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
       location: trackingUrl,
