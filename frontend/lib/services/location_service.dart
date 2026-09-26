@@ -119,10 +119,34 @@ class LocationService {
     _activeTrackingAlertId = alertId;
     debugPrint('🛰️ [LIVE TRACKING INITIATED] For Alert #$alertId');
 
-    const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 5, // Stream updates every 5 meters moved
-    );
+    late LocationSettings locationSettings;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 3, // Stream updates every 3 meters
+        forceLocationManager: true,
+        intervalDuration: const Duration(seconds: 3),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: "🚨 DEVI Emergency SOS Active",
+          notificationText: "Live GPS is continuously streaming to your emergency guardians.",
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      );
+    } else if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS)) {
+      locationSettings = AppleSettings(
+        accuracy: LocationAccuracy.high,
+        activityType: ActivityType.fitness,
+        distanceFilter: 3,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 3,
+      );
+    }
 
     try {
       _positionStreamSub = Geolocator.getPositionStream(

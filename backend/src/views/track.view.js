@@ -553,7 +553,13 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
     updateAreaName(victimLat, victimLng);
 
     // 5. Watch Guardian's Own Live Location
-    if (navigator.geolocation) {
+    function initGuardianLocation() {
+      if (!navigator.geolocation) {
+        document.getElementById('distanceVal').innerText = '📍 Tap Navigation';
+        document.getElementById('distanceSub').innerText = 'Open in Google Maps';
+        return;
+      }
+
       navigator.geolocation.watchPosition((pos) => {
         guardianLat = pos.coords.latitude;
         guardianLng = pos.coords.longitude;
@@ -564,7 +570,7 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
           guardianMarker.setLatLng([guardianLat, guardianLng]);
         }
 
-        // Update connecting route line
+        // Update connecting route line between Guardian and Victim
         connectionLine.setLatLngs([[guardianLat, guardianLng], [victimLat, victimLng]]);
 
         // Calculate Distance between Guardian & Victim
@@ -586,15 +592,26 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
         // Update Turn-by-Turn Google Navigation Link with Origin + Destination
         document.getElementById('navBtn').href = 'https://www.google.com/maps/dir/?api=1&origin=' + guardianLat + ',' + guardianLng + '&destination=' + victimLat + ',' + victimLng + '&travelmode=driving';
       }, (err) => {
-        console.log('Guardian location not shared:', err);
-        document.getElementById('distanceVal').innerText = 'Direct Navigation';
-        document.getElementById('distanceSub').innerText = 'Tap button below';
+        console.log('Guardian location info:', err.message);
+        document.getElementById('distanceVal').innerText = '📍 Tap Navigation';
+        document.getElementById('distanceSub').innerText = 'Turn-by-Turn GPS';
       }, {
         enableHighAccuracy: true,
-        maximumAge: 10000,
+        maximumAge: 5000,
         timeout: 10000
       });
     }
+
+    initGuardianLocation();
+
+    // Clicking distance badge requests permission / connects
+    document.getElementById('distanceBadge').addEventListener('click', () => {
+      initGuardianLocation();
+      if (guardianLat && guardianLng) {
+        const bounds = L.latLngBounds([[victimLat, victimLng], [guardianLat, guardianLng]]);
+        map.fitBounds(bounds, { padding: [80, 80] });
+      }
+    });
 
     // 6. Polling Live GPS of Victim every 3 seconds
     async function fetchLiveLocation() {
