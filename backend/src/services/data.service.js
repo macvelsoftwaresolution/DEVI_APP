@@ -276,6 +276,7 @@ export const DataService = {
         longitude: alert.longitude,
         status: alert.status || 'ACTIVE',
         lastUpdated: alert.created_at || new Date().toISOString(),
+        evidenceUrl: alert.evidence_url || null,
         breadcrumbs: [
           {
             latitude: alert.latitude,
@@ -328,6 +329,7 @@ export const DataService = {
           latitude: alert.latitude,
           longitude: alert.longitude,
           status: alert.status || 'DISPATCHED',
+          evidenceUrl: alert.evidence_url || alert.audio_url || null,
         };
       });
     } catch (err) {
@@ -416,6 +418,7 @@ export const DataService = {
             longitude: data.longitude || 80.2707,
             status: data.status || 'ACTIVE',
             lastUpdated: data.created_at || new Date().toISOString(),
+            evidenceUrl: data.evidence_url || data.audio_url || null,
             breadcrumbs: [
               {
                 latitude: data.latitude || 13.0827,
@@ -432,6 +435,49 @@ export const DataService = {
     }
 
     return session;
+  },
+
+  async attachEvidenceUrl(alertId, evidenceUrl) {
+    if (!alertId || !evidenceUrl) return null;
+    const key = alertId.toString();
+    let session = liveTrackSessions.get(key);
+
+    if (session) {
+      session.evidenceUrl = evidenceUrl;
+      session.lastUpdated = new Date().toISOString();
+    }
+
+    try {
+      // Try updating both columns together
+      const { error } = await supabase
+        .from('sos_history')
+        .update({
+          evidence_url: evidenceUrl,
+          audio_url: evidenceUrl,
+        })
+        .eq('id', alertId);
+
+      // If one of the columns doesn't exist, try updating them individually
+      if (error) {
+        await supabase
+          .from('sos_history')
+          .update({ audio_url: evidenceUrl })
+          .eq('id', alertId)
+          .then(() => {})
+          .catch(() => {});
+
+        await supabase
+          .from('sos_history')
+          .update({ evidence_url: evidenceUrl })
+          .eq('id', alertId)
+          .then(() => {})
+          .catch(() => {});
+      }
+    } catch (e) {
+      console.error('Error updating evidence/audio URL in Supabase:', e);
+    }
+
+    return session || { id: key, evidenceUrl };
   },
 
   async resolveSosAlert(alertId) {

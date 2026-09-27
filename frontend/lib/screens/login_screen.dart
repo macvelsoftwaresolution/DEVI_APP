@@ -5,7 +5,6 @@ import '../services/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/devi_button.dart';
 import '../widgets/devi_logo.dart';
-import '../widgets/emergency_permission_dialog.dart';
 import 'profile_screen.dart';
 import 'sos_screen.dart';
 
@@ -24,9 +23,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      EmergencyPermissionDialog.showIfNeeded(context);
-    });
   }
 
   @override

@@ -7,7 +7,6 @@ import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/emergency_permission_dialog.dart';
 import '../widgets/emergency_recording_banner.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -47,10 +46,6 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      EmergencyPermissionDialog.showIfNeeded(context);
-    });
   }
 
   @override
@@ -153,6 +148,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
   void _cancelSosCountdown() {
     _countdownTimer?.cancel();
+    EmergencyMediaService.instance.reset();
     if (mounted) {
       setState(() {
         _isCountingDown = false;
@@ -238,7 +234,8 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     });
 
     // 1. Auto-start 2-minute emergency video and audio recording
-    EmergencyMediaService.instance.start2MinEmergencyRecording();
+    final initialId = 'SOS_${DateTime.now().millisecondsSinceEpoch}';
+    EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
 
     final guardiansList = _appState.guardians;
     final primaryGuardian = guardiansList.first;
@@ -261,6 +258,9 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
         ? alertData['id'].toString()
         : DateTime.now().millisecondsSinceEpoch.toString();
 
+    // Bind alert ID for automatic evidence upload to Cloudinary upon completion
+    EmergencyMediaService.instance.setAlertId(alertId);
+
     final trackingUrl = (alertData != null && alertData['trackingUrl'] != null)
         ? alertData['trackingUrl'].toString()
         : (locResult.mapsUrl ?? 'https://maps.google.com/?q=${locResult.latitude ?? 13.0827},${locResult.longitude ?? 80.2707}');
@@ -274,6 +274,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       phoneNumbers: guardianPhones,
       userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
       location: trackingUrl,
+      alertId: alertId,
     );
 
     // 5. Immediately initiate phone call to the 1st Guardian

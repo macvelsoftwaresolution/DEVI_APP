@@ -155,31 +155,31 @@ class _EmergencyRecordingBannerState extends State<EmergencyRecordingBanner>
       );
     }
 
-    // If not recording, but evidence has been saved:
-    if (_mediaService.lastRecordedUrl != null) {
+    // If uploading to Cloudinary in background:
+    if (_mediaService.isUploading) {
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: const Color(0xFF0F172A),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF334155)),
+          border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.5)),
         ),
-        child: Row(
+        child: const Row(
           children: [
-            const Icon(
-              Icons.video_library_rounded,
-              color: Color(0xFF38BDF8),
-              size: 20,
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
             ),
-            const SizedBox(width: 12),
-            const Expanded(
+            SizedBox(width: 12),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Emergency Evidence Saved',
+                    'Saving Emergency Evidence...',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 13,
@@ -187,25 +187,106 @@ class _EmergencyRecordingBannerState extends State<EmergencyRecordingBanner>
                     ),
                   ),
                   Text(
-                    '2-Min Video & Audio recorded',
-                    style: TextStyle(color: Colors.white60, fontSize: 11),
+                    'Uploading securely to Cloudinary & Database',
+                    style: TextStyle(color: Color(0xFF38BDF8), fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // If not recording, but evidence has been saved:
+    if (_mediaService.lastRecordedUrl != null || _mediaService.localFilePath != null) {
+      final isCloudSaved = _mediaService.lastRecordedUrl != null &&
+          _mediaService.lastRecordedUrl!.startsWith('http');
+      final isPlaying = _mediaService.isPlayingAudio;
+
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isPlaying ? const Color(0xFF22C55E) : const Color(0xFF334155),
+            width: isPlaying ? 1.5 : 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isPlaying ? Icons.graphic_eq_rounded : Icons.verified_user_rounded,
+              color: isPlaying ? const Color(0xFF22C55E) : const Color(0xFF38BDF8),
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isPlaying ? 'Playing Audio Evidence...' : 'Emergency Evidence Saved',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    isCloudSaved
+                        ? '✅ Stored in Cloudinary & Linked to DB'
+                        : 'Audio recorded on device',
+                    style: TextStyle(
+                      color: isCloudSaved ? const Color(0xFF38BDF8) : Colors.white60,
+                      fontSize: 11,
+                      fontWeight: isCloudSaved ? FontWeight.w600 : FontWeight.w400,
+                    ),
                   ),
                 ],
               ),
             ),
             ElevatedButton.icon(
               onPressed: () => _mediaService.viewEvidence(),
-              icon: const Icon(Icons.play_arrow_rounded, size: 16),
-              label: const Text('View Evidence', style: TextStyle(fontSize: 11)),
+              icon: Icon(
+                isCloudSaved
+                    ? Icons.videocam_rounded
+                    : (isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                size: 18,
+              ),
+              label: Text(
+                isCloudSaved
+                    ? 'Watch Video'
+                    : (isPlaying ? 'Pause' : 'Play Audio'),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
+                backgroundColor: isCloudSaved
+                    ? const Color(0xFFEF4444)
+                    : (isPlaying ? const Color(0xFF16A34A) : const Color(0xFF2563EB)),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                 ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            InkWell(
+              onTap: () => _mediaService.dismissEvidence(),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close_rounded, size: 16, color: Colors.white70),
               ),
             ),
           ],

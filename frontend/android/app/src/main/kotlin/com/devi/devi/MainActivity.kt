@@ -14,11 +14,39 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.devi.app/sms"
+    private val RECORDER_CHANNEL = "com.devi.app/recorder"
     private val SMS_PERMISSION_CODE = 101
     private var pendingPermissionResult: MethodChannel.Result? = null
 
+    private var mediaRecorder: android.media.MediaRecorder? = null
+    private var recordingOutputFile: java.io.File? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // Native Emergency Audio/Evidence Recorder Channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, RECORDER_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "startRecording" -> {
+                    val hasAudio = ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.RECORD_AUDIO
+                    ) == PackageManager.PERMISSION_GRANTED
+
+                    if (!hasAudio) {
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    val started = startNativeRecording()
+                    result.success(started)
+                }
+                "stopRecording" -> {
+                    val filePath = stopNativeRecording()
+                    result.success(filePath)
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -168,5 +196,58 @@ class MainActivity : FlutterActivity() {
             pendingPermissionResult?.success(granted)
             pendingPermissionResult = null
         }
+    }
+
+    private fun startNativeRecording(): Boolean {
+        return try {
+            stopNativeRecording() // release any previous session
+
+            val cacheDir = applicationContext.cacheDir
+            val outFile = java.io.File(cacheDir, "devi_sos_evidence_${System.currentTimeMillis()}.mp4")
+            recordingOutputFile = outFile
+
+            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                android.media.MediaRecorder(applicationContext)
+            } else {
+                @Suppress("DEPRECATION")
+                android.media.MediaRecorder()
+            }
+
+            recorder.apply {
+                setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
+                setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
+                setAudioEncodingBitRate(128000)
+                setAudioSamplingRate(44100)
+                setOutputFile(outFile.absolutePath)
+                prepare()
+                start()
+            }
+            mediaRecorder = recorder
+            android.util.Log.d("DEVI_RECORDER", "Emergency audio recording started: ${outFile.absolutePath}")
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("DEVI_RECORDER", "Failed to start emergency audio recording", e)
+            false
+        }
+    }
+
+    private fun stopNativeRecording(): String? {
+        val path = recordingOutputFile?.absolutePath
+        try {
+            mediaRecorder?.apply {
+                try {
+                    stop()
+                } catch (_: Exception) {}
+                reset()
+                release()
+            }
+            android.util.Log.d("DEVI_RECORDER", "Emergency audio recording stopped. File: $path")
+        } catch (e: Exception) {
+            android.util.Log.e("DEVI_RECORDER", "Error stopping emergency audio recording", e)
+        } finally {
+            mediaRecorder = null
+        }
+        return path
     }
 }
