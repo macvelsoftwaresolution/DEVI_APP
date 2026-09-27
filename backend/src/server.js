@@ -17,10 +17,18 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
 import { renderLiveTrackingHtml } from './views/track.view.js';
+import { renderDashboardHtml } from './views/dashboard.view.js';
 import { DataService } from './services/data.service.js';
 
 // API Routes
 app.use('/api', apiRoutes);
+
+// Operator Command Center Web View (Steps 7, 8, 9)
+app.get('/dashboard', (req, res) => {
+  const html = renderDashboardHtml();
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+});
 
 // Guardian Live Tracking Web View
 app.get('/track/:alertId', async (req, res, next) => {
@@ -43,6 +51,7 @@ app.get('/', (req, res) => {
   res.json({
     name: 'DEVI Women Safety Backend API',
     status: 'online',
+    dashboard: '/dashboard',
     documentation: '/api/health',
   });
 });
