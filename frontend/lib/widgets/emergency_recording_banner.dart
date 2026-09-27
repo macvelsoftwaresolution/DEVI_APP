@@ -159,20 +159,34 @@ class _EmergencyRecordingBannerState extends State<EmergencyRecordingBanner>
     if (_mediaService.lastRecordedUrl != null) {
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: const Color(0xFF0F172A),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: const Color(0xFF334155)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
-            const Icon(
-              Icons.video_library_rounded,
-              color: Color(0xFF38BDF8),
-              size: 20,
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.video_library_rounded,
+                color: Color(0xFF38BDF8),
+                size: 20,
+              ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             const Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,16 +201,25 @@ class _EmergencyRecordingBannerState extends State<EmergencyRecordingBanner>
                     ),
                   ),
                   Text(
-                    '2-Min Video & Audio recorded',
+                    'Video & Audio recorded',
                     style: TextStyle(color: Colors.white60, fontSize: 11),
                   ),
                 ],
               ),
             ),
             ElevatedButton.icon(
-              onPressed: () => _mediaService.viewEvidence(),
+              onPressed: () {
+                _mediaService.viewEvidence();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Opening recorded evidence in video player...'),
+                    duration: Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
               icon: const Icon(Icons.play_arrow_rounded, size: 16),
-              label: const Text('View Evidence', style: TextStyle(fontSize: 11)),
+              label: const Text('View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2563EB),
                 foregroundColor: Colors.white,
@@ -207,6 +230,23 @@ class _EmergencyRecordingBannerState extends State<EmergencyRecordingBanner>
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
+            ),
+            const SizedBox(width: 6),
+            IconButton(
+              tooltip: 'Download video evidence',
+              onPressed: () {
+                _mediaService.downloadEvidence();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Downloading video evidence to your device...'),
+                    duration: Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              icon: const Icon(Icons.download_rounded, color: Colors.white70, size: 20),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
           ],
         ),

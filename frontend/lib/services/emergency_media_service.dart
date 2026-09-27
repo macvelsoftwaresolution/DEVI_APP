@@ -102,16 +102,33 @@ class EmergencyMediaService extends ChangeNotifier {
     return _lastRecordedUrl;
   }
 
-  /// Opens the recorded video for playback or download
+  /// Opens the recorded video for playback or in-browser viewing
   Future<void> viewEvidence() async {
     if (_lastRecordedUrl == null) return;
     try {
-      final uri = Uri.parse(_lastRecordedUrl!);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.platformDefault);
-      }
+      final recorder = _getRecorder();
+      await recorder.openEvidence(_lastRecordedUrl!);
     } catch (e) {
-      debugPrint('Error launching recorded video URL: $e');
+      debugPrint('Error opening evidence via recorder: $e');
+      try {
+        final uri = Uri.parse(_lastRecordedUrl!);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.platformDefault);
+        }
+      } catch (e2) {
+        debugPrint('Fallback launchUrl error: $e2');
+      }
+    }
+  }
+
+  /// Downloads the recorded video evidence to device storage
+  Future<void> downloadEvidence() async {
+    if (_lastRecordedUrl == null) return;
+    try {
+      final recorder = _getRecorder();
+      await recorder.downloadEvidence(_lastRecordedUrl!);
+    } catch (e) {
+      debugPrint('Error downloading evidence: $e');
     }
   }
 

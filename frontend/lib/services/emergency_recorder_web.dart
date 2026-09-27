@@ -147,6 +147,29 @@ class WebEmergencyRecorder implements PlatformEmergencyRecorder {
   }
 
   @override
+  Future<void> openEvidence(String url) async {
+    try {
+      html.window.open(url, '_blank');
+    } catch (e) {
+      debugPrint('WebEmergencyRecorder openEvidence error: $e');
+    }
+  }
+
+  @override
+  Future<void> downloadEvidence(String url) async {
+    try {
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', 'DEVI_Emergency_Evidence_${DateTime.now().millisecondsSinceEpoch}.webm')
+        ..target = '_blank';
+      html.document.body?.append(anchor);
+      anchor.click();
+      anchor.remove();
+    } catch (e) {
+      debugPrint('WebEmergencyRecorder downloadEvidence error: $e');
+    }
+  }
+
+  @override
   void dispose() {
     _isRecording = false;
     try {
@@ -159,3 +182,4 @@ class WebEmergencyRecorder implements PlatformEmergencyRecorder {
 }
 
 PlatformEmergencyRecorder getPlatformEmergencyRecorder() => WebEmergencyRecorder();
+
