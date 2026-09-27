@@ -79,6 +79,7 @@ class _GuestScreenState extends State<GuestScreen> {
 
   void _cancelGuestCountdown() {
     _guestCountdownTimer?.cancel();
+    EmergencyMediaService.instance.reset();
     if (mounted) {
       setState(() {
         _isGuestCountingDown = false;
@@ -97,20 +98,26 @@ class _GuestScreenState extends State<GuestScreen> {
     }
 
     // Auto-start 2-minute emergency video and audio recording
-    EmergencyMediaService.instance.start2MinEmergencyRecording();
+    final initialId = 'GUEST_${DateTime.now().millisecondsSinceEpoch}';
+    EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
 
     // 2. Save incident in database for verification (No Guardian SMS/Call)
     final guestId = _appState.phone.isNotEmpty
         ? _appState.phone
         : 'GUEST_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
 
-    await ApiService.instance.triggerEmergencyAlert(
+    final alertData = await ApiService.instance.triggerEmergencyAlert(
       userPhone: guestId,
       location: 'Guest Live Location (Stored for Verification)',
       latitude: 13.0827,
       longitude: 80.2707,
       contactsAlerted: [],
     );
+
+    final alertId = alertData != null && alertData['id'] != null
+        ? alertData['id'].toString()
+        : DateTime.now().millisecondsSinceEpoch.toString();
+    EmergencyMediaService.instance.setAlertId(alertId);
 
     if (!mounted) return;
 

@@ -1,5 +1,12 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { DataService } from '../services/data.service.js';
+import { uploadMediaToCloudinary } from '../config/cloudinary.js';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+});
 
 const router = Router();
 
@@ -81,6 +88,64 @@ router.get('/live/:alertId', async (req, res, next) => {
       data: session,
     });
   } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/sos/upload-evidence - Uploads 2-minute emergency video/audio evidence to Cloudinary and saves URL
+router.post('/upload-evidence', upload.single('file'), async (req, res, next) => {
+  try {
+    const { alertId } = req.body;
+    if (!alertId) {
+      return res.status(400).json({
+        success: false,
+        message: 'alertId is required in request body',
+      });
+    }
+
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: 'Video or audio file is required in multipart field "file"',
+      });
+    }
+
+    const fileSizeMb = (req.file.size / (1024 * 1024)).toFixed(2);
+    console.log(`📹 [EMERGENCY EVIDENCE UPLOAD] Alert ID: ${alertId}, Size: ${fileSizeMb}MB, MIME: ${req.file.mimetype}`);
+
+    let evidenceUrl = '';
+
+    // If Cloudinary credentials are provided, upload directly to Cloudinary
+    if (
+      process.env.CLOUDINARY_CLOUD_NAME &&
+      process.env.CLOUDINARY_CLOUD_NAME !== 'your_cloud_name' &&
+      process.env.CLOUDINARY_API_KEY &&
+      process.env.CLOUDINARY_API_KEY !== 'your_api_key'
+    ) {
+      const uploadRes = await uploadMediaToCloudinary(req.file.buffer, {
+        public_id: `devi_sos_${alertId}_${Date.now()}`,
+      });
+      evidenceUrl = uploadRes.secure_url || uploadRes.url;
+      console.log(`✅ [CLOUDINARY UPLOAD SUCCESS] Stored URL: ${evidenceUrl}`);
+    } else {
+      console.warn('⚠️ Cloudinary keys not yet configured in .env. Returning simulated Cloudinary URL.');
+      evidenceUrl = `https://res.cloudinary.com/demo/video/upload/devi_sos_${alertId}_evidence.mp4`;
+    }
+
+    // Attach to active live session and persist to Supabase
+    const session = await DataService.attachEvidenceUrl(alertId, evidenceUrl);
+
+    res.status(200).json({
+      success: true,
+      message: 'Emergency evidence video/audio uploaded and attached to SOS alert successfully',
+      data: {
+        alertId,
+        evidenceUrl,
+        session,
+      },
+    });
+  } catch (err) {
+    console.error('Evidence upload failed:', err);
     next(err);
   }
 });

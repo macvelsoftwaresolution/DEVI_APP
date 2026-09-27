@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+import 'emergency_media_service.dart';
 
 class GuardianModel {
   final String name;
@@ -112,6 +113,8 @@ class AppState extends ChangeNotifier {
       if (profilePhotoPath != null) {
         await prefs.setString(_keyProfilePhoto, profilePhotoPath!);
       }
+      // Reset any previous emergency media banner for fresh user session
+      EmergencyMediaService.instance.reset();
     } catch (e) {
       debugPrint('Error saving session: $e');
     }
@@ -127,7 +130,8 @@ class AppState extends ChangeNotifier {
       debugPrint('Error clearing session: $e');
     }
 
-    // Reset local state
+    // Reset local state & any active emergency media banners
+    EmergencyMediaService.instance.reset();
     name = '';
     phone = '';
     address1 = '';

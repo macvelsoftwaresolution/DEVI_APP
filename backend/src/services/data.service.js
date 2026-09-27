@@ -276,6 +276,7 @@ export const DataService = {
         longitude: alert.longitude,
         status: alert.status || 'ACTIVE',
         lastUpdated: alert.created_at || new Date().toISOString(),
+        evidenceUrl: alert.evidence_url || null,
         breadcrumbs: [
           {
             latitude: alert.latitude,
@@ -328,6 +329,7 @@ export const DataService = {
           latitude: alert.latitude,
           longitude: alert.longitude,
           status: alert.status || 'DISPATCHED',
+          evidenceUrl: alert.evidence_url || alert.audio_url || null,
         };
       });
     } catch (err) {
@@ -416,6 +418,7 @@ export const DataService = {
             longitude: data.longitude || 80.2707,
             status: data.status || 'ACTIVE',
             lastUpdated: data.created_at || new Date().toISOString(),
+            evidenceUrl: data.evidence_url || data.audio_url || null,
             breadcrumbs: [
               {
                 latitude: data.latitude || 13.0827,
@@ -432,6 +435,49 @@ export const DataService = {
     }
 
     return session;
+  },
+
+  async attachEvidenceUrl(alertId, evidenceUrl) {
+    if (!alertId || !evidenceUrl) return null;
+    const key = alertId.toString();
+    let session = liveTrackSessions.get(key);
+
+    if (session) {
+      session.evidenceUrl = evidenceUrl;
+      session.lastUpdated = new Date().toISOString();
+    }
+
+    try {
+      // Try updating both columns together
+      const { error } = await supabase
+        .from('sos_history')
+        .update({
+          evidence_url: evidenceUrl,
+          audio_url: evidenceUrl,
+        })
+        .eq('id', alertId);
+
+      // If one of the columns doesn't exist, try updating them individually
+      if (error) {
+        await supabase
+          .from('sos_history')
+          .update({ audio_url: evidenceUrl })
+          .eq('id', alertId)
+          .then(() => {})
+          .catch(() => {});
+
+        await supabase
+          .from('sos_history')
+          .update({ evidence_url: evidenceUrl })
+          .eq('id', alertId)
+          .then(() => {})
+          .catch(() => {});
+      }
+    } catch (e) {
+      console.error('Error updating evidence/audio URL in Supabase:', e);
+    }
+
+    return session || { id: key, evidenceUrl };
   },
 
   async resolveSosAlert(alertId) {
@@ -456,7 +502,323 @@ export const DataService = {
 
     return session || { id: key, status: 'RESOLVED', lastUpdated: nowIso };
   },
+
+  // --- DASHBOARD: GET ALL INCIDENTS WITH USER & GUARDIAN DETAILS ---
+  async getAllIncidentsForDashboard() {
+    try {
+      const { data: alerts, error } = await supabase
+        .from('sos_history')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error || !alerts) {
+        console.error('Supabase fetch incidents error:', error?.message);
+        return [];
+      }
+
+      // Gather unique user IDs
+      const userIds = [...new Set(alerts.map((a) => a.user_id).filter(Boolean))];
+
+      let usersMap = new Map();
+      let guardiansMap = new Map();
+
+      if (userIds.length > 0) {
+        // Fetch user profiles
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, full_name, mobile_number, address_1, address_2, is_guest')
+          .in('id', userIds);
+
+        if (users) {
+          users.forEach((u) => usersMap.set(u.id, u));
+        }
+
+        // Fetch emergency guardians
+        const { data: guardians } = await supabase
+          .from('guardians')
+          .select('id, user_id, name, mobile_number')
+          .in('user_id', userIds);
+
+        if (guardians) {
+          guardians.forEach((g) => {
+            if (!guardiansMap.has(g.user_id)) {
+              guardiansMap.set(g.user_id, []);
+            }
+            guardiansMap.get(g.user_id).push({
+              id: g.id,
+              name: g.name,
+              phone: g.mobile_number,
+            });
+          });
+        }
+      }
+
+      const now = Date.now();
+
+      return alerts.map((alert) => {
+        const key = alert.id.toString();
+        const liveSession = liveTrackSessions.get(key);
+
+        const user = alert.user_id ? usersMap.get(alert.user_id) : null;
+        const guardians = alert.user_id ? guardiansMap.get(alert.user_id) || [] : [];
+
+        const createdDate = new Date(alert.created_at || now);
+        const elapsedSec = Math.floor((now - createdDate.getTime()) / 1000);
+        let timeAgo = 'Just now';
+        if (elapsedSec > 86400) {
+          timeAgo = `${Math.floor(elapsedSec / 86400)}d ago`;
+        } else if (elapsedSec > 3600) {
+          timeAgo = `${Math.floor(elapsedSec / 3600)}h ago`;
+        } else if (elapsedSec > 60) {
+          timeAgo = `${Math.floor(elapsedSec / 60)}m ago`;
+        } else if (elapsedSec > 5) {
+          timeAgo = `${elapsedSec}s ago`;
+        }
+
+        const hours = createdDate.getHours();
+        const minutes = createdDate.getMinutes().toString().padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const formattedHour = hours % 12 || 12;
+        const displayTime = `${createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}, ${formattedHour}:${minutes} ${ampm}`;
+
+        return {
+          id: alert.id.toString(),
+          userId: alert.user_id,
+          createdAt: alert.created_at,
+          displayTime,
+          timeAgo,
+          latitude: liveSession?.latitude ?? alert.latitude ?? 13.0827,
+          longitude: liveSession?.longitude ?? alert.longitude ?? 80.2707,
+          location: alert.location_address || `GPS (${alert.latitude}, ${alert.longitude})`,
+          status: liveSession?.status || alert.status || 'DISPATCHED',
+          evidenceUrl: alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null,
+          assignedAgent: alert.assigned_agent || liveSession?.assignedAgent || null,
+          operatorNotes: alert.operator_notes || liveSession?.operatorNotes || '',
+          user: {
+            name: user?.full_name || (user?.is_guest ? 'Guest Victim' : 'DEVI User'),
+            phone: user?.mobile_number || alert.user_id || '9500238347',
+            address: user ? [user.address_1, user.address_2].filter(Boolean).join(', ') : 'Location on Map',
+            isGuest: user?.is_guest || false,
+          },
+          guardians,
+          breadcrumbs: liveSession?.breadcrumbs || [
+            {
+              latitude: alert.latitude || 13.0827,
+              longitude: alert.longitude || 80.2707,
+              timestamp: alert.created_at,
+            },
+          ],
+        };
+      });
+    } catch (err) {
+      console.error('Unexpected error in getAllIncidentsForDashboard:', err);
+      return [];
+    }
+  },
+
+  // --- DASHBOARD: ASSIGN AGENT TO INCIDENT (Step 8) ---
+  async assignAgent(alertId, agentName, agentPhone = null) {
+    if (!alertId || !agentName) return null;
+    const key = alertId.toString();
+    let session = liveTrackSessions.get(key);
+
+    const displayName = agentPhone ? `${agentName} (${agentPhone})` : agentName;
+
+    if (session) {
+      session.assignedAgent = displayName;
+      session.status = 'ASSIGNED';
+      session.lastUpdated = new Date().toISOString();
+    }
+
+    // Mark responder as ON_MISSION in memory
+    const matched = respondersList.find(r => r.name.toLowerCase().includes(agentName.toLowerCase()) || r.id === agentName);
+    if (matched) {
+      matched.status = 'ON_MISSION';
+    }
+
+    try {
+      await supabase
+        .from('sos_history')
+        .update({
+          assigned_agent: displayName,
+          status: 'ASSIGNED',
+        })
+        .eq('id', alertId);
+    } catch (e) {
+      console.warn('Note updating assigned_agent in Supabase:', e.message);
+    }
+
+    return session || { id: key, assignedAgent: displayName, status: 'ASSIGNED' };
+  },
+
+  // --- DASHBOARD: RESPONDERS / FIELD AGENTS MANAGEMENT ---
+  async getResponders() {
+    try {
+      const { data, error } = await supabase.from('agents').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data;
+      }
+    } catch (_) {}
+    return respondersList;
+  },
+
+  async addResponder({ name, phone, area, latitude, longitude, vehicle }) {
+    const newAgent = {
+      id: `agent-${Date.now()}`,
+      name: (name || 'Safety Volunteer').trim(),
+      phone: (phone || '').trim(),
+      area: (area || 'Assigned Patrol Sector').trim(),
+      latitude: latitude ? parseFloat(latitude) : 9.4532,
+      longitude: longitude ? parseFloat(longitude) : 77.7981,
+      vehicle: (vehicle || 'Motorcycle / Bike').trim(),
+      status: 'AVAILABLE',
+      created_at: new Date().toISOString()
+    };
+
+    try {
+      const { data, error } = await supabase.from('agents').insert([newAgent]).select().single();
+      if (!error && data) {
+        return data;
+      }
+    } catch (_) {}
+
+    respondersList.unshift(newAgent);
+    return newAgent;
+  },
+
+  async deleteResponder(agentId) {
+    try {
+      await supabase.from('agents').delete().eq('id', agentId);
+    } catch (_) {}
+    respondersList = respondersList.filter(a => a.id !== agentId);
+    return true;
+  },
+
+  async getAgentById(agentId) {
+    const list = await this.getResponders();
+    return list.find(a => a.id === agentId || a.id.toString() === agentId.toString());
+  },
+
+  async updateAgentLiveLocation(agentId, { latitude, longitude, heading = null, speed = null }) {
+    if (!agentId || !latitude || !longitude) return null;
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    const nowIso = new Date().toISOString();
+
+    const agent = respondersList.find(a => a.id === agentId || a.id.toString() === agentId.toString());
+    if (agent) {
+      agent.latitude = lat;
+      agent.longitude = lng;
+      agent.last_seen = nowIso;
+      agent.is_live = true;
+      if (agent.status === 'OFF_DUTY') agent.status = 'AVAILABLE';
+    }
+
+    try {
+      await supabase.from('agents').update({
+        latitude: lat,
+        longitude: lng,
+        last_seen: nowIso,
+      }).eq('id', agentId);
+    } catch (_) {}
+
+    return agent || { id: agentId, latitude: lat, longitude: lng, last_seen: nowIso };
+  },
+
+  async setAgentDutyStatus(agentId, status) {
+    const agent = respondersList.find(a => a.id === agentId || a.id.toString() === agentId.toString());
+    if (agent) {
+      agent.status = status;
+      agent.is_live = status === 'ON_DUTY' || status === 'AVAILABLE';
+      agent.last_seen = new Date().toISOString();
+    }
+    try {
+      await supabase.from('agents').update({ status }).eq('id', agentId);
+    } catch (_) {}
+    return agent;
+  },
+
+  async getAgentActiveAssignment(agentId) {
+    const agent = respondersList.find(a => a.id === agentId || a.id.toString() === agentId.toString());
+    if (!agent) return null;
+
+    const incidents = await this.getAllIncidentsForDashboard();
+    return incidents.find(i => (i.status === 'ASSIGNED' || i.status === 'ACTIVE') && i.assignedAgent && i.assignedAgent.toLowerCase().includes(agent.name.toLowerCase()));
+  },
+
+  // --- DASHBOARD: ADD OPERATOR LOG NOTE (Step 9) ---
+  async addIncidentNote(alertId, noteText) {
+    if (!alertId || !noteText) return null;
+    const key = alertId.toString();
+    let session = liveTrackSessions.get(key);
+    const timeFormatted = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const formattedNote = `[${timeFormatted}] ${noteText}`;
+
+    if (session) {
+      session.operatorNotes = session.operatorNotes ? `${session.operatorNotes}\n${formattedNote}` : formattedNote;
+    }
+
+    try {
+      const { data } = await supabase.from('sos_history').select('operator_notes').eq('id', alertId).maybeSingle();
+      const existing = data?.operator_notes || '';
+      const updatedNotes = existing ? `${existing}\n${formattedNote}` : formattedNote;
+      await supabase.from('sos_history').update({ operator_notes: updatedNotes }).eq('id', alertId);
+    } catch (e) {
+      console.warn('Note updating operator_notes in Supabase:', e.message);
+    }
+
+    return session || { id: key, note: formattedNote };
+  },
 };
 
 // Real-time live tracking sessions store
 const liveTrackSessions = new Map();
+
+// Active Field Responders Registry (Pre-seeded with trusted response team)
+let respondersList = [
+  {
+    id: 'agent-101',
+    name: 'Karthi (Rapid Volunteer)',
+    phone: '9876543210',
+    area: 'Sivakasi Town Center (Bus Stand)',
+    latitude: 9.4532,
+    longitude: 77.7981,
+    vehicle: 'Fast Bike Unit',
+    status: 'AVAILABLE',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'agent-102',
+    name: 'Priya (Community Responder)',
+    phone: '9123456780',
+    area: 'College Road, Sivakasi',
+    latitude: 9.4680,
+    longitude: 77.7850,
+    vehicle: 'Scooter',
+    status: 'AVAILABLE',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'agent-103',
+    name: 'Suresh (DEVI Safety Squad)',
+    phone: '9988776655',
+    area: 'Gnanagiri Road, Sivakasi',
+    latitude: 9.4610,
+    longitude: 77.7940,
+    vehicle: 'Quick Response Car',
+    status: 'AVAILABLE',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'agent-104',
+    name: 'Anand (District Coordinator)',
+    phone: '9443322110',
+    area: 'Madurai Road / Sattur Bypass',
+    latitude: 9.4750,
+    longitude: 77.7710,
+    vehicle: 'Motorcycle',
+    status: 'AVAILABLE',
+    created_at: new Date().toISOString()
+  }
+];

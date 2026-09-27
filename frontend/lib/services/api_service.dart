@@ -234,4 +234,54 @@ class ApiService {
     }
     return [];
   }
+
+  // --- SOS: Upload 2-Minute Audio/Video Evidence to Cloudinary ---
+  Future<String?> uploadEmergencyEvidence({
+    required String alertId,
+    List<int>? fileBytes,
+    String? filePath,
+    String fileName = 'emergency_evidence.mp4',
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/sos/upload-evidence');
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['alertId'] = alertId;
+
+      if (fileBytes != null && fileBytes.isNotEmpty) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'file',
+            fileBytes,
+            filename: fileName,
+          ),
+        );
+      } else if (filePath != null && filePath.isNotEmpty) {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'file',
+            filePath,
+            filename: fileName,
+          ),
+        );
+      } else {
+        debugPrint('uploadEmergencyEvidence: No file data provided');
+        return null;
+      }
+
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
+      final res = await http.Response.fromStream(streamedResponse);
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final body = jsonDecode(res.body);
+        final evidenceUrl = body['data']?['evidenceUrl'];
+        debugPrint('Emergency evidence uploaded to Cloudinary: $evidenceUrl');
+        return evidenceUrl?.toString();
+      } else {
+        debugPrint('Upload evidence failed with status ${res.statusCode}: ${res.body}');
+      }
+    } catch (e) {
+      debugPrint('API Upload Emergency Evidence Error: $e');
+    }
+    return null;
+  }
 }

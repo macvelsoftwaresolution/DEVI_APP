@@ -383,7 +383,7 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
       <div class="logo-badge">🛡️</div>
       <div class="title-group">
         <h1>DEVI Safety <span style="font-weight: 400; opacity: 0.7;">Live Monitor</span></h1>
-        <p id="refText">Ref ID: #${alertId.substring(0, 8)}</p>
+        <p id="refText">Real-Time Safe Tracking</p>
       </div>
     </div>
     <div id="statusBadge" class="status-badge status-active">
@@ -428,6 +428,20 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
         <span class="distance-val" id="distanceVal">Calculating...</span>
         <span class="distance-sub" id="distanceSub">from your location</span>
       </div>
+    </div>
+
+    <!-- Emergency Evidence Media Banner (Cloudinary) -->
+    <div id="evidenceContainer" style="display: ${initialSession?.evidenceUrl ? 'flex' : 'none'}; margin-bottom: 12px; background: rgba(220, 38, 38, 0.2); border: 1px solid rgba(239, 68, 68, 0.6); border-radius: 14px; padding: 10px 12px; align-items: center; justify-content: space-between;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 20px;">📹</span>
+        <div>
+          <div style="font-size: 12.5px; font-weight: 700; color: #FCA5A5;">Emergency Audio / Video Evidence</div>
+          <div style="font-size: 10.5px; color: #FECACA;">Cloud-recorded 2-min footage</div>
+        </div>
+      </div>
+      <a id="evidencePlayBtn" href="${initialSession?.evidenceUrl || '#'}" target="_blank" style="background: linear-gradient(135deg, #EF4444, #DC2626); color: white; padding: 7px 14px; border-radius: 10px; font-size: 12px; font-weight: 800; text-decoration: none; display: flex; align-items: center; gap: 5px; box-shadow: 0 2px 10px rgba(239,68,68,0.5);">
+        ▶ Watch Video
+      </a>
     </div>
 
     <!-- Actions -->
@@ -560,6 +574,8 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
         return;
       }
 
+      let hasAutoFitted = false;
+
       navigator.geolocation.watchPosition((pos) => {
         guardianLat = pos.coords.latitude;
         guardianLng = pos.coords.longitude;
@@ -572,6 +588,13 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
 
         // Update connecting route line between Guardian and Victim
         connectionLine.setLatLngs([[guardianLat, guardianLng], [victimLat, victimLng]]);
+
+        // Auto-fit bounds on first connect so both Guardian & Victim appear on screen together
+        if (!hasAutoFitted && guardianLat && guardianLng && victimLat && victimLng) {
+          hasAutoFitted = true;
+          const bounds = L.latLngBounds([[victimLat, victimLng], [guardianLat, guardianLng]]);
+          map.fitBounds(bounds, { padding: [70, 70], maxZoom: 17 });
+        }
 
         // Calculate Distance between Guardian & Victim
         const distMeters = map.distance([guardianLat, guardianLng], [victimLat, victimLng]);
@@ -645,6 +668,16 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
 
             // Update Area Name
             updateAreaName(lat, lng);
+
+            // Dynamically show Evidence link if uploaded to Cloudinary
+            if (session.evidenceUrl) {
+              const evCont = document.getElementById('evidenceContainer');
+              const evBtn = document.getElementById('evidencePlayBtn');
+              if (evCont && evBtn) {
+                evCont.style.display = 'flex';
+                evBtn.href = session.evidenceUrl;
+              }
+            }
 
             const now = new Date();
             document.getElementById('lastUpdatedText').innerText = 'Updated: ' + now.toLocaleTimeString();
