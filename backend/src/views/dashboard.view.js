@@ -1,457 +1,437 @@
+// DEVI 24/7 Command Center Dashboard
+// Clean, Modern, Minimalistic Emergency Dispatch UX
+
 export function renderDashboardHtml() {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DEVI Command Center | 24/7 Emergency Response Dashboard</title>
+  <title>DEVI Command Center</title>
   
   <!-- Leaflet Map CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
-  <!-- Fonts -->
+  <!-- Modern Clean Typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
 
   <style>
     :root {
-      --bg-dark: #07090E;
-      --bg-surface: #0E131F;
-      --bg-surface-elevated: #161D2F;
-      --bg-glass: rgba(14, 19, 31, 0.85);
-      --border-color: rgba(255, 255, 255, 0.08);
-      --border-focus: rgba(239, 68, 68, 0.4);
-      --text-main: #F8FAFC;
+      --bg-darkest: #090D16;
+      --bg-dark: #0F1626;
+      --bg-surface: #151F34;
+      --bg-elevated: #1D2A46;
+      --bg-hover: #243456;
+      
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: #38BDF8;
+
+      --red: #EF4444;
+      --red-soft: rgba(239, 68, 68, 0.15);
+      --amber: #F59E0B;
+      --amber-soft: rgba(245, 158, 11, 0.15);
+      --green: #10B981;
+      --green-soft: rgba(16, 185, 129, 0.15);
+      --cyan: #06B6D4;
+      --cyan-soft: rgba(6, 182, 212, 0.15);
+      --blue: #38BDF8;
+
+      --text: #F8FAFC;
       --text-muted: #94A3B8;
       --text-dim: #64748B;
-      --danger: #EF4444;
-      --danger-dark: #B91C1C;
-      --danger-glow: rgba(239, 68, 68, 0.35);
-      --warning: #F59E0B;
-      --success: #10B981;
-      --accent: #6366F1;
-      --primary: #8B5CF6;
+      
+      --header-height: 60px;
     }
 
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
-      -webkit-tap-highlight-color: transparent;
     }
 
     body {
-      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: var(--bg-dark);
-      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-darkest);
+      color: var(--text);
       height: 100vh;
-      width: 100vw;
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* TOP HEADER */
-    header {
-      background: var(--bg-surface);
-      border-bottom: 1px solid var(--border-color);
-      height: 64px;
-      padding: 0 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      z-index: 1000;
-      flex-shrink: 0;
-    }
-
-    .brand-section {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .brand-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #EF4444 0%, #881337 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      box-shadow: 0 0 20px var(--danger-glow);
-    }
-
-    .brand-text h1 {
-      font-family: 'Outfit', sans-serif;
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: -0.3px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .brand-text h1 span.tag {
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.4);
-      color: #F87171;
-      font-size: 10px;
-      padding: 2px 7px;
-      border-radius: 6px;
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 700;
-    }
-
-    .brand-text p {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-
-    .header-metrics {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-    }
-
-    .metric-pill {
-      background: var(--bg-surface-elevated);
-      border: 1px solid var(--border-color);
-      padding: 6px 14px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .metric-pill .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-    }
-
-    .dot.live {
-      background: #10B981;
-      box-shadow: 0 0 10px #10B981;
-      animation: pulse-live 1.8s infinite;
-    }
-
-    .dot.alert {
-      background: #EF4444;
-      box-shadow: 0 0 10px #EF4444;
-      animation: pulse-alert 1.2s infinite;
-    }
-
-    @keyframes pulse-live {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(1.2); }
-    }
-
-    @keyframes pulse-alert {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.3; transform: scale(1.3); }
-    }
-
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .header-btn {
-      background: var(--bg-surface-elevated);
-      border: 1px solid var(--border-color);
-      color: var(--text-main);
-      padding: 8px 14px;
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.2s ease;
-    }
-
-    .header-btn:hover {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-
-    .header-btn.active {
-      background: rgba(239, 68, 68, 0.15);
-      border-color: var(--danger);
-      color: #FCA5A5;
-    }
-
-    .live-clock {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13px;
-      color: var(--text-muted);
-      background: var(--bg-surface-elevated);
-      padding: 6px 12px;
-      border-radius: 8px;
-      border: 1px solid var(--border-color);
-    }
-
-    /* MAIN CONTENT SPLIT */
-    .dashboard-body {
-      display: flex;
-      flex: 1;
-      height: calc(100vh - 64px);
-      overflow: hidden;
-      position: relative;
-    }
-
-    /* LEFT SIDEBAR: INCIDENT FEED (Step 7) */
-    .incident-sidebar {
-      width: 400px;
-      background: var(--bg-surface);
-      border-right: 1px solid var(--border-color);
-      display: flex;
-      flex-direction: column;
-      flex-shrink: 0;
-      z-index: 10;
-    }
-
-    .sidebar-header {
-      padding: 16px 20px 12px;
-      border-bottom: 1px solid var(--border-color);
-    }
-
-    .sidebar-header .title-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-
-    .sidebar-header h2 {
-      font-family: 'Outfit', sans-serif;
-      font-size: 16px;
-      font-weight: 700;
-    }
-
-    .stats-chips {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .stat-chip {
-      background: var(--bg-surface-elevated);
-      padding: 8px 6px;
-      border-radius: 8px;
-      text-align: center;
-      border: 1px solid var(--border-color);
-    }
-
-    .stat-chip .val {
-      font-size: 16px;
-      font-weight: 800;
-      font-family: 'Outfit', sans-serif;
-    }
-
-    .stat-chip .lbl {
-      font-size: 10px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      margin-top: 2px;
-    }
-
-    .filter-tabs {
-      display: flex;
-      gap: 6px;
+    /* TOP BAR */
+    .topbar {
+      height: var(--header-height);
       background: var(--bg-dark);
-      padding: 4px;
-      border-radius: 10px;
-      border: 1px solid var(--border-color);
-    }
-
-    .filter-btn {
-      flex: 1;
-      padding: 6px 4px;
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      font-size: 11px;
-      font-weight: 700;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      text-align: center;
-    }
-
-    .filter-btn.active {
-      background: var(--bg-surface-elevated);
-      color: var(--text-main);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-    }
-
-    .incident-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
+      border-bottom: 1px solid var(--border);
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      z-index: 100;
+      flex-shrink: 0;
+    }
+
+    .brand-box {
+      display: flex;
+      align-items: center;
       gap: 10px;
     }
 
-    .incident-list::-webkit-scrollbar {
-      width: 6px;
-    }
-    .incident-list::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15);
-      border-radius: 3px;
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #EF4444 0%, #B91C1C 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 0 14px rgba(239, 68, 68, 0.35);
     }
 
-    .incident-card {
-      background: var(--bg-surface-elevated);
-      border: 1px solid var(--border-color);
+    .brand-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .live-pill {
+      font-size: 10px;
+      font-weight: 700;
+      color: #34D399;
+      background: var(--green-soft);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 2px 7px;
       border-radius: 12px;
-      padding: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      background: #34D399;
+      border-radius: 50%;
+      animation: pulse 1.6s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* TOP STATS */
+    .top-stats {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .stat-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .stat-chip.emergency {
+      background: var(--red-soft);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #FCA5A5;
+    }
+
+    .clock {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    /* TOP BUTTONS */
+    .top-btns {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      height: 34px;
+      padding: 0 12px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
       cursor: pointer;
-      transition: all 0.2s ease;
-      position: relative;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--bg-elevated);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-green {
+      background: var(--green-soft);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #34D399;
+    }
+
+    .btn-green:hover {
+      background: rgba(16, 185, 129, 0.25);
+    }
+
+    /* MAIN CONTAINER */
+    .app-main {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - var(--header-height));
       overflow: hidden;
+      position: relative;
     }
 
-    .incident-card:hover {
-      border-color: rgba(255, 255, 255, 0.25);
-      transform: translateY(-1px);
+    /* LEFT SIDEBAR: EMERGENCIES */
+    .sidebar {
+      width: 360px;
+      background: var(--bg-dark);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      z-index: 20;
     }
 
-    .incident-card.active {
-      border-color: var(--danger);
+    .sidebar-head {
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 12px;
+      color: #FFF;
+      outline: none;
+      margin-bottom: 10px;
+    }
+
+    .search-input:focus {
+      border-color: var(--border-focus);
+    }
+
+    /* 4 MINI STATS */
+    .mini-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .stat-item {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 4px;
+      text-align: center;
+    }
+
+    .stat-item .val {
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .stat-item .lbl {
+      font-size: 9px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-top: 1px;
+    }
+
+    /* FILTER TABS */
+    .tabs {
+      display: flex;
+      background: var(--bg-surface);
+      padding: 3px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      gap: 2px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 4px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 5px;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .tab.active {
+      background: var(--bg-elevated);
+      color: #FFF;
+    }
+
+    /* INCIDENT LIST */
+    .incidents-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .card:hover {
+      background: var(--bg-elevated);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .card.active {
+      border-color: var(--red);
       background: rgba(239, 68, 68, 0.08);
-      box-shadow: 0 4px 20px rgba(239, 68, 68, 0.15);
     }
 
-    .incident-card.is-emergency {
-      border-left: 4px solid var(--danger);
+    .card.emergency {
+      border-left: 3px solid var(--red);
     }
 
-    .incident-card.is-assigned {
-      border-left: 4px solid var(--warning);
+    .card.assigned {
+      border-left: 3px solid var(--amber);
     }
 
-    .incident-card.is-resolved {
-      border-left: 4px solid var(--success);
-      opacity: 0.75;
+    .card.resolved {
+      border-left: 3px solid var(--green);
+      opacity: 0.7;
     }
 
-    .card-top {
+    .card-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
     }
 
     .card-id {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      font-weight: 700;
+      font-size: 11px;
+      font-weight: 600;
       color: var(--text-muted);
     }
 
-    .status-badge {
-      font-size: 10px;
-      font-weight: 800;
-      padding: 3px 8px;
-      border-radius: 6px;
-      letter-spacing: 0.4px;
+    .badge {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 12px;
+      letter-spacing: 0.3px;
     }
 
-    .status-badge.DISPATCHED, .status-badge.ACTIVE {
-      background: rgba(239, 68, 68, 0.2);
-      color: #F87171;
-      border: 1px solid rgba(239, 68, 68, 0.4);
+    .badge.ACTIVE, .badge.DISPATCHED {
+      background: var(--red-soft);
+      color: #FCA5A5;
+      border: 1px solid rgba(239, 68, 68, 0.3);
     }
 
-    .status-badge.ASSIGNED {
-      background: rgba(245, 158, 11, 0.2);
+    .badge.ASSIGNED {
+      background: var(--amber-soft);
       color: #FCD34D;
-      border: 1px solid rgba(245, 158, 11, 0.4);
+      border: 1px solid rgba(245, 158, 11, 0.3);
     }
 
-    .status-badge.RESOLVED {
-      background: rgba(16, 185, 129, 0.2);
+    .badge.RESOLVED {
+      background: var(--green-soft);
       color: #6EE7B7;
-      border: 1px solid rgba(16, 185, 129, 0.4);
+      border: 1px solid rgba(16, 185, 129, 0.3);
     }
 
     .card-user {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       justify-content: space-between;
-      margin-bottom: 6px;
+      margin-bottom: 2px;
     }
 
-    .card-user-name {
-      font-size: 14px;
+    .card-name {
+      font-size: 13px;
       font-weight: 700;
       color: #FFF;
     }
 
-    .card-user-phone {
+    .card-phone {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-muted);
     }
 
     .card-loc {
       font-size: 11px;
-      color: var(--text-muted);
-      margin-bottom: 8px;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
+      color: var(--text-dim);
+      white-space: nowrap;
       overflow: hidden;
-      line-height: 1.4;
+      text-overflow: ellipsis;
+      margin-bottom: 6px;
     }
 
-    .card-footer {
+    .card-foot {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 11px;
-      padding-top: 8px;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .card-time {
-      color: var(--text-dim);
-    }
-
-    .evidence-indicator {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      background: rgba(99, 102, 241, 0.2);
-      border: 1px solid rgba(99, 102, 241, 0.4);
-      color: #A5B4FC;
-      padding: 2px 7px;
-      border-radius: 6px;
       font-size: 10px;
-      font-weight: 700;
+      color: var(--text-dim);
+      padding-top: 4px;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
     }
 
-    .assigned-indicator {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      color: #FCD34D;
-      font-size: 11px;
+    .tag {
+      font-size: 9px;
       font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(99, 102, 241, 0.15);
+      color: #A5B4FC;
     }
 
-    /* CENTER: MAP CONTAINER */
-    .map-container {
+    /* CENTER MAP */
+    .map-box {
       flex: 1;
       height: 100%;
       position: relative;
@@ -464,535 +444,581 @@ export function renderDashboardHtml() {
       z-index: 1;
     }
 
-    /* MAP OVERLAY CONTROLS */
-    .map-overlay-badge {
+    .map-controls {
       position: absolute;
-      top: 16px;
-      left: 16px;
-      background: rgba(14, 19, 31, 0.88);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border-color);
-      padding: 8px 14px;
-      border-radius: 10px;
+      top: 14px;
+      left: 14px;
       z-index: 500;
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    }
-
-    /* RIGHT TACTICAL DRAWER (Steps 8 & 9) */
-    .tactical-drawer {
-      width: 440px;
-      background: var(--bg-surface);
-      border-left: 1px solid var(--border-color);
-      display: flex;
-      flex-direction: column;
-      flex-shrink: 0;
-      z-index: 10;
-      transform: translateX(0);
-      transition: transform 0.25s ease;
-    }
-
-    .tactical-drawer.hidden {
-      display: none;
-    }
-
-    .drawer-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border-color);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .drawer-header h2 {
-      font-family: 'Outfit', sans-serif;
-      font-size: 16px;
-      font-weight: 800;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .close-drawer-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-size: 18px;
-      cursor: pointer;
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .close-drawer-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: #FFF;
-    }
-
-    .drawer-content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .drawer-content::-webkit-scrollbar {
-      width: 6px;
-    }
-    .drawer-content::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.15);
-      border-radius: 3px;
-    }
-
-    .drawer-section {
-      background: var(--bg-surface-elevated);
-      border: 1px solid var(--border-color);
-      border-radius: 14px;
-      padding: 16px;
-    }
-
-    .section-title {
-      font-family: 'Outfit', sans-serif;
-      font-size: 13px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
       gap: 6px;
     }
 
-    /* STEP 7: EVIDENCE PLAYER */
-    .video-player-box {
-      width: 100%;
-      border-radius: 10px;
-      overflow: hidden;
-      background: #000;
-      border: 1px solid var(--border-color);
-      margin-top: 8px;
-    }
-
-    video {
-      width: 100%;
-      height: auto;
-      max-height: 220px;
-      display: block;
-      background: #000;
-    }
-
-    .evidence-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 10px;
-    }
-
-    .evidence-btn {
-      flex: 1;
-      padding: 8px;
-      background: rgba(99, 102, 241, 0.15);
-      border: 1px solid rgba(99, 102, 241, 0.35);
-      color: #A5B4FC;
+    .map-chip {
+      background: rgba(15, 22, 38, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
       border-radius: 8px;
+      padding: 6px 12px;
       font-size: 11px;
-      font-weight: 700;
-      cursor: pointer;
-      text-align: center;
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-    }
-
-    .no-evidence-box {
-      padding: 20px;
-      text-align: center;
-      color: var(--text-dim);
-      font-size: 12px;
-      background: rgba(0, 0, 0, 0.2);
-      border-radius: 8px;
-      border: 1px dashed rgba(255, 255, 255, 0.1);
-    }
-
-    /* VICTIM DETAILS */
-    .victim-info-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 10px;
-      font-size: 13px;
-    }
-
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-bottom: 8px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    }
-
-    .info-row:last-child {
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-
-    .info-label {
-      color: var(--text-muted);
-      font-size: 12px;
-    }
-
-    .info-value {
       font-weight: 600;
-      color: #FFF;
-      text-align: right;
     }
 
-    /* STEP 9: ONE-CLICK CALL BUTTONS */
-    .call-btn-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 12px;
+    /* Leaflet Layer Switcher Dark */
+    .tactical-dark-tiles {
+      filter: brightness(0.65) invert(1) contrast(3) hue-rotate(200deg) saturate(0.2) !important;
     }
 
-    .action-btn {
-      padding: 10px;
-      border-radius: 10px;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      border: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      text-decoration: none;
-      transition: all 0.2s;
+    .leaflet-control-layers {
+      background: rgba(15, 22, 38, 0.92) !important;
+      backdrop-filter: blur(8px) !important;
+      border: 1px solid var(--border) !important;
+      color: #E2E8F0 !important;
+      border-radius: 8px !important;
+      font-size: 11px !important;
+      padding: 4px 10px !important;
     }
 
-    .btn-victim {
-      background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
-      color: #FFF;
-      box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
-    }
-
-    .btn-guardian {
-      background: var(--bg-dark);
-      border: 1px solid var(--border-color);
-      color: var(--text-main);
-    }
-
-    .btn-guardian:hover {
-      background: rgba(255, 255, 255, 0.08);
-    }
-
-    .btn-emergency {
-      background: rgba(245, 158, 11, 0.15);
-      border: 1px solid rgba(245, 158, 11, 0.4);
-      color: #FCD34D;
-      font-weight: 700;
-    }
-
-    /* STEP 8: DISPATCH & ASSIGN AGENT */
-    .dispatch-input-group {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .select-agent-input {
-      width: 100%;
-      background: var(--bg-dark);
-      border: 1px solid var(--border-color);
-      color: #FFF;
-      padding: 10px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-family: inherit;
-    }
-
-    .select-agent-input:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
-
-    .quick-agents-pills {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .quick-pill {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      cursor: pointer;
-      color: var(--text-muted);
-      transition: all 0.15s;
-    }
-
-    .quick-pill:hover {
-      background: rgba(99, 102, 241, 0.2);
-      border-color: var(--accent);
-      color: #FFF;
-    }
-
-    .btn-dispatch {
-      background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
-      color: #000;
-      font-weight: 800;
-      padding: 12px;
-      border-radius: 10px;
-      border: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      font-size: 13px;
-      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.3);
-      transition: all 0.2s;
-    }
-
-    .btn-dispatch:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
-    }
-
-    /* STEP 9: OPERATOR LOG & NOTES */
-    .notes-history-box {
-      background: var(--bg-dark);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 10px;
-      font-size: 12px;
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--text-muted);
-      min-height: 80px;
-      max-height: 140px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      line-height: 1.5;
-      margin-bottom: 10px;
-    }
-
-    .add-note-box {
-      display: flex;
-      gap: 8px;
-    }
-
-    .note-input {
-      flex: 1;
-      background: var(--bg-dark);
-      border: 1px solid var(--border-color);
-      color: #FFF;
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-family: inherit;
-    }
-
-    .note-input:focus {
-      outline: none;
-      border-color: var(--border-focus);
-    }
-
-    .btn-add-note {
-      background: var(--bg-surface-elevated);
-      border: 1px solid var(--border-color);
-      color: #FFF;
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    .btn-resolve {
-      width: 100%;
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.4);
-      color: #10B981;
-      font-weight: 800;
-      padding: 12px;
-      border-radius: 10px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      font-size: 13px;
-      transition: all 0.2s;
-      margin-top: 10px;
-    }
-
-    .btn-resolve:hover {
-      background: #10B981;
-      color: #000;
-      box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
-    }
-
-    /* PULSING EMERGENCY MARKER */
-    .pulse-marker-active {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: #EF4444;
-      border: 3px solid #FFF;
-      box-shadow: 0 0 14px rgba(239, 68, 68, 0.9);
+    /* MAP MARKERS */
+    .pulse-dot {
+      width: 24px;
+      height: 24px;
       position: relative;
     }
 
-    .pulse-marker-active::after {
+    .pulse-dot::before {
       content: '';
       position: absolute;
-      top: -10px;
-      left: -10px;
-      right: -10px;
-      bottom: -10px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 12px;
+      height: 12px;
+      background: #EF4444;
       border-radius: 50%;
-      border: 2px solid #EF4444;
-      animation: ripple 1.6s ease-out infinite;
-    }
-
-    .pulse-marker-assigned {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      background: #F59E0B;
-      border: 3px solid #FFF;
-      box-shadow: 0 0 10px rgba(245, 158, 11, 0.8);
-    }
-
-    .pulse-marker-resolved {
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: #10B981;
       border: 2px solid #FFF;
-      opacity: 0.8;
+      box-shadow: 0 0 8px #EF4444;
     }
 
-    @keyframes ripple {
-      0% { transform: scale(0.6); opacity: 1; }
-      100% { transform: scale(1.8); opacity: 0; }
+    .pulse-dot::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 28px;
+      height: 28px;
+      border: 2px solid #EF4444;
+      border-radius: 50%;
+      animation: radarRing 1.8s infinite;
     }
+
+    @keyframes radarRing {
+      0% { width: 12px; height: 12px; opacity: 1; }
+      100% { width: 38px; height: 38px; opacity: 0; }
+    }
+
+    .agent-pin {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #06B6D4 0%, #0284C7 100%);
+      border-radius: 50%;
+      border: 2px solid #FFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.6);
+    }
+
+    /* RIGHT DRAWER */
+    .drawer {
+      width: 440px;
+      background: var(--bg-dark);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      z-index: 30;
+      transition: transform 0.2s;
+    }
+
+    .drawer.hidden {
+      display: none;
+    }
+
+    .drawer-head {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .drawer-head-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-close {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 18px;
+      cursor: pointer;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+    }
+
+    .btn-close:hover {
+      background: var(--bg-surface);
+      color: #FFF;
+    }
+
+    .drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    .panel-head {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* VIDEO BOX */
+    .video-frame {
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .video-player {
+      width: 100%;
+      height: 190px;
+      background: #000;
+      display: block;
+      object-fit: cover;
+    }
+
+    .video-empty {
+      height: 110px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+      font-size: 11px;
+      text-align: center;
+      padding: 14px;
+    }
+
+    .video-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .btn-small {
+      flex: 1;
+      padding: 6px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: #FFF;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-decoration: none;
+      text-align: center;
+    }
+
+    /* DETAILS TABLE */
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-bottom: 5px;
+      margin-bottom: 5px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 12px;
+    }
+
+    .row:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .k { color: var(--text-dim); font-weight: 500; }
+    .v { font-weight: 600; color: #FFF; text-align: right; }
+
+    /* ACTION BUTTONS */
+    .action-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .btn-red {
+      padding: 8px;
+      background: var(--red);
+      color: #FFF;
+      border: none;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .btn-police {
+      padding: 8px;
+      background: var(--bg-elevated);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #FCD34D;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+      text-decoration: none;
+    }
+
+    .btn-copy {
+      grid-column: 1 / -1;
+      padding: 7px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    /* RESPONDERS LIST */
+    .agent-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .agent-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .agent-card.nearest {
+      border-color: rgba(6, 182, 212, 0.6);
+      background: rgba(6, 182, 212, 0.06);
+    }
+
+    .agent-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .dist-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: var(--cyan-soft);
+      color: #67E8F9;
+    }
+
+    .agent-card-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .btn-assign {
+      flex: 1;
+      padding: 6px;
+      background: var(--cyan);
+      color: #000;
+      border: none;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-wa {
+      padding: 8px;
+      background: #25D366;
+      color: #000;
+      border: none;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+      text-decoration: none;
+      display: block;
+      margin-top: 6px;
+    }
+
+    /* NOTES */
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+
+    .chip {
+      padding: 2px 7px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 10px;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+
+    .notes-input {
+      width: 100%;
+      height: 55px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 11px;
+      color: #FFF;
+      outline: none;
+      resize: none;
+      font-family: inherit;
+    }
+
+    .notes-actions {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+    }
+
+    /* MODAL */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(6px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.hidden { display: none; }
+
+    .modal {
+      width: 400px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .field { margin-bottom: 10px; }
+    .field label { display: block; font-size: 10px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; text-transform: uppercase; }
+    .input { width: 100%; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12px; color: #FFF; outline: none; }
+    .input:focus { border-color: var(--cyan); }
+
+    .modal-foot { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
   </style>
 </head>
 <body>
 
-  <!-- TOP HEADER -->
-  <header>
-    <div class="brand-section">
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="brand-box">
       <div class="brand-icon">🛡️</div>
-      <div class="brand-text">
-        <h1>DEVI COMMAND CENTER <span class="tag">OPERATOR PORTAL</span></h1>
-        <p>National Women Safety 24/7 Response Dispatcher</p>
+      <div class="brand-title">
+        <span>DEVI Response Center</span>
+        <span class="live-pill"><span class="live-dot"></span>Live</span>
       </div>
     </div>
 
-    <div class="header-metrics">
-      <div class="metric-pill">
-        <span class="dot live"></span>
-        <span>24/7 LIVE RADAR</span>
+    <!-- STATS -->
+    <div class="top-stats">
+      <div class="stat-chip emergency" id="emergencyPill">
+        <span style="color: #EF4444;">●</span>
+        <span id="activeCountText">0 Active</span>
       </div>
-      <div class="metric-pill" id="emergencyPill" style="display:none; border-color: rgba(239, 68, 68, 0.5);">
-        <span class="dot alert"></span>
-        <span id="emergencyCountText" style="color: #F87171; font-weight: 800;">0 ACTIVE ALERTS</span>
+      <div class="stat-chip">
+        <span>Agents: <strong id="assignedCountText" style="color: #67E8F9;">0</strong></span>
       </div>
-      <div class="live-clock" id="liveClock">--:--:-- IST</div>
+      <div class="clock" id="liveClock">--:--:-- IST</div>
     </div>
 
-    <div class="header-actions">
-      <button class="header-btn active" id="audioToggleBtn" onclick="toggleAudioAlerts()">
+    <!-- BUTTONS -->
+    <div class="top-btns">
+      <button class="btn btn-green" onclick="openAddResponderModal()">
+        <span>+</span> Add Agent
+      </button>
+      <button class="btn" onclick="copyDutyPortalLink()" title="Copy Agent On-Duty Mobile Link for WhatsApp">
+        <span>🔗</span> Duty Link
+      </button>
+      <button class="btn" id="toggleRespondersBtn" onclick="toggleRespondersOnMap()">
+        <span>🛡️</span> Agents (<span id="respondersCount">0</span>)
+      </button>
+      <button class="btn" id="audioToggleBtn" onclick="toggleAudioAlerts()">
         <span id="audioIcon">🔔</span> Sound ON
       </button>
-      <button class="header-btn" onclick="fetchIncidents(true)">
-        🔄 Refresh
+      <button class="btn" onclick="fetchIncidents(true)">
+        <span>🔄</span> Refresh
       </button>
     </div>
   </header>
 
-  <!-- DASHBOARD MAIN SPLIT -->
-  <div class="dashboard-body">
+  <!-- MAIN -->
+  <div class="app-main">
 
-    <!-- LEFT SIDEBAR: INCIDENT FEED (Step 7) -->
-    <aside class="incident-sidebar">
-      <div class="sidebar-header">
-        <div class="title-row">
-          <h2>Emergency Feed</h2>
-          <span style="font-size: 11px; color: var(--text-dim);" id="lastSyncText">Syncing...</span>
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <input type="text" class="search-input" id="searchInput" placeholder="Search name, phone, or location..." oninput="handleSearch(this.value)">
+        
+        <div class="mini-stats">
+          <div class="stat-item"><div class="val" id="statTotal">0</div><div class="lbl">Total</div></div>
+          <div class="stat-item" style="border-color: rgba(239,68,68,0.3);"><div class="val" id="statActive" style="color: #F87171;">0</div><div class="lbl" style="color: #F87171;">Active</div></div>
+          <div class="stat-item"><div class="val" id="statAssigned" style="color: #FCD34D;">0</div><div class="lbl">Assigned</div></div>
+          <div class="stat-item"><div class="val" id="statResolved" style="color: #34D399;">0</div><div class="lbl">Resolved</div></div>
         </div>
 
-        <div class="stats-chips">
-          <div class="stat-chip">
-            <div class="val" id="statTotal" style="color: #FFF;">0</div>
-            <div class="lbl">Total</div>
-          </div>
-          <div class="stat-chip">
-            <div class="val" id="statActive" style="color: #F87171;">0</div>
-            <div class="lbl">Active</div>
-          </div>
-          <div class="stat-chip">
-            <div class="val" id="statAssigned" style="color: #FCD34D;">0</div>
-            <div class="lbl">Assigned</div>
-          </div>
-          <div class="stat-chip">
-            <div class="val" id="statResolved" style="color: #6EE7B7;">0</div>
-            <div class="lbl">Resolved</div>
-          </div>
-        </div>
-
-        <div class="filter-tabs">
-          <button class="filter-btn active" data-filter="ALL" onclick="setFilter('ALL', this)">All</button>
-          <button class="filter-btn" data-filter="ACTIVE" onclick="setFilter('ACTIVE', this)">Active</button>
-          <button class="filter-btn" data-filter="ASSIGNED" onclick="setFilter('ASSIGNED', this)">Assigned</button>
-          <button class="filter-btn" data-filter="RESOLVED" onclick="setFilter('RESOLVED', this)">Resolved</button>
+        <div class="tabs">
+          <button class="tab active" onclick="setFilter('ALL', this)">All</button>
+          <button class="tab" onclick="setFilter('ACTIVE', this)">Active</button>
+          <button class="tab" onclick="setFilter('ASSIGNED', this)">Assigned</button>
+          <button class="tab" onclick="setFilter('RESOLVED', this)">Resolved</button>
         </div>
       </div>
 
-      <div class="incident-list" id="incidentList">
-        <div style="text-align: center; padding: 40px 20px; color: var(--text-dim); font-size: 13px;">
-          Connecting to DEVI Dispatch Radar...
+      <div class="incidents-list" id="incidentList">
+        <div style="text-align: center; padding: 40px 10px; color: var(--text-dim); font-size: 11px;">
+          Connecting to live radar...
         </div>
       </div>
     </aside>
 
-    <!-- CENTER: LEAFLET MAP -->
-    <main class="map-container">
-      <div class="map-overlay-badge">
-        <span>📍 CHENNAI & REGIONAL COMMAND SECTOR</span>
-      </div>
+    <!-- CENTER MAP -->
+    <main class="map-box">
       <div id="map"></div>
+      <div class="map-controls">
+        <div class="map-chip" id="sectorText">Tamil Nadu Sector</div>
+        <button class="btn" onclick="fitAllEmergencyPins()" style="height: 28px; padding: 0 8px; font-size: 11px;">Fit Map</button>
+        <button class="btn" onclick="focusLatestEmergency()" style="height: 28px; padding: 0 8px; font-size: 11px;">Latest SOS</button>
+      </div>
     </main>
 
-    <!-- RIGHT: TACTICAL INCIDENT DRAWER (Steps 7, 8, 9) -->
-    <aside class="tactical-drawer hidden" id="tacticalDrawer">
-      <div class="drawer-header">
-        <h2>
-          <span>🚨 INCIDENT</span>
-          <span id="drawerAlertId" style="color: #EF4444; font-family: 'JetBrains Mono', monospace;">#--</span>
-        </h2>
-        <button class="close-drawer-btn" onclick="closeDrawer()" title="Close details">✕</button>
+    <!-- RIGHT DRAWER -->
+    <aside class="drawer hidden" id="tacticalDrawer">
+      <div class="drawer-head">
+        <div class="drawer-head-left">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700;" id="drawerAlertId">#SOS</span>
+          <span class="badge ACTIVE" id="drawerStatusBadge">ACTIVE</span>
+        </div>
+        <button class="btn-close" onclick="closeDrawer()">✕</button>
       </div>
 
-      <div class="drawer-content" id="drawerContent">
-        <!-- Content will be injected dynamically by JavaScript -->
+      <div class="drawer-body" id="drawerBody">
+        <!-- Dynamic content rendered by renderTacticalDrawer -->
       </div>
     </aside>
 
+  </div>
+
+  <!-- ADD AGENT MODAL -->
+  <div class="modal-overlay hidden" id="addResponderModal">
+    <div class="modal">
+      <div class="modal-head">
+        <span>+ Add Response Agent</span>
+        <button class="btn-close" onclick="closeAddResponderModal()">✕</button>
+      </div>
+
+      <form onsubmit="handleSaveResponder(event)">
+        <div class="field">
+          <label>Agent Name</label>
+          <input type="text" id="respName" class="input" placeholder="e.g. Karthi" required>
+        </div>
+
+        <div class="field">
+          <label>Mobile Number (For WhatsApp Alert)</label>
+          <input type="tel" id="respPhone" class="input" placeholder="e.g. 9876543210" required>
+        </div>
+
+        <div class="field">
+          <label>Patrol Area / Landmark</label>
+          <input type="text" id="respArea" class="input" placeholder="e.g. Sivakasi Bus Stand" required>
+        </div>
+
+        <div class="field">
+          <label>Vehicle</label>
+          <select id="respVehicle" class="input">
+            <option value="Bike">🛵 Bike</option>
+            <option value="Scooter">🛵 Scooter</option>
+            <option value="Car">🚗 Car</option>
+            <option value="Foot">🚶 Foot</option>
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div class="field">
+            <label>Latitude</label>
+            <input type="number" step="any" id="respLat" class="input" placeholder="9.4532" required>
+          </div>
+          <div class="field">
+            <label>Longitude</label>
+            <input type="number" step="any" id="respLng" class="input" placeholder="77.7981" required>
+          </div>
+        </div>
+
+        <div class="modal-foot">
+          <button type="button" class="btn" onclick="useCurrentLocationForResponder()" style="margin-right: auto; font-size: 11px;">📍 My Location</button>
+          <button type="button" class="btn" onclick="closeAddResponderModal()">Cancel</button>
+          <button type="submit" class="btn btn-green">Save Agent</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- Leaflet Map JS -->
@@ -1001,80 +1027,95 @@ export function renderDashboardHtml() {
   <script>
     // State
     let incidents = [];
+    let responders = [];
     let currentFilter = 'ALL';
+    let searchQuery = '';
     let selectedIncidentId = null;
     let map = null;
     let markersMap = new Map();
+    let responderMarkersMap = new Map();
+    let dispatchLineLayer = null;
+    let showRespondersOnMap = true;
     let audioAlertsEnabled = true;
     let previousActiveIds = new Set();
     let audioCtx = null;
+    let hasAutoCentered = false;
 
-    // Initialize Map
-    function initMap() {
-      // Default center: Chennai, Tamil Nadu
-      map = L.map('map', {
-        zoomControl: false,
-      }).setView([13.0827, 80.2707], 13);
-
-      L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-      // High-tech dark tiles (CartoDB Dark Matter)
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 19
-      }).addTo(map);
+    // Haversine Distance (km)
+    function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
     }
 
-    // Audio Alert Synthesizer (Web Audio API)
+    // Initialize Map with Google Satellite Hybrid & Tactical Dark
+    function initMap() {
+      map = L.map('map', { zoomControl: false }).setView([10.85, 78.70], 8);
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      const satelliteHybrid = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        attribution: '&copy; Google Satellite',
+        subdomains: ['0', '1', '2', '3'],
+        maxZoom: 21
+      });
+
+      const tacticalDark = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap',
+        maxZoom: 19,
+        className: 'tactical-dark-tiles'
+      });
+
+      const streetRoadmap = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        attribution: '&copy; Google Maps',
+        subdomains: ['0', '1', '2', '3'],
+        maxZoom: 20
+      });
+
+      satelliteHybrid.addTo(map);
+
+      L.control.layers({
+        "🛰️ Satellite": satelliteHybrid,
+        "🌑 Dark Map": tacticalDark,
+        "🗺️ Streets": streetRoadmap
+      }, null, { position: 'topright' }).addTo(map);
+    }
+
+    // Audio Alert
     function playEmergencyAlertSiren() {
       if (!audioAlertsEnabled) return;
       try {
-        if (!audioCtx) {
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (audioCtx.state === 'suspended') {
-          audioCtx.resume();
-        }
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
 
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.connect(gain);
         gain.connect(audioCtx.destination);
-
         osc.type = 'sawtooth';
+
         const now = audioCtx.currentTime;
-        
-        // Two-tone emergency siren chime
         osc.frequency.setValueAtTime(880, now);
         osc.frequency.setValueAtTime(660, now + 0.15);
         osc.frequency.setValueAtTime(880, now + 0.30);
-        osc.frequency.setValueAtTime(660, now + 0.45);
-
         gain.gain.setValueAtTime(0.18, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
 
         osc.start(now);
-        osc.stop(now + 0.65);
-      } catch (e) {
-        console.warn('Audio alert error:', e);
-      }
+        osc.stop(now + 0.5);
+      } catch (e) {}
     }
 
     function toggleAudioAlerts() {
       audioAlertsEnabled = !audioAlertsEnabled;
       const btn = document.getElementById('audioToggleBtn');
-      const icon = document.getElementById('audioIcon');
-      if (audioAlertsEnabled) {
-        btn.classList.add('active');
-        btn.innerHTML = '<span id="audioIcon">🔔</span> Sound ON';
-      } else {
-        btn.classList.remove('active');
-        btn.innerHTML = '<span id="audioIcon">🔕</span> Sound OFF';
-      }
+      btn.innerHTML = audioAlertsEnabled ? '<span id="audioIcon">🔔</span> Sound ON' : '<span id="audioIcon">🔕</span> Sound OFF';
     }
 
-    // Update Digital Clock
+    // Digital Clock
     function updateClock() {
       const now = new Date();
       const hrs = String(now.getHours()).padStart(2, '0');
@@ -1085,48 +1126,107 @@ export function renderDashboardHtml() {
     setInterval(updateClock, 1000);
     updateClock();
 
-    // Fetch Incidents from Backend API
+    // Fetch Responders
+    async function fetchResponders() {
+      try {
+        const res = await fetch('/api/dashboard/agents');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && Array.isArray(data.agents)) {
+          responders = data.agents;
+          document.getElementById('respondersCount').textContent = responders.length;
+          document.getElementById('assignedCountText').textContent = responders.length;
+          updateResponderMarkers();
+          if (selectedIncidentId) {
+            const inc = incidents.find(i => i.id === selectedIncidentId);
+            if (inc) renderTacticalDrawer(inc);
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Update Responder Pins
+    function updateResponderMarkers() {
+      if (!map) return;
+      if (!showRespondersOnMap) {
+        for (const marker of responderMarkersMap.values()) map.removeLayer(marker);
+        responderMarkersMap.clear();
+        return;
+      }
+
+      const currentIds = new Set(responders.map(r => r.id));
+      for (const [id, marker] of responderMarkersMap.entries()) {
+        if (!currentIds.has(id)) {
+          map.removeLayer(marker);
+          responderMarkersMap.delete(id);
+        }
+      }
+
+      responders.forEach(r => {
+        const lat = parseFloat(r.latitude);
+        const lng = parseFloat(r.longitude);
+        if (isNaN(lat) || isNaN(lng)) return;
+
+        const icon = L.divIcon({
+          className: 'custom-responder-marker',
+          html: '<div class="agent-pin">🛡️</div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        if (responderMarkersMap.has(r.id)) {
+          const marker = responderMarkersMap.get(r.id);
+          marker.setLatLng([lat, lng]);
+        } else {
+          const marker = L.marker([lat, lng], { icon }).addTo(map);
+          marker.bindTooltip(\`<strong>\${escapeHtml(r.name)}</strong><br/>📍 \${escapeHtml(r.area)}<br/>📞 \${escapeHtml(r.phone)}\`, { direction: 'top' });
+          responderMarkersMap.set(r.id, marker);
+        }
+      });
+    }
+
+    function toggleRespondersOnMap() {
+      showRespondersOnMap = !showRespondersOnMap;
+      updateResponderMarkers();
+    }
+
+    // Fetch Incidents
     async function fetchIncidents(manual = false) {
       try {
         const res = await fetch('/api/dashboard/incidents');
-        if (!res.ok) throw new Error('Failed to fetch incidents');
+        if (!res.ok) return;
         const data = await res.json();
         if (data.success && Array.isArray(data.incidents)) {
           incidents = data.incidents;
-          updateDashboardStats();
+          updateStats();
           renderIncidentList();
           updateMapMarkers();
 
-          // Check for new active emergency alerts to play siren chime
+          // Siren check
           const currentActiveIds = new Set();
           incidents.forEach(inc => {
             if (inc.status === 'DISPATCHED' || inc.status === 'ACTIVE') {
               currentActiveIds.add(inc.id);
-              if (!previousActiveIds.has(inc.id) && !manual) {
-                playEmergencyAlertSiren();
-              }
+              if (!previousActiveIds.has(inc.id) && !manual) playEmergencyAlertSiren();
             }
           });
           previousActiveIds = currentActiveIds;
 
-          // If drawer is open, refresh its content smoothly
-          if (selectedIncidentId) {
-            const activeInc = incidents.find(i => i.id === selectedIncidentId);
-            if (activeInc) {
-              renderTacticalDrawer(activeInc);
-            }
+          if (!hasAutoCentered && incidents.length > 0) {
+            hasAutoCentered = true;
+            focusLatestEmergency();
           }
 
-          document.getElementById('lastSyncText').textContent = 'Live radar active';
+          if (selectedIncidentId) {
+            const activeInc = incidents.find(i => i.id === selectedIncidentId);
+            if (activeInc) renderTacticalDrawer(activeInc);
+          }
         }
-      } catch (err) {
-        console.error('Error fetching dashboard incidents:', err);
-        document.getElementById('lastSyncText').textContent = 'Reconnecting...';
-      }
+      } catch (err) {}
     }
 
-    // Update Top Statistics
-    function updateDashboardStats() {
+    // Stats
+    function updateStats() {
       const total = incidents.length;
       const active = incidents.filter(i => i.status === 'DISPATCHED' || i.status === 'ACTIVE').length;
       const assigned = incidents.filter(i => i.status === 'ASSIGNED').length;
@@ -1136,26 +1236,24 @@ export function renderDashboardHtml() {
       document.getElementById('statActive').textContent = active;
       document.getElementById('statAssigned').textContent = assigned;
       document.getElementById('statResolved').textContent = resolved;
+      document.getElementById('activeCountText').textContent = \`\${active} Active\`;
 
-      const emergencyPill = document.getElementById('emergencyPill');
-      const emergencyCountText = document.getElementById('emergencyCountText');
-      if (active > 0) {
-        emergencyPill.style.display = 'flex';
-        emergencyCountText.textContent = \`\${active} ACTIVE \${active === 1 ? 'EMERGENCY' : 'EMERGENCIES'}\`;
-      } else {
-        emergencyPill.style.display = 'none';
-      }
+      document.getElementById('emergencyPill').style.display = active > 0 ? 'flex' : 'none';
     }
 
-    // Filter Incidents
     function setFilter(filter, btn) {
       currentFilter = filter;
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       renderIncidentList();
     }
 
-    // Render Left Sidebar Incident List
+    function handleSearch(query) {
+      searchQuery = (query || '').toLowerCase().trim();
+      renderIncidentList();
+    }
+
+    // Render Cards
     function renderIncidentList() {
       const container = document.getElementById('incidentList');
       let filtered = incidents;
@@ -1168,12 +1266,18 @@ export function renderDashboardHtml() {
         filtered = incidents.filter(i => i.status === 'RESOLVED');
       }
 
+      if (searchQuery) {
+        filtered = filtered.filter(i => {
+          const name = (i.user?.name || '').toLowerCase();
+          const phone = (i.user?.phone || '').toLowerCase();
+          const id = (i.id || '').toLowerCase();
+          const loc = (i.location || '').toLowerCase();
+          return name.includes(searchQuery) || phone.includes(searchQuery) || id.includes(searchQuery) || loc.includes(searchQuery);
+        });
+      }
+
       if (filtered.length === 0) {
-        container.innerHTML = \`
-          <div style="text-align: center; padding: 40px 20px; color: var(--text-dim); font-size: 13px;">
-            No incidents in this category.
-          </div>
-        \`;
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-dim); font-size: 11px;">No incidents found.</div>';
         return;
       }
 
@@ -1184,41 +1288,44 @@ export function renderDashboardHtml() {
         const isSelected = selectedIncidentId === inc.id;
 
         const cardClass = [
-          'incident-card',
-          isEmergency ? 'is-emergency' : isAssigned ? 'is-assigned' : 'is-resolved',
+          'card',
+          isEmergency ? 'emergency' : isAssigned ? 'assigned' : 'resolved',
           isSelected ? 'active' : ''
         ].join(' ');
 
+        const shortId = inc.id.length > 8 ? \`#\${inc.id.substring(0, 6).toUpperCase()}\` : \`#\${inc.id}\`;
+
+        let locText = inc.location || 'Location on map';
+        if (locText.includes('Location disabled')) locText = 'GPS Disabled (Estimated Sector)';
+
         return \`
           <div class="\${cardClass}" onclick="selectIncident('\${inc.id}')">
-            <div class="card-top">
-              <span class="card-id">#\${inc.id}</span>
-              <span class="status-badge \${inc.status}">\${inc.status}</span>
+            <div class="card-head">
+              <span class="card-id">\${shortId}</span>
+              <span class="badge \${inc.status}">\${inc.status}</span>
             </div>
             <div class="card-user">
-              <span class="card-user-name">\${escapeHtml(inc.user.name)}</span>
-              <span class="card-user-phone">\${escapeHtml(inc.user.phone)}</span>
+              <span class="card-name">\${escapeHtml(inc.user.name)}</span>
+              <span class="card-phone">\${escapeHtml(inc.user.phone)}</span>
             </div>
-            <div class="card-loc">
-              📍 \${escapeHtml(inc.location)}
-            </div>
-            <div class="card-footer">
-              <span class="card-time">\${inc.timeAgo}</span>
-              \${inc.evidenceUrl ? '<span class="evidence-indicator">🎥 Evidence Ready</span>' : ''}
-              \${inc.assignedAgent ? \`<span class="assigned-indicator">👮 \${escapeHtml(inc.assignedAgent)}</span>\` : ''}
+            <div class="card-loc">📍 \${escapeHtml(locText)}</div>
+            <div class="card-foot">
+              <span>\${inc.timeAgo}</span>
+              <div style="display: flex; gap: 4px;">
+                \${inc.evidenceUrl ? '<span class="tag">🎥 Video</span>' : ''}
+                \${inc.assignedAgent ? \`<span class="tag" style="background: var(--amber-soft); color: #FCD34D;">👮 \${escapeHtml(inc.assignedAgent.split(' ')[0])}</span>\` : ''}
+              </div>
             </div>
           </div>
         \`;
       }).join('');
     }
 
-    // Update Map Markers
+    // Map Markers
     function updateMapMarkers() {
       if (!map) return;
-
       const currentIds = new Set(incidents.map(i => i.id));
 
-      // Remove markers for removed incidents
       for (const [id, marker] of markersMap.entries()) {
         if (!currentIds.has(id)) {
           map.removeLayer(marker);
@@ -1226,57 +1333,56 @@ export function renderDashboardHtml() {
         }
       }
 
-      // Add or update markers
       incidents.forEach(inc => {
         const lat = parseFloat(inc.latitude);
         const lng = parseFloat(inc.longitude);
         if (isNaN(lat) || isNaN(lng)) return;
 
-        const isEmergency = inc.status === 'DISPATCHED' || inc.status === 'ACTIVE';
-        const isAssigned = inc.status === 'ASSIGNED';
-
-        const iconHtml = isEmergency
-          ? '<div class="pulse-marker-active"></div>'
-          : isAssigned
-            ? '<div class="pulse-marker-assigned"></div>'
-            : '<div class="pulse-marker-resolved"></div>';
-
-        const customIcon = L.divIcon({
-          className: 'custom-leaflet-marker',
-          html: iconHtml,
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
+        const icon = L.divIcon({
+          className: 'custom-marker',
+          html: '<div class="pulse-dot"></div>',
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
         });
 
         if (markersMap.has(inc.id)) {
-          const marker = markersMap.get(inc.id);
-          marker.setLatLng([lat, lng]);
-          marker.setIcon(customIcon);
+          markersMap.get(inc.id).setLatLng([lat, lng]);
         } else {
-          const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+          const marker = L.marker([lat, lng], { icon }).addTo(map);
+          marker.bindTooltip(\`<strong>\${escapeHtml(inc.user.name)}</strong><br/>\${inc.status}\`, { direction: 'top' });
           marker.on('click', () => selectIncident(inc.id));
           markersMap.set(inc.id, marker);
         }
       });
     }
 
-    // Select Incident & Open Tactical Drawer
+    function fitAllEmergencyPins() {
+      if (!map) return;
+      const all = [...Array.from(markersMap.values()), ...Array.from(responderMarkersMap.values())];
+      if (all.length === 0) return;
+      map.fitBounds(new L.featureGroup(all).getBounds().pad(0.2));
+    }
+
+    function focusLatestEmergency() {
+      if (incidents.length === 0) return;
+      const target = incidents.find(i => (i.status === 'DISPATCHED' || i.status === 'ACTIVE') && i.latitude && i.longitude) || incidents[0];
+      if (target) selectIncident(target.id);
+    }
+
     function selectIncident(id) {
       selectedIncidentId = id;
       const inc = incidents.find(i => i.id === id);
       if (!inc) return;
 
-      // Highlight card
       renderIncidentList();
 
-      // Pan map
       const lat = parseFloat(inc.latitude);
       const lng = parseFloat(inc.longitude);
       if (!isNaN(lat) && !isNaN(lng)) {
-        map.flyTo([lat, lng], 16, { animate: true, duration: 1 });
+        map.flyTo([lat, lng], 17, { animate: true, duration: 1 });
+        document.getElementById('sectorText').textContent = \`Sector: \${lat.toFixed(4)}, \${lng.toFixed(4)}\`;
       }
 
-      // Render Tactical Drawer
       renderTacticalDrawer(inc);
       document.getElementById('tacticalDrawer').classList.remove('hidden');
     }
@@ -1284,257 +1390,376 @@ export function renderDashboardHtml() {
     function closeDrawer() {
       document.getElementById('tacticalDrawer').classList.add('hidden');
       selectedIncidentId = null;
+      if (dispatchLineLayer && map) {
+        map.removeLayer(dispatchLineLayer);
+        dispatchLineLayer = null;
+      }
       renderIncidentList();
     }
 
-    // Render Full Tactical Drawer for Selected Incident
+    // Render Drawer
     function renderTacticalDrawer(inc) {
-      document.getElementById('drawerAlertId').textContent = \`#\${inc.id}\`;
+      const shortId = inc.id.length > 8 ? \`#\${inc.id.substring(0, 6).toUpperCase()}\` : \`#\${inc.id}\`;
+      document.getElementById('drawerAlertId').textContent = shortId;
+      document.getElementById('drawerStatusBadge').textContent = inc.status;
+      document.getElementById('drawerStatusBadge').className = \`badge \${inc.status}\`;
 
+      const victimLat = parseFloat(inc.latitude);
+      const victimLng = parseFloat(inc.longitude);
+
+      // Rank Responders
+      const rankedResponders = responders.map(r => {
+        const rLat = parseFloat(r.latitude);
+        const rLng = parseFloat(r.longitude);
+        const distKm = (!isNaN(victimLat) && !isNaN(victimLng) && !isNaN(rLat) && !isNaN(rLng))
+          ? calculateDistanceKm(victimLat, victimLng, rLat, rLng)
+          : 999;
+        const estMins = Math.max(1, Math.round(distKm * 2.5));
+        return { ...r, distKm, estMins };
+      }).sort((a, b) => a.distKm - b.distKm);
+
+      // Guardians
       const guardiansHtml = inc.guardians && inc.guardians.length > 0
         ? inc.guardians.map(g => \`
-            <div class="info-row">
-              <span class="info-label">🛡️ \${escapeHtml(g.name || 'Guardian')}</span>
-              <a href="tel:\${escapeHtml(g.phone)}" class="action-btn btn-guardian" style="padding: 4px 10px; font-size: 11px;">
+            <div class="row">
+              <span class="k">🛡️ \${escapeHtml(g.name || 'Guardian')}</span>
+              <a href="tel:\${escapeHtml(g.phone)}" style="color: #38BDF8; font-family: 'JetBrains Mono', monospace; text-decoration: none; font-weight: 600;">
                 📞 \${escapeHtml(g.phone)}
               </a>
             </div>
           \`).join('')
-        : '<div style="color: var(--text-dim); font-size: 12px;">No guardians configured</div>';
+        : '<div style="color: var(--text-dim); font-size: 11px;">No guardians configured.</div>';
 
-      const drawerHtml = \`
-        <!-- STEP 7: VIDEO / AUDIO EVIDENCE PLAYER -->
-        <div class="drawer-section">
-          <div class="section-title">
-            <span>🎥 EMERGENCY RECORDED EVIDENCE (STEP 7)</span>
-          </div>
-          \${inc.evidenceUrl ? \`
-            <div class="video-player-box">
-              <video src="\${inc.evidenceUrl}" controls playsinline preload="metadata">
-                Your browser does not support the video tag.
-              </video>
-            </div>
-            <div class="evidence-actions">
-              <a href="\${inc.evidenceUrl}" target="_blank" class="evidence-btn">
-                <span>🔗 Full Screen Cloudinary Stream</span>
-              </a>
-            </div>
-          \` : \`
-            <div class="no-evidence-box">
-              <span>⏳ 2-Min Evidence Recording in Progress or not uploaded yet</span>
-            </div>
-          \`}
-        </div>
+      // Responders HTML
+      let respondersHtml = '';
+      if (rankedResponders.length === 0) {
+        respondersHtml = '<div style="padding: 10px; color: var(--text-dim); font-size: 11px; text-align: center;">No agents registered.</div>';
+      } else {
+        respondersHtml = rankedResponders.map((r, idx) => {
+          const isNearest = idx === 0 && r.distKm < 50;
+          const distText = r.distKm < 900 ? \`\${r.distKm.toFixed(1)} km (~\${r.estMins}m)\` : 'Location pending';
 
-        <!-- VICTIM PROFILE & ONE-CLICK CONTACT (STEP 9) -->
-        <div class="drawer-section">
-          <div class="section-title">
-            <span>👤 VICTIM PROFILE & DIRECT CONTACT (STEP 9)</span>
-          </div>
-          <div class="victim-info-grid">
-            <div class="info-row">
-              <span class="info-label">Name</span>
-              <span class="info-value">\${escapeHtml(inc.user.name)}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Mobile Number</span>
-              <span class="info-value" style="font-family: 'JetBrains Mono', monospace;">\${escapeHtml(inc.user.phone)}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Account Type</span>
-              <span class="info-value">\${inc.user.isGuest ? '⚠️ Guest SOS Trigger' : '✅ Verified DEVI User'}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Exact Location</span>
-              <span class="info-value" style="font-size: 11px; max-width: 220px;">\${escapeHtml(inc.location)}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Dispatched Time</span>
-              <span class="info-value">\${inc.displayTime} (\${inc.timeAgo})</span>
-            </div>
-          </div>
-
-          <!-- Quick Call Buttons -->
-          <div class="call-btn-grid">
-            <a href="tel:\${escapeHtml(inc.user.phone)}" class="action-btn btn-victim">
-              <span>📞 CALL VICTIM</span>
-            </a>
-            <a href="tel:112" class="action-btn btn-emergency">
-              <span>🚨 CALL 112 (POLICE)</span>
-            </a>
-          </div>
-        </div>
-
-        <!-- GUARDIANS CONTACT -->
-        <div class="drawer-section">
-          <div class="section-title">
-            <span>🛡️ EMERGENCY GUARDIANS CONTACTS</span>
-          </div>
-          <div class="victim-info-grid">
-            \${guardiansHtml}
-          </div>
-        </div>
-
-        <!-- STEP 8: DISPATCH AGENT WORKFLOW -->
-        <div class="drawer-section">
-          <div class="section-title">
-            <span>👮 STEP 8: ASSIGN & DISPATCH RESPONSE AGENT</span>
-          </div>
-          <div class="dispatch-input-group">
-            \${inc.assignedAgent ? \`
-              <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 10px; font-size: 12px; color: #FCD34D;">
-                <strong>Currently Assigned Unit:</strong> \${escapeHtml(inc.assignedAgent)}
+          return \`
+            <div class="agent-card \${isNearest ? 'nearest' : ''}">
+              <div class="agent-card-top">
+                <span style="font-size: 12px; font-weight: 700; color: #FFF;">\${isNearest ? '⚡ ' : ''}\${escapeHtml(r.name)}</span>
+                <span class="dist-badge">\${distText}</span>
               </div>
-            \` : ''}
-            
-            <input 
-              type="text" 
-              id="agentInput" 
-              class="select-agent-input" 
-              placeholder="Enter patrol officer name or unit..." 
-              value="\${inc.assignedAgent ? escapeHtml(inc.assignedAgent) : ''}"
-            />
-
-            <div class="quick-agents-pills">
-              <span class="quick-pill" onclick="setAgentText('Patrol Unit 01 (Rapid)')">Patrol 01</span>
-              <span class="quick-pill" onclick="setAgentText('DEVI Mobile Rescue Team A')">Rescue Team A</span>
-              <span class="quick-pill" onclick="setAgentText('Women Helpline Patrol 04')">Helpline Patrol 04</span>
-              <span class="quick-pill" onclick="setAgentText('Ambulance Response 108')">Ambulance 108</span>
+              <div style="font-size: 10px; color: var(--text-dim); display: flex; justify-content: space-between;">
+                <span>📍 \${escapeHtml(r.area)} (\${escapeHtml(r.vehicle)})</span>
+                <span style="font-family: 'JetBrains Mono', monospace;">📞 \${escapeHtml(r.phone)}</span>
+              </div>
+              <div class="agent-card-actions">
+                <button class="btn-assign" onclick="assignAndAlertResponder('\${inc.id}', '\${r.id}', '\${escapeHtml(r.name)}', '\${escapeHtml(r.phone)}', \${r.distKm})">
+                  Assign & Alert
+                </button>
+                <a href="tel:\${escapeHtml(r.phone)}" class="btn" style="padding: 0 8px; height: 26px; font-size: 10px;">
+                  📞 Call
+                </a>
+              </div>
             </div>
-
-            <button class="btn-dispatch" onclick="assignAgent('\${inc.id}')">
-              <span>🚨 CONFIRM AGENT DISPATCH (STEP 8)</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- STEP 9: OPERATOR ACTION LOG & NOTES -->
-        <div class="drawer-section">
-          <div class="section-title">
-            <span>📝 STEP 9: OPERATOR ACTION LOG & GUIDANCE</span>
-          </div>
-          
-          <div class="notes-history-box" id="notesHistoryBox">
-\${inc.operatorNotes ? escapeHtml(inc.operatorNotes) : 'No operator notes recorded yet. Add initial contact log below.'}
-          </div>
-
-          <div class="add-note-box">
-            <input 
-              type="text" 
-              id="newNoteInput" 
-              class="note-input" 
-              placeholder="e.g. Called victim, safe in store, patrol 2m away..." 
-              onkeydown="if(event.key === 'Enter') addOperatorNote('\${inc.id}')"
-            />
-            <button class="btn-add-note" onclick="addOperatorNote('\${inc.id}')">Log</button>
-          </div>
-
-          \${inc.status !== 'RESOLVED' ? \`
-            <button class="btn-resolve" onclick="resolveIncident('\${inc.id}')">
-              <span>✅ MARK INCIDENT AS RESOLVED</span>
-            </button>
-          \` : \`
-            <div style="text-align: center; color: #10B981; font-weight: 700; font-size: 13px; margin-top: 10px;">
-              ✅ Incident Completed & Resolved
-            </div>
-          \`}
-        </div>
-      \`;
-
-      document.getElementById('drawerContent').innerHTML = drawerHtml;
-    }
-
-    function setAgentText(name) {
-      const input = document.getElementById('agentInput');
-      if (input) input.value = name;
-    }
-
-    // Step 8: Assign Agent API Call
-    async function assignAgent(alertId) {
-      const input = document.getElementById('agentInput');
-      const agentName = input ? input.value.trim() : '';
-      if (!agentName) {
-        alert('Please enter or select a patrol agent name / unit ID');
-        return;
+          \`;
+        }).join('');
       }
 
+      const drawerBody = document.getElementById('drawerBody');
+      drawerBody.innerHTML = \`
+        <!-- EVIDENCE -->
+        <div class="panel">
+          <div class="panel-head">
+            <span>Live Evidence</span>
+            \${inc.evidenceUrl ? '<span style="color: #34D399; font-size: 9px;">● READY</span>' : ''}
+          </div>
+          
+          <div class="video-frame">
+            \${inc.evidenceUrl ? \`
+              <video class="video-player" src="\${inc.evidenceUrl}" controls playsinline preload="metadata"></video>
+            \` : \`
+              <div class="video-empty">
+                <span>⏳ Front camera recording in progress or pending upload...</span>
+              </div>
+            \`}
+          </div>
+
+          \${inc.evidenceUrl ? \`
+            <div class="video-actions">
+              <a href="\${inc.evidenceUrl}" target="_blank" class="btn-small">↗ Open Video</a>
+              <a href="\${inc.evidenceUrl}" download="DEVI_EVIDENCE_\${inc.id}.mp4" class="btn-small">⬇ Download</a>
+            </div>
+          \` : ''}
+        </div>
+
+        <!-- VICTIM DETAILS -->
+        <div class="panel">
+          <div class="panel-head">Victim Details</div>
+          <div class="row"><span class="k">Name</span><span class="v">\${escapeHtml(inc.user.name)}</span></div>
+          <div class="row"><span class="k">Phone</span><span class="v" style="font-family: 'JetBrains Mono', monospace; color: #38BDF8;">\${escapeHtml(inc.user.phone)}</span></div>
+          <div class="row"><span class="k">Time</span><span class="v">\${inc.displayTime} (\${inc.timeAgo})</span></div>
+          <div class="row" style="flex-direction: column; gap: 2px;">
+            <span class="k">Location</span>
+            <span class="v" style="text-align: left; font-size: 11px; color: #E2E8F0;">\${escapeHtml(inc.location)}</span>
+          </div>
+
+          <div class="action-row">
+            <a href="tel:\${escapeHtml(inc.user.phone)}" class="btn-red">📞 Call Victim</a>
+            <a href="tel:112" class="btn-police">🚨 Call 112</a>
+            <button class="btn-copy" onclick="copyTrackingLink('\${inc.id}')">📋 Copy Tracking Link</button>
+          </div>
+        </div>
+
+        <!-- NEARBY AGENTS -->
+        <div class="panel">
+          <div class="panel-head">
+            <span>Nearby Agents</span>
+            <button onclick="openAddResponderModal()" style="background: none; border: none; color: #06B6D4; cursor: pointer; font-size: 10px; font-weight: 700;">+ Add</button>
+          </div>
+
+          \${inc.assignedAgent ? \`
+            <div style="background: var(--amber-soft); border: 1px solid rgba(245,158,11,0.3); border-radius: 6px; padding: 8px; margin-bottom: 8px;">
+              <div style="font-size: 11px; font-weight: 700; color: #FCD34D;">✓ Assigned: \${escapeHtml(inc.assignedAgent)}</div>
+              <a href="\${generateWhatsAppAlertUrl(inc)}" target="_blank" class="btn-wa">💬 Send WhatsApp Alert</a>
+            </div>
+          \` : ''}
+
+          <div class="agent-list">
+            \${respondersHtml}
+          </div>
+        </div>
+
+        <!-- GUARDIANS -->
+        <div class="panel">
+          <div class="panel-head">Guardians</div>
+          \${guardiansHtml}
+        </div>
+
+        <!-- NOTES -->
+        <div class="panel">
+          <div class="panel-head">Incident Notes</div>
+          
+          <div class="chips">
+            <span class="chip" onclick="appendNote('Call Attempt - ')">+ Call Attempt</span>
+            <span class="chip" onclick="appendNote('Spoke to Victim - ')">+ Spoke to Victim</span>
+            <span class="chip" onclick="appendNote('Agent Dispatched - ')">+ Dispatched</span>
+            <span class="chip" onclick="appendNote('Victim Safe - ')">+ Safe</span>
+          </div>
+
+          <textarea class="notes-input" id="operatorNotesInput" placeholder="Add note...">\${inc.operatorNotes || ''}</textarea>
+
+          <div class="notes-actions">
+            <button class="btn" onclick="saveOperatorNotes('\${inc.id}')" style="height: 28px; font-size: 11px;">Save Note</button>
+            <button class="btn btn-green" onclick="resolveIncident('\${inc.id}')" style="height: 28px; font-size: 11px;">✓ Resolve</button>
+          </div>
+        </div>
+      \`;
+    }
+
+    function generateWhatsAppAlertUrl(inc, responderPhone = null) {
+      const trackingUrl = \`\${window.location.origin}/track/\${inc.id}\`;
+      const msg = \`🚨 DEVI EMERGENCY ALERT!\\nVictim: \${inc.user.name}\\nPhone: \${inc.user.phone}\\nLocation: \${inc.location}\\n\\n🔴 LIVE GPS TRACKING:\\n\${trackingUrl}\\n\\nPlease reach the spot immediately! Control room is guiding you.\`;
+      
+      const phoneClean = (responderPhone || '').replace(/[^0-9]/g, '');
+      if (phoneClean) {
+        return \`https://wa.me/91\${phoneClean.length === 10 ? phoneClean : phoneClean.slice(-10)}?text=\${encodeURIComponent(msg)}\`;
+      }
+      return \`https://api.whatsapp.com/send?text=\${encodeURIComponent(msg)}\`;
+    }
+
+    // Assign & Alert
+    async function assignAndAlertResponder(alertId, responderId, responderName, responderPhone, distKm) {
       try {
         const res = await fetch('/api/dashboard/assign-agent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ alertId, agentName }),
+          body: JSON.stringify({ alertId, agentName: responderName, agentPhone: responderPhone }),
         });
         const data = await res.json();
         if (data.success) {
+          drawTacticalDispatchLine(alertId, responderId);
           await fetchIncidents(true);
-        } else {
-          alert(data.message || 'Failed to assign agent');
+          await fetchResponders();
+
+          const updated = incidents.find(i => i.id === alertId);
+          if (updated) renderTacticalDrawer(updated);
+
+          const waUrl = generateWhatsAppAlertUrl(updated, responderPhone);
+          const shouldSend = confirm(\`✓ \${responderName} assigned!\\n\\nOpen WhatsApp to send live tracking link to \${responderName} (\${responderPhone})?\`);
+          if (shouldSend) window.open(waUrl, '_blank');
         }
       } catch (e) {
-        console.error('Assign agent error:', e);
-        alert('Network error while assigning agent');
+        alert('Error assigning agent');
       }
     }
 
-    // Step 9: Add Operator Log Note API Call
-    async function addOperatorNote(alertId) {
-      const input = document.getElementById('newNoteInput');
-      const note = input ? input.value.trim() : '';
+    async function drawTacticalDispatchLine(alertId, responderId) {
+      const inc = incidents.find(i => i.id === alertId);
+      const resp = responders.find(r => r.id === responderId);
+      if (!inc || !resp || !map) return;
+
+      const vLat = parseFloat(inc.latitude);
+      const vLng = parseFloat(inc.longitude);
+      const rLat = parseFloat(resp.latitude);
+      const rLng = parseFloat(resp.longitude);
+      if (isNaN(vLat) || isNaN(vLng) || isNaN(rLat) || isNaN(rLng)) return;
+
+      if (dispatchLineLayer) {
+        map.removeLayer(dispatchLineLayer);
+        dispatchLineLayer = null;
+      }
+
+      try {
+        // Query Open Source Routing Machine (OSRM) for real road driving coordinates
+        const osrmUrl = 'https://router.project-osrm.org/route/v1/driving/' + rLng + ',' + rLat + ';' + vLng + ',' + vLat + '?overview=full&geometries=geojson';
+        const res = await fetch(osrmUrl);
+        const data = await res.json();
+
+        if (data && data.code === 'Ok' && data.routes && data.routes.length > 0) {
+          const roadPoints = data.routes[0].geometry.coordinates.map(pt => [pt[1], pt[0]]);
+          
+          dispatchLineLayer = L.polyline(roadPoints, {
+            color: '#38BDF8',
+            weight: 5,
+            opacity: 0.95,
+            lineJoin: 'round',
+            lineCap: 'round'
+          }).addTo(map);
+
+          map.fitBounds(dispatchLineLayer.getBounds().pad(0.2));
+          return;
+        }
+      } catch (err) {
+        console.warn('Real road routing error, using direct line fallback:', err);
+      }
+
+      // Fallback: direct line if OSRM is unreachable
+      dispatchLineLayer = L.polyline([[rLat, rLng], [vLat, vLng]], {
+        color: '#06B6D4',
+        weight: 3,
+        dashArray: '6, 6',
+        opacity: 0.85
+      }).addTo(map);
+
+      map.fitBounds(dispatchLineLayer.getBounds().pad(0.3));
+    }
+
+    function appendNote(prefix) {
+      const textarea = document.getElementById('operatorNotesInput');
+      if (textarea) {
+        const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const existing = textarea.value.trim();
+        textarea.value = existing ? \`\${existing}\\n[\${time}] \${prefix}\` : \`[\${time}] \${prefix}\`;
+        textarea.focus();
+      }
+    }
+
+    function copyTrackingLink(id) {
+      const url = \`\${window.location.origin}/track/\${id}\`;
+      navigator.clipboard.writeText(url).then(() => {
+        alert('Tracking Link Copied: ' + url);
+      });
+    }
+
+    function copyDutyPortalLink() {
+      const url = \`\${window.location.origin}/duty\`;
+      navigator.clipboard.writeText(url).then(() => {
+        alert('Agent Duty Link Copied!\\nSend this link to your field agents on WhatsApp:\\n' + url);
+      });
+    }
+
+    async function saveOperatorNotes(alertId) {
+      const textarea = document.getElementById('operatorNotesInput');
+      const note = textarea ? textarea.value.trim() : '';
       if (!note) return;
 
       try {
-        const res = await fetch('/api/dashboard/add-note', {
+        await fetch('/api/dashboard/add-note', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ alertId, note }),
         });
-        const data = await res.json();
-        if (data.success) {
-          input.value = '';
-          await fetchIncidents(true);
-        } else {
-          alert('Failed to log operator note');
+        await fetchIncidents(true);
+        alert('Note saved');
+      } catch (e) {}
+    }
+
+    async function resolveIncident(alertId) {
+      if (!confirm('Mark this incident as RESOLVED?')) return;
+      try {
+        await fetch(\`/api/dashboard/resolve/\${alertId}\`, { method: 'POST' });
+        await fetchIncidents(true);
+        closeDrawer();
+      } catch (e) {}
+    }
+
+    // Modal
+    function openAddResponderModal() {
+      if (selectedIncidentId) {
+        const inc = incidents.find(i => i.id === selectedIncidentId);
+        if (inc && inc.latitude && inc.longitude) {
+          document.getElementById('respLat').value = inc.latitude;
+          document.getElementById('respLng').value = inc.longitude;
         }
-      } catch (e) {
-        console.error('Log note error:', e);
+      } else {
+        document.getElementById('respLat').value = '9.4532';
+        document.getElementById('respLng').value = '77.7981';
+      }
+      document.getElementById('addResponderModal').classList.remove('hidden');
+    }
+
+    function closeAddResponderModal() {
+      document.getElementById('addResponderModal').classList.add('hidden');
+    }
+
+    function useCurrentLocationForResponder() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            document.getElementById('respLat').value = pos.coords.latitude.toFixed(5);
+            document.getElementById('respLng').value = pos.coords.longitude.toFixed(5);
+            alert('Location captured!');
+          },
+          err => alert('Location error: ' + err.message)
+        );
       }
     }
 
-    // Resolve Incident API Call
-    async function resolveIncident(alertId) {
-      if (!confirm(\`Are you sure incident #\${alertId} is safe and resolved?\`)) return;
+    async function handleSaveResponder(e) {
+      e.preventDefault();
+      const name = document.getElementById('respName').value.trim();
+      const phone = document.getElementById('respPhone').value.trim();
+      const area = document.getElementById('respArea').value.trim();
+      const vehicle = document.getElementById('respVehicle').value;
+      const latitude = document.getElementById('respLat').value;
+      const longitude = document.getElementById('respLng').value;
 
       try {
-        const res = await fetch(\`/api/dashboard/resolve/\${alertId}\`, {
+        const res = await fetch('/api/dashboard/agents', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, phone, area, vehicle, latitude, longitude }),
         });
         const data = await res.json();
         if (data.success) {
-          await fetchIncidents(true);
-        } else {
-          alert(data.message || 'Failed to resolve incident');
+          closeAddResponderModal();
+          await fetchResponders();
+          alert(\`✓ Agent \${name} added successfully!\`);
         }
-      } catch (e) {
-        console.error('Resolve incident error:', e);
-      }
+      } catch (err) {}
     }
 
-    function escapeHtml(text) {
-      if (!text) return '';
-      return String(text)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
     // Startup
     window.addEventListener('DOMContentLoaded', () => {
       initMap();
-      fetchIncidents();
-      // Poll every 3 seconds for real-time live alerts
-      setInterval(() => fetchIncidents(false), 3000);
+      fetchIncidents(true);
+      fetchResponders();
+      setInterval(() => {
+        fetchIncidents(false);
+        fetchResponders();
+      }, 4000);
     });
   </script>
 </body>

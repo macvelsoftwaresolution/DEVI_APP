@@ -18,6 +18,7 @@ app.use(morgan('dev'));
 
 import { renderLiveTrackingHtml } from './views/track.view.js';
 import { renderDashboardHtml } from './views/dashboard.view.js';
+import { renderAgentDutyHtml } from './views/agent_duty.view.js';
 import { DataService } from './services/data.service.js';
 
 // API Routes
@@ -26,6 +27,14 @@ app.use('/api', apiRoutes);
 // Operator Command Center Web View (Steps 7, 8, 9)
 app.get('/dashboard', (req, res) => {
   const html = renderDashboardHtml();
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+});
+
+// Field Responder On-Duty Live GPS Tracking View
+app.get(['/duty', '/duty/:agentId'], (req, res) => {
+  const { agentId } = req.params;
+  const html = renderAgentDutyHtml({ defaultAgentId: agentId });
   res.setHeader('Content-Type', 'text/html');
   res.send(html);
 });
