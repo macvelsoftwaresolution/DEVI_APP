@@ -209,6 +209,9 @@ class ApiService {
     required String location,
     double? latitude,
     double? longitude,
+    double? accuracy,
+    String? idempotencyKey,
+    DateTime? capturedAt,
     required List<String> contactsAlerted,
   }) async {
     try {
@@ -221,6 +224,9 @@ class ApiService {
               'location': location,
               'latitude': latitude ?? 13.0827,
               'longitude': longitude ?? 80.2707,
+              'accuracy': accuracy,
+              'idempotency_key': idempotencyKey,
+              'captured_at': capturedAt?.toIso8601String(),
               'contactsAlerted': contactsAlerted,
             }),
           )
@@ -228,7 +234,11 @@ class ApiService {
 
       if (res.statusCode == 201 || res.statusCode == 200) {
         final body = jsonDecode(res.body);
-        return body['data'];
+        final data = body['data'] is Map<String, dynamic>
+            ? Map<String, dynamic>.from(body['data'])
+            : <String, dynamic>{};
+        data['duplicate'] = body['duplicate'] == true;
+        return data;
       }
     } catch (e) {
       debugPrint('API SOS Trigger Error: $e');

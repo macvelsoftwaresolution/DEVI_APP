@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../services/emergency_media_service.dart';
@@ -22,6 +23,8 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
   final AppState _appState = AppState.instance;
 
   bool _isEmergencyActive = false;
+  bool _isSendingSos = false;
+  String? _activeIdempotencyKey;
   bool _isSoundPlaying = false;
   Timer? _holdTimer;
   double _holdProgress = 0.0;
@@ -88,6 +91,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     if (_isEmergencyActive) {
       setState(() {
         _isEmergencyActive = false;
+        _activeIdempotencyKey = null;
       });
       LocationService.stopLiveTracking(resolveBackend: true);
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -226,93 +230,121 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     }
   }
 
-  // --- Registered user: Record incident & 2-minute evidence in database for verification (No Guardian SMS/Call) ---
+  // --- Registered user: Record incident & 2-minute evidence in database for verification ---
   Future<void> _triggerSosAlert() async {
+    // 0. Double-tap and rapid click protection
+    if (_isSendingSos) return;
+    _isSendingSos = true;
+
     setState(() {
       _isEmergencyActive = true;
       _holdProgress = 0.0;
     });
 
-    // 1. Auto-start 2-minute emergency video and audio recording
-    final initialId = 'SOS_${DateTime.now().millisecondsSinceEpoch}';
-    EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
+    // Generate or reuse persistent UUID idempotency key for this session
+    _activeIdempotencyKey ??= const Uuid().v4();
 
-    final guardiansList = _appState.guardians;
-    final primaryGuardian = guardiansList.first;
-    final primaryPhone = primaryGuardian.phone;
+    try {
+      // 1. Auto-start 2-minute emergency video and audio recording
+      final initialId = 'SOS_${DateTime.now().millisecondsSinceEpoch}';
+      EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
 
-    // 1. Fetch current GPS location
-    final locResult = await LocationService.getCurrentLocation();
-    final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
+      final guardiansList = _appState.guardians;
+      final primaryGuardian = guardiansList.isNotEmpty ? guardiansList.first : null;
+      final primaryPhone = primaryGuardian?.phone ?? '';
 
-    // 2. Register SOS alert in Backend to obtain unique Live Tracking URL
-    final alertData = await ApiService.instance.triggerEmergencyAlert(
-      userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
-      location: locResult.mapsUrl ?? locResult.displayText,
-      latitude: locResult.latitude,
-      longitude: locResult.longitude,
-      contactsAlerted: contactStrings,
-    );
+      // 2. Fetch current GPS location honestly with accuracy & timestamp
+      final locResult = await LocationService.getCurrentLocation();
+      final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
 
-    final alertId = alertData != null && alertData['id'] != null
-        ? alertData['id'].toString()
-        : DateTime.now().millisecondsSinceEpoch.toString();
+      // 3. Register SOS alert in Backend with Idempotency Key
+      final alertData = await ApiService.instance.triggerEmergencyAlert(
+        userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
+        location: locResult.mapsUrl ?? locResult.displayText,
+        latitude: locResult.latitude,
+        longitude: locResult.longitude,
+        accuracy: locResult.accuracy,
+        idempotencyKey: _activeIdempotencyKey,
+        capturedAt: locResult.capturedAt,
+        contactsAlerted: contactStrings,
+      );
 
-    // Bind alert ID for automatic evidence upload to Cloudinary upon completion
-    EmergencyMediaService.instance.setAlertId(alertId);
+      final alertId = alertData != null && alertData['id'] != null
+          ? alertData['id'].toString()
+          : DateTime.now().millisecondsSinceEpoch.toString();
 
-    final trackingUrl = (alertData != null && alertData['trackingUrl'] != null)
-        ? alertData['trackingUrl'].toString()
-        : (locResult.mapsUrl ?? 'https://maps.google.com/?q=${locResult.latitude ?? 13.0827},${locResult.longitude ?? 80.2707}');
+      final isDuplicate = alertData != null && alertData['duplicate'] == true;
 
-    // 3. Start real-time continuous GPS tracking stream in background
-    LocationService.startLiveTracking(alertId: alertId);
+      // Bind alert ID for automatic evidence upload to Cloudinary upon completion
+      EmergencyMediaService.instance.setAlertId(alertId);
 
-    // 4. Send single SMS broadcast with unique Live Tracking Link to guardians
-    final guardianPhones = guardiansList.map((g) => g.phone).toList();
-    await SmsService.broadcastEmergencySms(
-      phoneNumbers: guardianPhones,
-      userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
-      location: trackingUrl,
-      alertId: alertId,
-    );
+      final trackingUrl = (alertData != null && alertData['trackingUrl'] != null)
+          ? alertData['trackingUrl'].toString()
+          : (locResult.mapsUrl ?? 'https://maps.google.com/?q=${locResult.latitude ?? 13.0827},${locResult.longitude ?? 80.2707}');
 
-    // 5. Immediately initiate phone call to the 1st Guardian
-    await SmsService.makePhoneCall(primaryPhone);
+      // 4. Start real-time continuous GPS tracking stream in background
+      LocationService.startLiveTracking(alertId: alertId);
 
-    if (!mounted) return;
+      // 5. Send single SMS broadcast ONLY IF THIS IS A NEW SOS (Never for duplicates/retries)
+      if (!isDuplicate) {
+        final guardianPhones = guardiansList.map((g) => g.phone).toList();
+        await SmsService.broadcastEmergencySms(
+          phoneNumbers: guardianPhones,
+          userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
+          location: trackingUrl,
+          alertId: alertId,
+        );
 
-    // Feedback banner showing database recording status for verification
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Row(
-          children: [
-            Icon(Icons.verified_user_rounded, color: Colors.white, size: 20),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '🛡️ SOS Incident & 2-Min Evidence Stored in Database (Ready for Verification)',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        // Immediately initiate phone call to the 1st Guardian
+        if (primaryPhone.isNotEmpty) {
+          await SmsService.makePhoneCall(primaryPhone);
+        }
+      } else {
+        debugPrint('🔁 [SOS RETRY/DUPLICATE] Active session reused ($alertId). Skipping duplicate SMS & call.');
+      }
+
+      if (!mounted) return;
+
+      // Feedback banner showing database recording status for verification
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                isDuplicate ? Icons.sync_rounded : Icons.verified_user_rounded,
+                color: Colors.white,
+                size: 20,
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isDuplicate
+                      ? '🚨 Active SOS Resumed (Idempotent: No duplicate SMS)'
+                      : '🛡️ SOS Incident & 2-Min Evidence Stored in Database (Ready for Verification)',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF0F172A),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'History',
+            textColor: const Color(0xFF38BDF8),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const HistoryScreen()),
+              );
+            },
+          ),
         ),
-        backgroundColor: const Color(0xFF0F172A),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 4),
-        action: SnackBarAction(
-          label: 'History',
-          textColor: const Color(0xFF38BDF8),
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (context) => const HistoryScreen()),
-            );
-          },
-        ),
-      ),
-    );
+      );
+    } finally {
+      _isSendingSos = false;
+    }
   }
 
   void _toggleEmergencySound() async {

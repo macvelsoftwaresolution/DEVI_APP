@@ -230,7 +230,75 @@ export const DataService = {
   },
 
   // --- SOS ALERTS & HISTORY ---
-  async createSosAlert({ userPhone, location, latitude, longitude }) {
+
+  // Check for existing active SOS session (Idempotency & One Active SOS Rule)
+  async findExistingSos({ idempotencyKey, userPhone }) {
+    // 1. Check in-memory active live sessions first
+    for (const session of liveTrackSessions.values()) {
+      if (session.status === 'ACTIVE') {
+        if (idempotencyKey && session.idempotencyKey === idempotencyKey) {
+          return session;
+        }
+        if (userPhone && session.userPhone === userPhone) {
+          const ageMs = Date.now() - new Date(session.timestamp).getTime();
+          // If within the last 15 minutes, consider it an ongoing active session
+          if (ageMs < 15 * 60 * 1000) {
+            return session;
+          }
+        }
+      }
+    }
+
+    // 2. Check Supabase DB by idempotency_key if provided
+    if (idempotencyKey) {
+      try {
+        const { data: existingAlert, error } = await supabase
+          .from('sos_history')
+          .select('*')
+          .eq('idempotency_key', idempotencyKey)
+          .maybeSingle();
+
+        if (!error && existingAlert) {
+          const now = new Date(existingAlert.created_at || Date.now());
+          const hours = now.getHours();
+          const minutes = now.getMinutes().toString().padStart(2, '0');
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          const formattedHour = hours % 12 || 12;
+
+          const sessionData = {
+            id: existingAlert.id.toString(),
+            userId: existingAlert.user_id,
+            userPhone: userPhone || '',
+            idempotencyKey,
+            timestamp: existingAlert.created_at,
+            displayTime: `Today, ${formattedHour}:${minutes} ${ampm}`,
+            location: existingAlert.location_address || `GPS: ${existingAlert.latitude}, ${existingAlert.longitude}`,
+            latitude: existingAlert.latitude,
+            longitude: existingAlert.longitude,
+            accuracy: existingAlert.accuracy || null,
+            status: existingAlert.status || 'ACTIVE',
+            lastUpdated: existingAlert.created_at || new Date().toISOString(),
+            evidenceUrl: existingAlert.evidence_url || null,
+            breadcrumbs: [
+              {
+                latitude: existingAlert.latitude,
+                longitude: existingAlert.longitude,
+                timestamp: existingAlert.created_at || new Date().toISOString(),
+              },
+            ],
+          };
+          liveTrackSessions.set(existingAlert.id.toString(), sessionData);
+          return sessionData;
+        }
+      } catch (err) {
+        // Fall through gracefully if column not yet added
+      }
+    }
+
+    return null;
+  },
+
+  async createSosAlert({ userPhone, location, latitude, longitude, accuracy, idempotencyKey, capturedAt }) {
     let userId = null;
     if (userPhone) {
       const user = await this.findUserByPhone(userPhone);
@@ -247,19 +315,41 @@ export const DataService = {
       if (userId) {
         alertPayload.user_id = userId;
       }
+      if (idempotencyKey) {
+        alertPayload.idempotency_key = idempotencyKey;
+      }
+      if (accuracy != null && !isNaN(accuracy)) {
+        alertPayload.accuracy = parseFloat(accuracy);
+      }
 
-      const { data: alert, error } = await supabase
+      let alert;
+      const { data, error } = await supabase
         .from('sos_history')
         .insert([alertPayload])
         .select()
         .single();
 
       if (error) {
-        console.error('Supabase createSosAlert error:', error.message);
-        throw error;
+        // Resilient fallback if idempotency_key/accuracy columns are not yet created in Supabase
+        if (error.message && (error.message.includes('idempotency_key') || error.message.includes('accuracy') || error.code === 'PGRST204')) {
+          console.warn('⚠️ Supabase schema note: idempotency_key/accuracy column missing, inserting base fields.');
+          delete alertPayload.idempotency_key;
+          delete alertPayload.accuracy;
+          const retryRes = await supabase.from('sos_history').insert([alertPayload]).select().single();
+          if (retryRes.error) {
+            console.error('Supabase retry error:', retryRes.error.message);
+            throw retryRes.error;
+          }
+          alert = retryRes.data;
+        } else {
+          console.error('Supabase createSosAlert error:', error.message);
+          throw error;
+        }
+      } else {
+        alert = data;
       }
 
-      const now = new Date(alert.created_at || Date.now());
+      const now = new Date(alert.created_at || capturedAt || Date.now());
       const hours = now.getHours();
       const minutes = now.getMinutes().toString().padStart(2, '0');
       const ampm = hours >= 12 ? 'PM' : 'AM';
@@ -269,11 +359,13 @@ export const DataService = {
         id: alert.id.toString(),
         userId: alert.user_id,
         userPhone: userPhone || '',
+        idempotencyKey: idempotencyKey || null,
         timestamp: alert.created_at,
         displayTime: `Today, ${formattedHour}:${minutes} ${ampm}`,
         location: alert.location_address || `GPS: ${alert.latitude}, ${alert.longitude}`,
         latitude: alert.latitude,
         longitude: alert.longitude,
+        accuracy: accuracy != null ? parseFloat(accuracy) : null,
         status: alert.status || 'ACTIVE',
         lastUpdated: alert.created_at || new Date().toISOString(),
         evidenceUrl: alert.evidence_url || null,
