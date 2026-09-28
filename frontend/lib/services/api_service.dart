@@ -23,10 +23,11 @@ class ApiService {
   /// Returns true if targeting local development, false if targeting live VPS
   static bool get isLocal {
     if (manualLocalOverride != null) return manualLocalOverride!;
-    if (_envOverride.toLowerCase() == 'live') return false;
     if (_envOverride.toLowerCase() == 'local') return true;
-    // Default: Debug mode = local development, Release mode (APK) = live VPS
-    return kDebugMode;
+    if (_envOverride.toLowerCase() == 'live') return false;
+    // On Web in debug mode, connect to localhost:5005. On real mobile devices, use live VPS server.
+    if (kIsWeb && kDebugMode) return true;
+    return false;
   }
 
   // Active JWT Auth Token
