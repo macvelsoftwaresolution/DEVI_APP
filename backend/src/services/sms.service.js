@@ -1,44 +1,55 @@
-import twilio from 'twilio';
-
 /**
- * Twilio Emergency SMS Gateway
+ * Fast2SMS Emergency SMS Gateway
+ * High Speed Indian SMS Gateway using native fetch (zero external packages)
  */
 const sendEmergencySMS = async (toNumber, trackingUrl) => {
   if (!toNumber) return false;
 
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const twilioPhone = process.env.TWILIO_PHONE_NUMBER;
-
-  if (!accountSid || !authToken || !twilioPhone) {
-    console.warn('⚠️ Twilio credentials missing in .env. SMS not sent.');
+  const apiKey = process.env.FAST2SMS_API_KEY;
+  if (!apiKey) {
+    console.warn('⚠️ Fast2SMS API key missing in .env. SMS skipped.');
     return false;
   }
 
-  // Format phone to E.164 (+91 for Indian numbers)
-  let rawDigits = toNumber.toString().replace(/\D/g, '');
-  let formattedPhone = rawDigits.length === 10 ? `+91${rawDigits}` : `+${rawDigits}`;
+  // Format to clean 10-digit Indian mobile number
+  let cleanPhone = toNumber.toString().replace(/\D/g, '');
+  if (cleanPhone.length > 10 && cleanPhone.startsWith('91')) {
+    cleanPhone = cleanPhone.substring(cleanPhone.length - 10);
+  }
+
+  if (cleanPhone.length !== 10) {
+    console.warn(`⚠️ Invalid phone number format for Fast2SMS: ${toNumber}`);
+    return false;
+  }
 
   try {
-    const client = twilio(accountSid, authToken);
+    const message = `🚨 EMERGENCY ALERT from DEVI App!\nLive Location Tracking:\n${trackingUrl}`;
 
-    // In Twilio trial accounts, use trial template keyword to pass carrier spam filters
-    // When upgraded, custom message body is accepted
-    const isTrial = process.env.TWILIO_IS_TRIAL === 'true' || true;
-    const bodyContent = isTrial 
-      ? 'sms_appointment_reminders' 
-      : `🚨 EMERGENCY ALERT from DEVI App!\nI am in danger and triggered SOS. Track my real-time live location:\n${trackingUrl}`;
-
-    const response = await client.messages.create({
-      body: bodyContent,
-      from: twilioPhone,
-      to: formattedPhone,
+    const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+      method: 'POST',
+      headers: {
+        'authorization': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        route: 'q',
+        message: message,
+        language: 'english',
+        flash: 0,
+        numbers: cleanPhone,
+      }),
     });
 
-    console.log(`✅ [TWILIO SMS DELIVERED] SID: ${response.sid} to ${formattedPhone}`);
-    return true;
+    const data = await response.json();
+    if (data && data.return) {
+      console.log(`✅ [FAST2SMS DELIVERED] Request ID: ${data.request_id || 'OK'} to ${cleanPhone}`);
+      return true;
+    } else {
+      console.warn(`⚠️ [FAST2SMS FAILED] To: ${cleanPhone}, Reason: ${data?.message || JSON.stringify(data)}`);
+      return false;
+    }
   } catch (error) {
-    console.error(`❌ [TWILIO SEND ERROR] To ${formattedPhone}:`, error.message);
+    console.error(`❌ [FAST2SMS ERROR] To ${cleanPhone}:`, error.message);
     return false;
   }
 };
