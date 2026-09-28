@@ -16,9 +16,10 @@ if (!process.env.WHATSAPP_PHONE_NUMBER_ID || !process.env.WHATSAPP_ACCESS_TOKEN)
 }
 
 const fakeTrackingUrl = 'https://devi-safety.org/track/test-alert-123';
+const testCoords = { latitude: 13.0827, longitude: 80.2707, location: 'Chennai Central, Tamil Nadu' };
 
-console.log('\nSending test emergency alert message...');
-WhatsAppService.sendEmergencyAlert(testRecipient, fakeTrackingUrl, 'Test User (DEVI)')
+console.log('\nSending test emergency alert message with Google Maps Hyperlink...');
+WhatsAppService.sendEmergencyAlert(testRecipient, fakeTrackingUrl, 'Harsha (DEVI User)', testCoords)
   .then(res => {
     console.log('\nResult:', JSON.stringify(res, null, 2));
     if (res.success) {

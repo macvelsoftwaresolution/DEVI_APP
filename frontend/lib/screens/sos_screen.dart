@@ -256,10 +256,12 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       // 2. Fetch current GPS location honestly with accuracy & timestamp
       final locResult = await LocationService.getCurrentLocation();
       final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
+      final guardianPhones = guardiansList.map((g) => g.phone).toList();
 
-      // 3. Register SOS alert in Backend with Idempotency Key
+      // 3. Register SOS alert in Backend with Idempotency Key & Trigger WhatsApp Dispatch
       final alertData = await ApiService.instance.triggerEmergencyAlert(
         userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
+        userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
         location: locResult.mapsUrl ?? locResult.displayText,
         latitude: locResult.latitude,
         longitude: locResult.longitude,
@@ -267,6 +269,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
         idempotencyKey: _activeIdempotencyKey,
         capturedAt: locResult.capturedAt,
         contactsAlerted: contactStrings,
+        emergencyContacts: guardianPhones,
       );
 
       final alertId = alertData != null && alertData['id'] != null
@@ -278,29 +281,17 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       // Bind alert ID for automatic evidence upload to Cloudinary upon completion
       EmergencyMediaService.instance.setAlertId(alertId);
 
-      final trackingUrl = (alertData != null && alertData['trackingUrl'] != null)
-          ? alertData['trackingUrl'].toString()
-          : (locResult.mapsUrl ?? 'https://maps.google.com/?q=${locResult.latitude ?? 13.0827},${locResult.longitude ?? 80.2707}');
-
       // 4. Start real-time continuous GPS tracking stream in background
       LocationService.startLiveTracking(alertId: alertId);
 
-      // 5. Send single SMS broadcast ONLY IF THIS IS A NEW SOS (Never for duplicates/retries)
+      // 5. Emergency Auto-Call to 1st Guardian (Normal SMS completely removed per requirement)
       if (!isDuplicate) {
-        final guardianPhones = guardiansList.map((g) => g.phone).toList();
-        await SmsService.broadcastEmergencySms(
-          phoneNumbers: guardianPhones,
-          userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
-          location: trackingUrl,
-          alertId: alertId,
-        );
-
-        // Immediately initiate phone call to the 1st Guardian
+        // Immediately initiate direct phone call to the 1st Guardian
         if (primaryPhone.isNotEmpty) {
           await SmsService.makePhoneCall(primaryPhone);
         }
       } else {
-        debugPrint('🔁 [SOS RETRY/DUPLICATE] Active session reused ($alertId). Skipping duplicate SMS & call.');
+        debugPrint('🔁 [SOS RETRY/DUPLICATE] Active session reused ($alertId). Skipping duplicate call.');
       }
 
       if (!mounted) return;

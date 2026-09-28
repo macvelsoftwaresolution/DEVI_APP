@@ -58,15 +58,36 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
     const trackingUrl = `${protocol}://${host}/track/${alert.id}`;
     console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
 
-    // STEP 3: Emergency Dispatch (Fast2SMS temporarily paused to preserve wallet balance; WhatsApp active)
+    // Retrieve victim's friendly display name if available
+    let victimName = req.body.userName;
+    if (!victimName && userPhone) {
+      try {
+        const u = await DataService.findUserByPhone(userPhone);
+        if (u && u.name) victimName = u.name;
+      } catch (_) {}
+    }
+    if (!victimName) victimName = userPhone || 'DEVI User';
+
+    // STEP 3: Emergency Dispatch (Fast2SMS paused; WhatsApp active with Google Maps Hyperlink)
     const contactsToSend = req.body.emergencyContacts || req.body.contactsAlerted;
     if (contactsToSend && Array.isArray(contactsToSend) && contactsToSend.length > 0) {
-      contactsToSend.forEach(contactNumber => {
-        // Dispatch WhatsApp SOS message
-        WhatsAppService.sendEmergencyAlert(contactNumber, trackingUrl, userPhone || 'DEVI User');
+      contactsToSend.forEach(contact => {
+        let contactPhone = typeof contact === 'object' ? (contact.phone || contact.number) : String(contact);
+        const match = contactPhone.match(/(?:\+?91|0)?[6-9]\d{9}/);
+        if (match) {
+          contactPhone = match[0];
+        }
 
-        // Fast2SMS (Paused to preserve wallet balance during WhatsApp testing)
-        // SmsService.sendEmergencySMS(contactNumber, trackingUrl);
+        // Dispatch WhatsApp SOS message with Google Maps Hyperlink & live tracking link
+        WhatsAppService.sendEmergencyAlert(
+          contactPhone,
+          trackingUrl,
+          victimName,
+          { latitude, longitude, location }
+        );
+
+        // Fast2SMS (Paused to preserve wallet balance per user request)
+        // SmsService.sendEmergencySMS(contactPhone, trackingUrl);
       });
     } else {
       console.log('ℹ️ No emergency contacts provided to alert.');

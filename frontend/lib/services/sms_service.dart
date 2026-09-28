@@ -29,72 +29,25 @@ class SmsService {
   }
 
   /// Sends a direct silent SMS to a single phone number via the phone SIM
+  /// (Permanently disabled per user preference in favor of WhatsApp Cloud API)
   static Future<bool> sendSilentSms({
     required String phone,
     required String message,
   }) async {
-    if (kIsWeb) {
-      debugPrint('🌐 [WEB SMS SIMULATED] To: $phone, Message: $message');
-      return true;
-    }
-    try {
-      final bool res = await _channel.invokeMethod('sendSms', {
-        'phone': phone,
-        'message': message,
-      });
-      return res;
-    } catch (e) {
-      debugPrint('Error sending silent SMS to $phone: $e');
-      return false;
-    }
+    debugPrint('ℹ️ [NORMAL SMS DISABLED] Normal SMS is disabled. WhatsApp is active.');
+    return false;
   }
 
   /// Broadcasts emergency SMS to multiple guardian phone numbers
+  /// (Completely disabled - Normal SMS removed per user request)
   static Future<int> broadcastEmergencySms({
     required List<String> phoneNumbers,
     required String userName,
     String? location,
     String? alertId,
   }) async {
-    if (phoneNumbers.isEmpty) return 0;
-
-    // Check or request permission if running on Android
-    if (!kIsWeb) {
-      bool permitted = await hasPermission();
-      if (!permitted) {
-        permitted = await requestPermission();
-      }
-      if (!permitted) {
-        debugPrint('⚠️ SMS permission denied by user.');
-        return 0;
-      }
-    }
-
-    final String name = userName.trim().isNotEmpty ? userName.trim() : 'User';
-    final String locPart = (location != null && location.trim().isNotEmpty)
-        ? '\n📍 Live Track: $location'
-        : '';
-
-    final now = DateTime.now();
-    final timeStr =
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-    
-    final String distressMessage =
-        '🚨 EMERGENCY ALERT from DEVI App!\n'
-        '$name is in danger and triggered SOS at $timeStr.$locPart\n'
-        'Please call or reach out immediately!';
-
-    int successCount = 0;
-    for (final phone in phoneNumbers) {
-      final cleanPhone = phone.replaceAll(RegExp(r'[^\d+]'), '');
-      if (cleanPhone.isNotEmpty) {
-        final ok = await sendSilentSms(phone: cleanPhone, message: distressMessage);
-        if (ok) {
-          successCount++;
-        }
-      }
-    }
-    return successCount;
+    debugPrint('ℹ️ [NORMAL SMS REMOVED] Normal SMS broadcast removed. Alerts dispatched via WhatsApp & Cloud Gateway.');
+    return 0;
   }
 
   /// Initiates a phone call to the primary guardian or emergency number (112)
