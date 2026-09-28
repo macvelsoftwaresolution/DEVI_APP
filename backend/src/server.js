@@ -49,6 +49,28 @@ app.use('/api', globalLimiter);
 // API Routes
 app.use('/api', apiRoutes);
 
+// WhatsApp Business Cloud API Webhook Handshake & Event Receiver
+const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'devi_whatsapp_verify_token_2026';
+
+app.get(['/webhook', '/api/webhook'], (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && token === WHATSAPP_VERIFY_TOKEN) {
+    console.log('✅ [WHATSAPP WEBHOOK VERIFIED BY META]');
+    return res.status(200).send(challenge);
+  } else {
+    console.warn(`❌ [WHATSAPP WEBHOOK FAILED] Expected: ${WHATSAPP_VERIFY_TOKEN}, Received: ${token}`);
+    return res.sendStatus(403);
+  }
+});
+
+app.post(['/webhook', '/api/webhook'], (req, res) => {
+  console.log('📩 [WHATSAPP EVENT RECEIVED]', JSON.stringify(req.body));
+  return res.status(200).send('EVENT_RECEIVED');
+});
+
 // Operator Command Center Web View (Protected by Admin Key check)
 app.get('/dashboard', verifyAdminKey, (req, res) => {
   const html = renderDashboardHtml();
