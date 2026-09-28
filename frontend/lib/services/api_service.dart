@@ -12,7 +12,10 @@ class ApiService {
   static const String localAndroidEmulatorUrl = 'http://10.0.2.2:5005/api';
 
   // Live Hostinger VPS Server URL
-  static const String liveServerUrl = 'http://187.127.182.169:5005/api';
+  // static const String liveServerUrl = 'http://187.127.182.169:5005/api';
+  
+  // Local Server URL (Use 10.0.2.2 for Android Emulator, or localhost for Web/iOS)
+  static const String liveServerUrl = 'http://localhost:5000/api'; 
 
   // Toggle for local development vs live VPS server
   // Set to true when running backend locally on port 5005

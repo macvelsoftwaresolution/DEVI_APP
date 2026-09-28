@@ -4,6 +4,7 @@ import { DataService } from '../services/data.service.js';
 import { uploadMediaToCloudinary } from '../config/cloudinary.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
 import { verifyAdminKey, optionalToken } from '../middlewares/auth.middleware.js';
+import { SmsService } from '../services/sms.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -29,6 +30,18 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
     const trackingUrl = `${protocol}://${host}/track/${alert.id}`;
 
     console.log(`🚨 [EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
+
+    // SMS அனுப்புவதற்கான பகுதி:
+    // Frontend-ல் இருந்து 'emergencyContacts' (Array of numbers) அனுப்பப்பட்டால், அவர்களுக்கு SMS செல்லும்
+    if (req.body.emergencyContacts && Array.isArray(req.body.emergencyContacts)) {
+      req.body.emergencyContacts.forEach(contactNumber => {
+        SmsService.sendEmergencySMS(contactNumber, trackingUrl);
+      });
+    } else {
+      console.log('⚠️ No emergencyContacts provided in req.body to send SMS.');
+      // Testing-க்காக உங்கள் நம்பருக்கு மட்டும் அனுப்ப வேண்டுமென்றால் இதை அன்கமெண்ட் செய்யவும்:
+      // SmsService.sendEmergencySMS('+919876543210', trackingUrl); // உங்கள் Verify செய்த நம்பரை போடவும்
+    }
 
     res.status(201).json({
       success: true,

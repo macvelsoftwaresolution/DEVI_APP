@@ -128,36 +128,7 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
       z-index: 10;
     }
 
-    /* Map Controls (Satellite Toggle & Center Buttons) */
-    .map-controls-group {
-      position: absolute;
-      top: 80px;
-      right: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      z-index: 1000;
-    }
-    .control-btn {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      background: rgba(15, 23, 42, 0.94);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      backdrop-filter: blur(10px);
-      color: white;
-      font-size: 18px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-      transition: all 0.2s;
-    }
-    .control-btn:active {
-      transform: scale(0.92);
-      background: #1E293B;
-    }
+
 
     /* Bottom Guardian Live Info Card */
     .bottom-panel {
@@ -234,46 +205,25 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
       text-decoration: none;
     }
     
-    /* Distance Badge (Between Guardian and Victim) */
-    .distance-badge {
-      background: linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(2, 132, 199, 0.25));
-      border: 1px solid rgba(56, 189, 248, 0.5);
-      padding: 6px 12px;
-      border-radius: 14px;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      text-align: right;
-    }
-    .distance-val {
-      font-size: 13px;
-      font-weight: 800;
-      color: #38BDF8;
-    }
-    .distance-sub {
-      font-size: 10.5px;
-      color: #BAE6FD;
-    }
-
     /* Action Buttons */
-    .actions-grid {
-      display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 10px;
+    .actions-container {
+      display: flex;
+      width: 100%;
     }
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 12px 14px;
+      padding: 13px 16px;
       border-radius: 14px;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 800;
       text-decoration: none;
       transition: all 0.2s;
       border: none;
       cursor: pointer;
+      width: 100%;
     }
     .btn-nav {
       background: linear-gradient(135deg, #2563EB, #1D4ED8);
@@ -281,14 +231,6 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
       box-shadow: 0 4px 16px rgba(37, 99, 235, 0.45);
     }
     .btn-nav:hover {
-      transform: translateY(-2px);
-    }
-    .btn-call {
-      background: linear-gradient(135deg, #EF4444, #DC2626);
-      color: white;
-      box-shadow: 0 4px 16px rgba(220, 38, 38, 0.45);
-    }
-    .btn-call:hover {
       transform: translateY(-2px);
     }
 
@@ -395,38 +337,32 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
   <!-- Map Container -->
   <div id="map"></div>
 
-  <!-- Map Floating Controls -->
-  <div class="map-controls-group">
-    <button class="control-btn" id="fitBoundsBtn" title="Show Both You & Person">🧭</button>
-    <button class="control-btn" id="centerVictimBtn" title="Center on Person">📍</button>
-    <button class="control-btn" id="toggleLayerBtn" title="Switch Satellite / Street Map">🛰️</button>
-  </div>
+
 
   <!-- Bottom Panel -->
   <div class="bottom-panel">
-    <!-- Area & Landmark Name -->
+    <!-- Area & Landmark Name (Auto-refreshes every 2 min) -->
     <div class="area-box">
       <div class="area-icon">📍</div>
       <div class="area-text-group">
-        <div class="area-title" id="areaNameText">Locating area name...</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <div class="area-title" id="areaNameText">Locating address...</div>
+          <span id="addrRefreshBadge" style="font-size: 10px; color: #38BDF8; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; padding: 2px 7px; font-weight: 700; white-space: nowrap;">2m Auto-Sync</span>
+        </div>
         <div class="area-sub" id="areaSubText">GPS: ${initialLat.toFixed(5)}, ${initialLng.toFixed(5)}</div>
       </div>
     </div>
 
-    <!-- User Details & Distance -->
+    <!-- User Details -->
     <div class="info-metrics-row">
-      <div class="user-info-left">
-        <span class="user-name">
-          ${userName}
-          ${userPhone ? '<a href="tel:' + userPhone + '" class="phone-badge">📞 ' + userPhone + '</a>' : ''}
-        </span>
-        <span style="font-size: 11px; color: #94A3B8;" id="lastUpdatedText">Live GPS syncing...</span>
-      </div>
-
-      <!-- Distance from Guardian to Victim -->
-      <div class="distance-badge" id="distanceBadge">
-        <span class="distance-val" id="distanceVal">Calculating...</span>
-        <span class="distance-sub" id="distanceSub">from your location</span>
+      <div class="user-info-left" style="width: 100%;">
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <span class="user-name">
+            ${userName}
+            ${userPhone ? '<a href="tel:' + userPhone + '" class="phone-badge">📞 ' + userPhone + '</a>' : ''}
+          </span>
+          <span style="font-size: 11px; color: #94A3B8;" id="lastUpdatedText">Live GPS syncing...</span>
+        </div>
       </div>
     </div>
 
@@ -444,13 +380,10 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
       </a>
     </div>
 
-    <!-- Actions -->
-    <div class="actions-grid">
+    <!-- Actions (Google Navigation Full Width) -->
+    <div class="actions-container">
       <a id="navBtn" href="https://www.google.com/maps/dir/?api=1&destination=${initialLat},${initialLng}" target="_blank" class="btn btn-nav">
         🗺️ Google Navigation
-      </a>
-      <a href="tel:112" class="btn btn-call">
-        🚨 Call Police 112
       </a>
     </div>
   </div>
@@ -488,21 +421,7 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
       layers: [satelliteHybridLayer]
     });
 
-    // Toggle Satellite / Street View
-    document.getElementById('toggleLayerBtn').innerText = '🗺️';
-    document.getElementById('toggleLayerBtn').addEventListener('click', () => {
-      if (isSatellite) {
-        map.removeLayer(satelliteHybridLayer);
-        map.addLayer(streetLayer);
-        document.getElementById('toggleLayerBtn').innerText = '🛰️';
-        isSatellite = false;
-      } else {
-        map.removeLayer(streetLayer);
-        map.addLayer(satelliteHybridLayer);
-        document.getElementById('toggleLayerBtn').innerText = '🗺️';
-        isSatellite = true;
-      }
-    });
+
 
     // 3. Custom Markers
     const victimIcon = L.divIcon({
@@ -538,41 +457,111 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
       dashArray: '4, 8'
     }).addTo(map);
 
-    // 4. Reverse Geocoding (Converts GPS Lat/Lng to Area & Landmark Name)
-    async function updateAreaName(lat, lng) {
-      const coordKey = lat.toFixed(4) + ',' + lng.toFixed(4);
-      if (coordKey === lastGeocodedCoords) return;
-      lastGeocodedCoords = coordKey;
-
+    // 4. Reverse Geocoding with Fallbacks (OpenStreetMap Nominatim + BigDataCloud)
+    async function fetchReverseGeocode(lat, lng) {
+      // Primary: OpenStreetMap Nominatim
       try {
+        const ctrl = new AbortController();
+        const timeoutId = setTimeout(() => ctrl.abort(), 6000);
         const res = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng + '&zoom=18&addressdetails=1', {
-          headers: { 'Accept-Language': 'en' }
+          headers: { 'Accept-Language': 'en' },
+          signal: ctrl.signal
         });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data && data.address) {
-          const addr = data.address;
-          const mainArea = addr.road || addr.suburb || addr.neighbourhood || addr.village || addr.town || addr.city_district || 'Near Landmark';
-          const cityDistrict = addr.city || addr.town || addr.county || addr.state_district || addr.state || '';
-          
-          document.getElementById('areaNameText').innerText = mainArea + (cityDistrict ? ', ' + cityDistrict : '');
-          document.getElementById('areaSubText').innerText = (data.display_name ? data.display_name.split(',').slice(0, 3).join(', ') : 'GPS: ' + lat.toFixed(5) + ', ' + lng.toFixed(5));
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.address) {
+            const a = data.address;
+            const landmark = a.amenity || a.building || a.shop || a.school || a.landmark || a.place || a.tourism;
+            const street = a.road || a.pedestrian || a.residential || a.suburb || a.neighbourhood || a.village;
+            const city = a.city || a.town || a.county || a.state_district || '';
+            const district = a.state_district || a.county || '';
+            const state = a.state || '';
+
+            let title = '';
+            if (landmark && street) {
+              title = landmark + ', ' + street;
+            } else if (landmark) {
+              title = landmark + (city ? ', ' + city : '');
+            } else if (street) {
+              title = street + (city ? ', ' + city : '');
+            } else if (city) {
+              title = city + ' Area';
+            } else {
+              title = 'Current Location';
+            }
+
+            let subParts = [];
+            if (city && !title.includes(city)) subParts.push(city);
+            if (district && district !== city) subParts.push(district);
+            if (state) subParts.push(state);
+            if (a.postcode) subParts.push(a.postcode);
+
+            const sub = subParts.length > 0 ? subParts.join(', ') : (data.display_name ? data.display_name.split(',').slice(0, 3).join(', ') : '');
+            return { title, sub };
+          }
+        }
+      } catch (err) {
+        console.warn('Nominatim geocode fallback:', err);
+      }
+
+      // Secondary Fallback: BigDataCloud Client Reverse Geocode
+      try {
+        const res2 = await fetch('https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=' + lat + '&longitude=' + lng + '&localityLanguage=en');
+        if (res2.ok) {
+          const d2 = await res2.json();
+          if (d2) {
+            const locality = d2.locality || d2.city || '';
+            const district = d2.principalSubdivision || '';
+            const title = locality ? (locality + ' Area') : 'Current Location';
+            const sub = [d2.city, district, d2.countryName].filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i).join(', ');
+            return { title, sub };
+          }
+        }
+      } catch (err2) {
+        console.warn('BigDataCloud fallback failed:', err2);
+      }
+
+      // Final Fallback
+      return {
+        title: 'Area (' + lat.toFixed(4) + ', ' + lng.toFixed(4) + ')',
+        sub: 'Live GPS Pinpoint'
+      };
+    }
+
+    async function updateAreaName(lat, lng) {
+      if (!lat || !lng) return;
+      try {
+        const result = await fetchReverseGeocode(lat, lng);
+        if (result) {
+          const areaTitleElem = document.getElementById('areaNameText');
+          const areaSubElem = document.getElementById('areaSubText');
+          const badgeElem = document.getElementById('addrRefreshBadge');
+          if (areaTitleElem) areaTitleElem.innerText = result.title;
+          if (areaSubElem) areaSubElem.innerText = result.sub;
+          if (badgeElem) {
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            badgeElem.innerText = 'Sync: ' + timeStr;
+          }
         }
       } catch (e) {
-        document.getElementById('areaNameText').innerText = 'Near Coordinates (' + lat.toFixed(4) + ', ' + lng.toFixed(4) + ')';
+        console.error('Error updating area name:', e);
       }
     }
 
-    // Initial Geocode lookup
+    // Initial Geocode lookup on page load
     updateAreaName(victimLat, victimLng);
+
+    // Auto-refresh Address strictly every 2 minutes (120,000 ms)
+    setInterval(() => {
+      if (victimLat && victimLng) {
+        updateAreaName(victimLat, victimLng);
+      }
+    }, 120000);
 
     // 5. Watch Guardian's Own Live Location
     function initGuardianLocation() {
-      if (!navigator.geolocation) {
-        document.getElementById('distanceVal').innerText = '📍 Tap Navigation';
-        document.getElementById('distanceSub').innerText = 'Open in Google Maps';
-        return;
-      }
+      if (!navigator.geolocation) return;
 
       let hasAutoFitted = false;
 
@@ -596,28 +585,13 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
           map.fitBounds(bounds, { padding: [70, 70], maxZoom: 17 });
         }
 
-        // Calculate Distance between Guardian & Victim
-        const distMeters = map.distance([guardianLat, guardianLng], [victimLat, victimLng]);
-        let distText = '';
-        let etaText = '';
-        if (distMeters < 1000) {
-          distText = Math.round(distMeters) + ' m away';
-          etaText = '~' + Math.max(1, Math.round(distMeters / 80)) + ' min walk';
-        } else {
-          const km = (distMeters / 1000).toFixed(1);
-          distText = km + ' km away';
-          etaText = '~' + Math.max(1, Math.round(distMeters / 500)) + ' min drive';
-        }
-
-        document.getElementById('distanceVal').innerText = '📍 ' + distText;
-        document.getElementById('distanceSub').innerText = etaText;
-
         // Update Turn-by-Turn Google Navigation Link with Origin + Destination
-        document.getElementById('navBtn').href = 'https://www.google.com/maps/dir/?api=1&origin=' + guardianLat + ',' + guardianLng + '&destination=' + victimLat + ',' + victimLng + '&travelmode=driving';
+        const navBtn = document.getElementById('navBtn');
+        if (navBtn) {
+          navBtn.href = 'https://www.google.com/maps/dir/?api=1&origin=' + guardianLat + ',' + guardianLng + '&destination=' + victimLat + ',' + victimLng + '&travelmode=driving';
+        }
       }, (err) => {
         console.log('Guardian location info:', err.message);
-        document.getElementById('distanceVal').innerText = '📍 Tap Navigation';
-        document.getElementById('distanceSub').innerText = 'Turn-by-Turn GPS';
       }, {
         enableHighAccuracy: true,
         maximumAge: 5000,
@@ -627,16 +601,7 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
 
     initGuardianLocation();
 
-    // Clicking distance badge requests permission / connects
-    document.getElementById('distanceBadge').addEventListener('click', () => {
-      initGuardianLocation();
-      if (guardianLat && guardianLng) {
-        const bounds = L.latLngBounds([[victimLat, victimLng], [guardianLat, guardianLng]]);
-        map.fitBounds(bounds, { padding: [80, 80] });
-      }
-    });
-
-    // 6. Polling Live GPS of Victim every 3 seconds
+    // 6. Polling Live GPS of Victim every 3 seconds to move marker & route
     async function fetchLiveLocation() {
       try {
         const res = await fetch('/api/sos/live/' + alertId);
@@ -666,8 +631,11 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
               connectionLine.setLatLngs([[guardianLat, guardianLng], [victimLat, victimLng]]);
             }
 
-            // Update Area Name
-            updateAreaName(lat, lng);
+            // Update Navigation link destination if Guardian location not yet acquired
+            const navBtn = document.getElementById('navBtn');
+            if (navBtn && (!guardianLat || !guardianLng)) {
+              navBtn.href = 'https://www.google.com/maps/dir/?api=1&destination=' + victimLat + ',' + victimLng;
+            }
 
             // Dynamically show Evidence link if uploaded to Cloudinary
             if (session.evidenceUrl) {
@@ -680,15 +648,22 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
             }
 
             const now = new Date();
-            document.getElementById('lastUpdatedText').innerText = 'Updated: ' + now.toLocaleTimeString();
+            const lastUpText = document.getElementById('lastUpdatedText');
+            if (lastUpText) {
+              lastUpText.innerText = 'GPS: ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            }
           }
 
           // Handle Resolved / Safe State
           if (session.status === 'RESOLVED') {
             const badge = document.getElementById('statusBadge');
-            badge.className = 'status-badge status-resolved';
-            document.getElementById('pulseDot').style.display = 'none';
-            document.getElementById('statusText').innerText = 'USER SAFE';
+            if (badge) {
+              badge.className = 'status-badge status-resolved';
+            }
+            const pulse = document.getElementById('pulseDot');
+            if (pulse) pulse.style.display = 'none';
+            const statusTxt = document.getElementById('statusText');
+            if (statusTxt) statusTxt.innerText = 'USER SAFE';
           }
         }
       } catch (err) {
@@ -697,20 +672,6 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
     }
 
     setInterval(fetchLiveLocation, 3000);
-
-    // Map Controls Click Handlers
-    document.getElementById('centerVictimBtn').addEventListener('click', () => {
-      map.flyTo([victimLat, victimLng], 17, { duration: 1 });
-    });
-
-    document.getElementById('fitBoundsBtn').addEventListener('click', () => {
-      if (guardianLat && guardianLng) {
-        const bounds = L.latLngBounds([[victimLat, victimLng], [guardianLat, guardianLng]]);
-        map.fitBounds(bounds, { padding: [80, 80] });
-      } else {
-        map.flyTo([victimLat, victimLng], 17);
-      }
-    });
   </script>
 </body>
 </html>`;

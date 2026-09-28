@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'emergency_recorder_stub.dart';
 
 class MobileEmergencyRecorder implements PlatformEmergencyRecorder {
@@ -107,6 +108,23 @@ class MobileEmergencyRecorder implements PlatformEmergencyRecorder {
   }
 
   @override
+  Future<void> openEvidence(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      debugPrint('MobileEmergencyRecorder openEvidence error: $e');
+    }
+  }
+
+  @override
+  Future<void> downloadEvidence(String url) async {
+    await openEvidence(url);
+  }
+
+  @override
   void dispose() {
     _isRecording = false;
     try {
@@ -117,3 +135,4 @@ class MobileEmergencyRecorder implements PlatformEmergencyRecorder {
 }
 
 PlatformEmergencyRecorder getPlatformEmergencyRecorder() => MobileEmergencyRecorder();
+
