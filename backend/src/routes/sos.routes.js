@@ -31,16 +31,14 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
 
     console.log(`🚨 [EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
 
-    // SMS அனுப்புவதற்கான பகுதி:
-    // Frontend-ல் இருந்து 'emergencyContacts' (Array of numbers) அனுப்பப்பட்டால், அவர்களுக்கு SMS செல்லும்
-    if (req.body.emergencyContacts && Array.isArray(req.body.emergencyContacts)) {
-      req.body.emergencyContacts.forEach(contactNumber => {
+    // SMS dispatch via Twilio:
+    const contactsToSend = req.body.emergencyContacts || req.body.contactsAlerted;
+    if (contactsToSend && Array.isArray(contactsToSend) && contactsToSend.length > 0) {
+      contactsToSend.forEach(contactNumber => {
         SmsService.sendEmergencySMS(contactNumber, trackingUrl);
       });
     } else {
-      console.log('⚠️ No emergencyContacts provided in req.body to send SMS.');
-      // Testing-க்காக உங்கள் நம்பருக்கு மட்டும் அனுப்ப வேண்டுமென்றால் இதை அன்கமெண்ட் செய்யவும்:
-      // SmsService.sendEmergencySMS('+919876543210', trackingUrl); // உங்கள் Verify செய்த நம்பரை போடவும்
+      console.log('ℹ️ No emergency contacts provided to send Twilio SMS.');
     }
 
     res.status(201).json({
