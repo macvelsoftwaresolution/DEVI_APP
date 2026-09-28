@@ -301,7 +301,10 @@ export const DataService = {
   async createSosAlert({ userPhone, location, latitude, longitude, accuracy, idempotencyKey, capturedAt }) {
     let userId = null;
     if (userPhone) {
-      const user = await this.findUserByPhone(userPhone);
+      let user = await this.findUserByPhone(userPhone);
+      if (!user) {
+        user = await this.createOrGetUser(userPhone);
+      }
       if (user) userId = user.id;
     }
 
