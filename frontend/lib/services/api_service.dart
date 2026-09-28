@@ -7,19 +7,27 @@ class ApiService {
   factory ApiService() => instance;
   ApiService._internal();
 
-  // Local development backend URLs
+  // Live Hostinger VPS Server URL
+  static const String liveServerUrl = 'http://187.127.182.169:5005/api';
+
+  // Local development backend URLs (Port 5005)
   static const String localWebUrl = 'http://localhost:5005/api';
   static const String localAndroidEmulatorUrl = 'http://10.0.2.2:5005/api';
 
-  // Live Hostinger VPS Server URL
-  // static const String liveServerUrl = 'http://187.127.182.169:5005/api';
-  
-  // Local Server URL (Use 10.0.2.2 for Android Emulator, or localhost for Web/iOS)
-  static const String liveServerUrl = 'http://localhost:5000/api'; 
+  // Command-line override: flutter run --dart-define=SERVER=live or --dart-define=SERVER=local
+  static const String _envOverride = String.fromEnvironment('SERVER', defaultValue: '');
 
-  // Toggle for local development vs live VPS server
-  // Set to true when running backend locally on port 5005
-  static bool useLocalServer = false;
+  // Manual runtime toggle (optional, null by default)
+  static bool? manualLocalOverride;
+
+  /// Returns true if targeting local development, false if targeting live VPS
+  static bool get isLocal {
+    if (manualLocalOverride != null) return manualLocalOverride!;
+    if (_envOverride.toLowerCase() == 'live') return false;
+    if (_envOverride.toLowerCase() == 'local') return true;
+    // Default: Debug mode = local development, Release mode (APK) = live VPS
+    return kDebugMode;
+  }
 
   // Active JWT Auth Token
   String? _authToken;
@@ -32,7 +40,7 @@ class ApiService {
 
   // Base URL for all API requests
   static String get baseUrl {
-    if (useLocalServer) {
+    if (isLocal) {
       if (kIsWeb) return localWebUrl;
       if (defaultTargetPlatform == TargetPlatform.android) {
         return localAndroidEmulatorUrl;
