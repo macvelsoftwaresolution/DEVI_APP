@@ -79,11 +79,6 @@ class SmsService {
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
     
-    // Use actual database Incident ID / UUID (first 8 chars uppercase) or fallback to timestamp
-    final String incidentRef = (alertId != null && alertId.trim().isNotEmpty)
-        ? (alertId.length > 8 ? alertId.substring(0, 8).toUpperCase() : alertId.toUpperCase())
-        : now.millisecondsSinceEpoch.toString().substring(7);
-
     final String distressMessage =
         '🚨 EMERGENCY ALERT from DEVI App!\n'
         '$name is in danger and triggered SOS at $timeStr.$locPart\n'

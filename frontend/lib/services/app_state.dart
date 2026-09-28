@@ -66,6 +66,7 @@ class AppState extends ChangeNotifier {
   static const String _keyProfilePhoto = 'devi_profile_photo';
   static const String _keyGuestId = 'devi_guest_id';
   static const String _keyGuestGuardians = 'devi_guest_guardians';
+  static const String _keyAuthToken = 'devi_auth_token';
 
   /// Initializes anonymous guest session with unique ID and syncs to Supabase
   Future<void> initGuestSession() async {
@@ -105,13 +106,17 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> saveSession(String userPhone) async {
+  Future<void> saveSession(String userPhone, [String? token]) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_keyIsLoggedIn, true);
       await prefs.setString(_keyLoggedInPhone, userPhone);
       if (profilePhotoPath != null) {
         await prefs.setString(_keyProfilePhoto, profilePhotoPath!);
+      }
+      final tokenToSave = token ?? ApiService.instance.authToken;
+      if (tokenToSave != null && tokenToSave.isNotEmpty) {
+        await prefs.setString(_keyAuthToken, tokenToSave);
       }
       // Reset any previous emergency media banner for fresh user session
       EmergencyMediaService.instance.reset();
@@ -126,11 +131,13 @@ class AppState extends ChangeNotifier {
       await prefs.remove(_keyIsLoggedIn);
       await prefs.remove(_keyLoggedInPhone);
       await prefs.remove(_keyProfilePhoto);
+      await prefs.remove(_keyAuthToken);
     } catch (e) {
       debugPrint('Error clearing session: $e');
     }
 
     // Reset local state & any active emergency media banners
+    ApiService.instance.setAuthToken(null);
     EmergencyMediaService.instance.reset();
     name = '';
     phone = '';
@@ -148,6 +155,11 @@ class AppState extends ChangeNotifier {
       final isLoggedIn = prefs.getBool(_keyIsLoggedIn) ?? false;
       final savedPhone = prefs.getString(_keyLoggedInPhone);
       final savedPhoto = prefs.getString(_keyProfilePhoto);
+      final savedToken = prefs.getString(_keyAuthToken);
+
+      if (savedToken != null && savedToken.isNotEmpty) {
+        ApiService.instance.setAuthToken(savedToken);
+      }
 
       if (savedPhoto != null && savedPhoto.isNotEmpty) {
         profilePhotoPath = savedPhoto;

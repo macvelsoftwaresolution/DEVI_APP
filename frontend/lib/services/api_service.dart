@@ -7,11 +7,46 @@ class ApiService {
   factory ApiService() => instance;
   ApiService._internal();
 
+  // Local development backend URLs
+  static const String localWebUrl = 'http://localhost:5005/api';
+  static const String localAndroidEmulatorUrl = 'http://10.0.2.2:5005/api';
+
   // Live Hostinger VPS Server URL
   static const String liveServerUrl = 'http://187.127.182.169:5005/api';
 
+  // Toggle for local development vs live VPS server
+  // Set to true when running backend locally on port 5005
+  static bool useLocalServer = false;
+
+  // Active JWT Auth Token
+  String? _authToken;
+
+  void setAuthToken(String? token) {
+    _authToken = token;
+  }
+
+  String? get authToken => _authToken;
+
   // Base URL for all API requests
-  static String get baseUrl => liveServerUrl;
+  static String get baseUrl {
+    if (useLocalServer) {
+      if (kIsWeb) return localWebUrl;
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        return localAndroidEmulatorUrl;
+      }
+      return localWebUrl;
+    }
+    return liveServerUrl;
+  }
+
+  // Common authenticated headers
+  Map<String, String> get _headers {
+    final headers = {'Content-Type': 'application/json'};
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_authToken';
+    }
+    return headers;
+  }
 
   // --- Check API Server Health ---
   Future<bool> checkHealth() async {
@@ -32,13 +67,18 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/auth/login'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers,
             body: jsonEncode({'phone': phone}),
           )
           .timeout(const Duration(seconds: 8));
 
       final body = jsonDecode(res.body);
       if (res.statusCode == 200 && body['success'] == true) {
+        // Cache the cryptographically signed JWT token
+        final token = body['data']?['token'];
+        if (token != null && token is String) {
+          setAuthToken(token);
+        }
         return {'success': true, 'data': body['data']};
       } else {
         return {
@@ -55,11 +95,31 @@ class ApiService {
     }
   }
 
+  // --- Auth: Verify active JWT token ---
+  Future<bool> verifyToken() async {
+    if (_authToken == null || _authToken!.isEmpty) return false;
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$baseUrl/auth/verify'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 5));
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('Token verification error: $e');
+      return false;
+    }
+  }
+
   // --- User: Get Profile & Guardians ---
   Future<Map<String, dynamic>?> getProfile(String phone) async {
     try {
       final res = await http
-          .get(Uri.parse('$baseUrl/user/profile/$phone'))
+          .get(
+            Uri.parse('$baseUrl/user/profile/$phone'),
+            headers: _headers,
+          )
           .timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200) {
@@ -92,7 +152,7 @@ class ApiService {
       final res = await http
           .put(
             Uri.parse('$baseUrl/user/profile'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers,
             body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: 8));
@@ -113,7 +173,7 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/user/guest'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers,
             body: jsonEncode({
               'guestId': guestId,
               'guardians': ?guardians,
@@ -143,7 +203,7 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/sos/trigger'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers,
             body: jsonEncode({
               'userPhone': userPhone,
               'location': location,
@@ -176,7 +236,7 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/sos/live-update'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers,
             body: jsonEncode({
               'alertId': alertId,
               'latitude': latitude,
@@ -200,7 +260,7 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/sos/resolve/$alertId'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _headers,
           )
           .timeout(const Duration(seconds: 5));
 
@@ -219,7 +279,7 @@ class ApiService {
           : '$baseUrl/sos/history';
 
       final res = await http
-          .get(Uri.parse(url))
+          .get(Uri.parse(url), headers: _headers)
           .timeout(const Duration(seconds: 8));
 
       if (res.statusCode == 200) {
@@ -246,6 +306,10 @@ class ApiService {
       final uri = Uri.parse('$baseUrl/sos/upload-evidence');
       final request = http.MultipartRequest('POST', uri);
       request.fields['alertId'] = alertId;
+
+      if (_authToken != null && _authToken!.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $_authToken';
+      }
 
       if (fileBytes != null && fileBytes.isNotEmpty) {
         request.files.add(

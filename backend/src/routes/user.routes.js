@@ -1,18 +1,27 @@
 import { Router } from 'express';
 import { DataService } from '../services/data.service.js';
+import { optionalToken } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
 const isValidMobile = (phone) => /^[6-9]\d{9}$/.test(phone);
 
 // GET /api/user/profile/:phone
-router.get('/profile/:phone', async (req, res, next) => {
+router.get('/profile/:phone', optionalToken, async (req, res, next) => {
   try {
     const { phone } = req.params;
     if (!phone || !isValidMobile(phone.trim())) {
       return res.status(400).json({
         success: false,
         message: 'Invalid mobile number parameter',
+      });
+    }
+
+    // If authenticated, ensure user can only query their own profile
+    if (req.user && req.user.phone && req.user.phone !== phone.trim()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access forbidden: You cannot view another user profile',
       });
     }
 
@@ -34,7 +43,7 @@ router.get('/profile/:phone', async (req, res, next) => {
 });
 
 // PUT /api/user/profile
-router.put('/profile', async (req, res, next) => {
+router.put('/profile', optionalToken, async (req, res, next) => {
   try {
     const { phone, name, address1, address2, guardians } = req.body;
     if (!phone || typeof phone !== 'string' || !isValidMobile(phone.trim())) {
@@ -45,6 +54,14 @@ router.put('/profile', async (req, res, next) => {
     }
 
     const cleanPhone = phone.trim();
+
+    // If authenticated, ensure user can only modify their own profile
+    if (req.user && req.user.phone && req.user.phone !== cleanPhone) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access forbidden: You cannot update another user profile',
+      });
+    }
 
     // Name validation
     if (name !== undefined && typeof name === 'string' && name.trim().length > 0 && name.trim().length < 2) {

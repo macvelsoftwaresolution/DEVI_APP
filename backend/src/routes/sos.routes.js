@@ -2,6 +2,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import { DataService } from '../services/data.service.js';
 import { uploadMediaToCloudinary } from '../config/cloudinary.js';
+import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
+import { verifyAdminKey, optionalToken } from '../middlewares/auth.middleware.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -11,7 +13,7 @@ const upload = multer({
 const router = Router();
 
 // POST /api/sos/trigger - Dispatches emergency alert, starts live tracking, and returns tracking URL
-router.post('/trigger', async (req, res, next) => {
+router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
   try {
     const { userPhone, location, latitude, longitude } = req.body;
 
@@ -169,9 +171,18 @@ router.post('/resolve/:alertId', async (req, res, next) => {
 });
 
 // GET /api/sos/history/:phone - Returns SOS emergency history for a user
-router.get('/history/:phone', async (req, res, next) => {
+router.get('/history/:phone', optionalToken, async (req, res, next) => {
   try {
     const { phone } = req.params;
+
+    // Privacy check: User can only view their own emergency history
+    if (req.user && req.user.phone && req.user.phone !== phone) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access forbidden: You cannot view another user emergency history',
+      });
+    }
+
     const history = await DataService.getSosHistory(phone);
 
     res.status(200).json({
@@ -183,8 +194,8 @@ router.get('/history/:phone', async (req, res, next) => {
   }
 });
 
-// GET /api/sos/history - Returns all SOS history
-router.get('/history', async (req, res, next) => {
+// GET /api/sos/history - Returns all SOS history (Protected: Operator / Admin only)
+router.get('/history', verifyAdminKey, async (req, res, next) => {
   try {
     const history = await DataService.getSosHistory();
 

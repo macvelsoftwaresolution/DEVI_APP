@@ -1,31 +1,56 @@
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import helmet from 'helmet';
 import dotenv from 'dotenv';
 import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
-
-dotenv.config();
-
-const app = express();
-const PORT = process.env.PORT || 5000;
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
-
+import { globalLimiter } from './middlewares/rateLimiter.js';
+import { verifyAdminKey } from './middlewares/auth.middleware.js';
 import { renderLiveTrackingHtml } from './views/track.view.js';
 import { renderDashboardHtml } from './views/dashboard.view.js';
 import { renderAgentDutyHtml } from './views/agent_duty.view.js';
 import { DataService } from './services/data.service.js';
 
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 5005;
+
+// Security Headers with Helmet
+// CSP & Embedder disabled for embedded views to allow Leaflet CDN and OpenStreetMap tiles
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
+
+// CORS configuration
+app.use(
+  cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key'],
+  })
+);
+
+// Request parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Logging
+app.use(morgan('dev'));
+
+// Global API Rate Limiting
+app.use('/api', globalLimiter);
+
 // API Routes
 app.use('/api', apiRoutes);
 
-// Operator Command Center Web View (Steps 7, 8, 9)
-app.get('/dashboard', (req, res) => {
+// Operator Command Center Web View (Protected by Admin Key check)
+app.get('/dashboard', verifyAdminKey, (req, res) => {
   const html = renderDashboardHtml();
   res.setHeader('Content-Type', 'text/html');
   res.send(html);
@@ -60,6 +85,12 @@ app.get('/', (req, res) => {
   res.json({
     name: 'DEVI Women Safety Backend API',
     status: 'online',
+    version: '1.0.0',
+    security: {
+      rateLimiting: 'active',
+      helmetHeaders: 'active',
+      jwtAuth: 'active',
+    },
     dashboard: '/dashboard',
     documentation: '/api/health',
   });
@@ -72,6 +103,7 @@ app.use(errorHandler);
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 DEVI Backend server running on port ${PORT}`);
+  console.log(`🛡️ Security enabled: Helmet, Rate Limiter, and JWT Auth active`);
   console.log(`📡 Health check available at: http://localhost:${PORT}/api/health`);
 });
 
