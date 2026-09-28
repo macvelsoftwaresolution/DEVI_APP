@@ -85,7 +85,7 @@ class SmsService {
         : now.millisecondsSinceEpoch.toString().substring(7);
 
     final String distressMessage =
-        '🚨 EMERGENCY ALERT from DEVI App!\n'
+        '🚨 EMERGENCY ALERT from DEVI App (Ref #$incidentRef)!\n'
         '$name is in danger and triggered SOS at $timeStr.$locPart\n'
         'Please call or reach out immediately!';
 

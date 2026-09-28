@@ -8,7 +8,10 @@ class ApiService {
   ApiService._internal();
 
   // Live Hostinger VPS Server URL
-  static const String liveServerUrl = 'http://187.127.182.169:5005/api';
+  // static const String liveServerUrl = 'http://187.127.182.169:5005/api';
+  
+  // Local Server URL (Use 10.0.2.2 for Android Emulator, or localhost for Web/iOS)
+  static const String liveServerUrl = 'http://localhost:5000/api'; 
 
   // Base URL for all API requests
   static String get baseUrl => liveServerUrl;
