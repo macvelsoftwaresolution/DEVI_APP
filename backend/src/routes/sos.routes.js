@@ -5,6 +5,7 @@ import { uploadMediaToCloudinary } from '../config/cloudinary.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
 import { verifyAdminKey, optionalToken } from '../middlewares/auth.middleware.js';
 import { SmsService } from '../services/sms.service.js';
+import { WhatsAppService } from '../services/whatsapp.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -57,14 +58,18 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
     const trackingUrl = `${protocol}://${host}/track/${alert.id}`;
     console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
 
-    // STEP 3: Single Emergency SMS broadcast via Fast2SMS
+    // STEP 3: Emergency Dispatch (Fast2SMS temporarily paused to preserve wallet balance; WhatsApp active)
     const contactsToSend = req.body.emergencyContacts || req.body.contactsAlerted;
     if (contactsToSend && Array.isArray(contactsToSend) && contactsToSend.length > 0) {
       contactsToSend.forEach(contactNumber => {
-        SmsService.sendEmergencySMS(contactNumber, trackingUrl);
+        // Dispatch WhatsApp SOS message
+        WhatsAppService.sendEmergencyAlert(contactNumber, trackingUrl, userPhone || 'DEVI User');
+
+        // Fast2SMS (Paused to preserve wallet balance during WhatsApp testing)
+        // SmsService.sendEmergencySMS(contactNumber, trackingUrl);
       });
     } else {
-      console.log('ℹ️ No emergency contacts provided to send SMS.');
+      console.log('ℹ️ No emergency contacts provided to alert.');
     }
 
     res.status(201).json({
