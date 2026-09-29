@@ -6,6 +6,8 @@ import 'api_service.dart';
 class LocationResult {
   final double? latitude;
   final double? longitude;
+  final double? accuracy;
+  final DateTime? capturedAt;
   final String? mapsUrl;
   final String displayText;
   final bool isSuccess;
@@ -13,6 +15,8 @@ class LocationResult {
   const LocationResult({
     this.latitude,
     this.longitude,
+    this.accuracy,
+    this.capturedAt,
     this.mapsUrl,
     required this.displayText,
     required this.isSuccess,
@@ -40,6 +44,8 @@ class LocationService {
           return LocationResult(
             latitude: lastKnown.latitude,
             longitude: lastKnown.longitude,
+            accuracy: lastKnown.accuracy,
+            capturedAt: lastKnown.timestamp.toUtc(),
             mapsUrl: url,
             displayText: url,
             isSuccess: true,
@@ -89,10 +95,14 @@ class LocationService {
       if (position != null) {
         final lat = position.latitude;
         final lng = position.longitude;
+        final accuracy = position.accuracy;
+        final capturedAt = position.timestamp.toUtc();
         final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
         return LocationResult(
           latitude: lat,
           longitude: lng,
+          accuracy: accuracy,
+          capturedAt: capturedAt,
           mapsUrl: mapsUrl,
           displayText: mapsUrl,
           isSuccess: true,

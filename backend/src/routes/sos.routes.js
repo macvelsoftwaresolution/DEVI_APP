@@ -5,6 +5,7 @@ import { uploadMediaToCloudinary } from '../config/cloudinary.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
 import { verifyAdminKey, optionalToken } from '../middlewares/auth.middleware.js';
 import { SmsService } from '../services/sms.service.js';
+import { WhatsAppService } from '../services/whatsapp.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -16,33 +17,85 @@ const router = Router();
 // POST /api/sos/trigger - Dispatches emergency alert, starts live tracking, and returns tracking URL
 router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
   try {
-    const { userPhone, location, latitude, longitude } = req.body;
+    const { userPhone, location, latitude, longitude, accuracy, idempotency_key, idempotencyKey, captured_at } = req.body;
+    const finalIdempotencyKey = idempotency_key || idempotencyKey || null;
 
+    // STEP 1: Idempotency & Active Session Check (Prevents duplicate DB alerts & duplicate SMS)
+    const existingSession = await DataService.findExistingSos({
+      idempotencyKey: finalIdempotencyKey,
+      userPhone,
+    });
+
+    const host = req.get('host') || 'localhost:5000';
+    const protocol = req.protocol || 'http';
+
+    if (existingSession) {
+      const trackingUrl = `${protocol}://${host}/track/${existingSession.id}`;
+      console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${userPhone}, Key: ${finalIdempotencyKey || 'N/A'}. 🛑 Skipping duplicate SMS broadcast.`);
+
+      return res.status(200).json({
+        success: true,
+        duplicate: true,
+        message: 'Active emergency SOS already exists. Reusing existing session.',
+        data: {
+          ...existingSession,
+          trackingUrl,
+        },
+      });
+    }
+
+    // STEP 2: Fresh SOS - Create session and persist to database
     const alert = await DataService.createSosAlert({
       userPhone,
       location,
       latitude,
       longitude,
+      accuracy,
+      idempotencyKey: finalIdempotencyKey,
+      capturedAt: captured_at,
     });
 
-    const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
     const trackingUrl = `${protocol}://${host}/track/${alert.id}`;
+    console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
 
-    console.log(`🚨 [EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
+    // Retrieve victim's friendly display name if available
+    let victimName = req.body.userName;
+    if (!victimName && userPhone) {
+      try {
+        const u = await DataService.findUserByPhone(userPhone);
+        if (u && u.name) victimName = u.name;
+      } catch (_) {}
+    }
+    if (!victimName) victimName = userPhone || 'DEVI User';
 
-    // SMS dispatch via Twilio:
+    // STEP 3: Emergency Dispatch (Fast2SMS paused; WhatsApp active with Google Maps Hyperlink)
     const contactsToSend = req.body.emergencyContacts || req.body.contactsAlerted;
     if (contactsToSend && Array.isArray(contactsToSend) && contactsToSend.length > 0) {
-      contactsToSend.forEach(contactNumber => {
-        SmsService.sendEmergencySMS(contactNumber, trackingUrl);
+      contactsToSend.forEach(contact => {
+        let contactPhone = typeof contact === 'object' ? (contact.phone || contact.number) : String(contact);
+        const match = contactPhone.match(/(?:\+?91|0)?[6-9]\d{9}/);
+        if (match) {
+          contactPhone = match[0];
+        }
+
+        // Dispatch WhatsApp SOS message with Google Maps Hyperlink & live tracking link
+        WhatsAppService.sendEmergencyAlert(
+          contactPhone,
+          trackingUrl,
+          victimName,
+          { latitude, longitude, location }
+        );
+
+        // Fast2SMS (Paused to preserve wallet balance per user request)
+        // SmsService.sendEmergencySMS(contactPhone, trackingUrl);
       });
     } else {
-      console.log('ℹ️ No emergency contacts provided to send Twilio SMS.');
+      console.log('ℹ️ No emergency contacts provided to alert.');
     }
 
     res.status(201).json({
       success: true,
+      duplicate: false,
       message: 'Emergency SOS alert recorded and live tracking initiated',
       data: {
         ...alert,

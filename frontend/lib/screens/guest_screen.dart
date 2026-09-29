@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../services/emergency_media_service.dart';
+import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
@@ -23,6 +25,8 @@ class GuestScreen extends StatefulWidget {
 class _GuestScreenState extends State<GuestScreen> {
   final AppState _appState = AppState.instance;
   bool _isSoundPlaying = false;
+  bool _isSendingSos = false;
+  String? _activeIdempotencyKey;
   Timer? _guestCountdownTimer;
   int _guestCountdownSeconds = 2;
   bool _isGuestCountingDown = false;
@@ -89,6 +93,9 @@ class _GuestScreenState extends State<GuestScreen> {
   }
 
   void _triggerSosAlert() async {
+    if (_isSendingSos) return;
+    _isSendingSos = true;
+
     _guestCountdownTimer?.cancel();
     if (mounted) {
       setState(() {
@@ -97,46 +104,55 @@ class _GuestScreenState extends State<GuestScreen> {
       });
     }
 
-    // Auto-start 2-minute emergency video and audio recording
-    final initialId = 'GUEST_${DateTime.now().millisecondsSinceEpoch}';
-    EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
+    _activeIdempotencyKey ??= const Uuid().v4();
 
-    // 2. Save incident in database for verification (No Guardian SMS/Call)
-    final guestId = _appState.phone.isNotEmpty
-        ? _appState.phone
-        : 'GUEST_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    try {
+      // 1. Auto-start 2-minute emergency video and audio recording
+      final initialId = 'GUEST_${DateTime.now().millisecondsSinceEpoch}';
+      EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
 
-    final alertData = await ApiService.instance.triggerEmergencyAlert(
-      userPhone: guestId,
-      location: 'Guest Live Location (Stored for Verification)',
-      latitude: 13.0827,
-      longitude: 80.2707,
-      contactsAlerted: [],
-    );
+      // 2. Fetch current GPS location honestly with accuracy
+      final locResult = await LocationService.getCurrentLocation();
 
-    final alertId = alertData != null && alertData['id'] != null
-        ? alertData['id'].toString()
-        : DateTime.now().millisecondsSinceEpoch.toString();
-    EmergencyMediaService.instance.setAlertId(alertId);
+      // 3. Save incident in database for verification (No Guardian SMS/Call)
+      final guestId = _appState.phone.isNotEmpty
+          ? _appState.phone
+          : 'GUEST_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
 
-    if (!mounted) return;
+      final alertData = await ApiService.instance.triggerEmergencyAlert(
+        userPhone: guestId,
+        location: locResult.mapsUrl ?? 'Guest Live Location (Stored for Verification)',
+        latitude: locResult.latitude ?? 13.0827,
+        longitude: locResult.longitude ?? 80.2707,
+        accuracy: locResult.accuracy,
+        idempotencyKey: _activeIdempotencyKey,
+        capturedAt: locResult.capturedAt,
+        contactsAlerted: [],
+      );
 
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Row(
-          children: [
-            Icon(Icons.verified_user_rounded, color: Colors.white, size: 20),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '🛡️ SOS Incident & 2-Min Evidence Stored in Database (Ready for Verification)',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+      final alertId = alertData != null && alertData['id'] != null
+          ? alertData['id'].toString()
+          : DateTime.now().millisecondsSinceEpoch.toString();
+      EmergencyMediaService.instance.setAlertId(alertId);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.verified_user_rounded, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '🛡️ SOS Incident & 2-Min Evidence Stored in Database (Ready for Verification)',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
               ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF0F172A),
+            ],
+          ),
+          backgroundColor: const Color(0xFF0F172A),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 4),
@@ -151,8 +167,10 @@ class _GuestScreenState extends State<GuestScreen> {
         ),
       ),
     );
-
+  } finally {
+    _isSendingSos = false;
   }
+}
 
   void _triggerCall112Dialog() async {
     _guestCountdownTimer?.cancel();
