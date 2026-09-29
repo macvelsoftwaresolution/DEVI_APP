@@ -753,9 +753,14 @@ export const DataService = {
     try {
       const { data, error } = await supabase.from('agents').select('*').order('created_at', { ascending: false });
       if (!error && Array.isArray(data)) {
-        return data;
+        return data.map(a => ({
+          ...a,
+          status: a.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (a.duty_status || 'OFF_DUTY')
+        }));
       }
-    } catch (_) {}
+    } catch (e) {
+      console.warn('Error reading agents from Supabase:', e.message);
+    }
     return respondersList;
   },
 
@@ -763,13 +768,14 @@ export const DataService = {
   async authenticateResponder(phone, pin) {
     if (!phone || !pin) return { success: false, message: 'Mobile number and Security PIN are required' };
     const cleanPhone = phone.toString().replace(/\D/g, '');
+    const phone10 = cleanPhone.length > 10 ? cleanPhone.slice(-10) : cleanPhone;
 
     try {
-      // Find agent by phone in Supabase agents table
+      // Find agent by phone in Supabase agents table (match 10 digits or with 91 prefix)
       const { data, error } = await supabase
         .from('agents')
         .select('*')
-        .or(`phone.eq.${cleanPhone},phone.eq.91${cleanPhone},phone.ilike.%${cleanPhone}%`)
+        .or(`phone.eq.${phone10},phone.eq.91${phone10},phone.ilike.%${phone10}%`)
         .maybeSingle();
 
       if (!error && data) {
@@ -782,19 +788,33 @@ export const DataService = {
         if (!isMatch) {
           return { success: false, message: 'Invalid 4-digit Security PIN' };
         }
-        return { success: true, agent: data };
+        return { 
+          success: true, 
+          agent: { 
+            ...data, 
+            status: data.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (data.duty_status || 'OFF_DUTY') 
+          } 
+        };
       }
-    } catch (_) {}
+    } catch (e) {
+      console.warn('Error during Supabase agent auth:', e.message);
+    }
 
     // In-memory fallback check
-    const dynamicAgent = respondersList.find(a => a.phone && a.phone.includes(cleanPhone));
+    const dynamicAgent = respondersList.find(a => a.phone && (a.phone === phone10 || a.phone.includes(phone10)));
     if (dynamicAgent) {
       if (dynamicAgent.is_active === false) {
         return { success: false, message: 'Your responder account is deactivated. Contact Dispatcher.' };
       }
       const isMatch = dynamicAgent.pin_hash ? verifyPin(pin, dynamicAgent.pin_hash) : (dynamicAgent.pin === pin);
       if (isMatch) {
-        return { success: true, agent: dynamicAgent };
+        return { 
+          success: true, 
+          agent: { 
+            ...dynamicAgent, 
+            status: dynamicAgent.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (dynamicAgent.duty_status || 'OFF_DUTY') 
+          } 
+        };
       }
       return { success: false, message: 'Invalid 4-digit Security PIN' };
     }
@@ -804,7 +824,8 @@ export const DataService = {
 
   async addResponder({ name, phone, pin, area, latitude, longitude, vehicle }) {
     if (!phone) throw new Error('Phone number is required');
-    const cleanPhone = phone.toString().replace(/\D/g, '');
+    const digitsOnly = phone.toString().replace(/\D/g, '');
+    const cleanPhone = digitsOnly.length > 10 ? digitsOnly.slice(-10) : digitsOnly;
     const plainPin = (pin && pin.toString().trim().length >= 4)
       ? pin.toString().trim()
       : Math.floor(1000 + Math.random() * 9000).toString();
@@ -817,8 +838,9 @@ export const DataService = {
       area: (area || 'Assigned Area').trim(),
       latitude: (latitude !== undefined && latitude !== null && !isNaN(parseFloat(latitude))) ? parseFloat(latitude) : null,
       longitude: (longitude !== undefined && longitude !== null && !isNaN(parseFloat(longitude))) ? parseFloat(longitude) : null,
+      heading: 0,
+      speed: 0,
       vehicle: (vehicle || 'Patrol Unit').trim(),
-      status: 'AVAILABLE',
       duty_status: 'OFF_DUTY',
       is_live: false,
       is_active: true,
@@ -826,14 +848,26 @@ export const DataService = {
     };
 
     try {
-      const { data, error } = await supabase.from('agents').insert([newAgent]).select().single();
+      // Upsert by unique phone so re-adding or updating credentials works smoothly
+      const { data, error } = await supabase
+        .from('agents')
+        .upsert(newAgent, { onConflict: 'phone' })
+        .select()
+        .single();
+
       if (!error && data) {
-        return { ...data, plainPin };
+        console.log(`✅ [AGENT CREATED IN SUPABASE] ID: ${data.id}, Name: ${data.name}, Phone: ${data.phone}`);
+        return { ...data, status: data.duty_status, plainPin };
       }
-    } catch (_) {}
+      if (error) {
+        console.error('❌ [SUPABASE AGENT INSERT ERROR]:', error.message || error);
+      }
+    } catch (e) {
+      console.error('❌ [SUPABASE AGENT INSERT EXCEPTION]:', e.message);
+    }
 
     respondersList.unshift(newAgent);
-    return { ...newAgent, plainPin };
+    return { ...newAgent, status: newAgent.duty_status, plainPin };
   },
 
   async deleteResponder(agentId) {
@@ -845,6 +879,18 @@ export const DataService = {
   },
 
   async getAgentById(agentId) {
+    if (!agentId) return null;
+    try {
+      const { data, error } = await supabase.from('agents').select('*').eq('id', agentId).maybeSingle();
+      if (!error && data) {
+        return {
+          ...data,
+          status: data.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (data.duty_status || 'OFF_DUTY')
+        };
+      }
+    } catch (e) {
+      console.warn('Error fetching agent by id from Supabase:', e.message);
+    }
     const list = await this.getResponders();
     return list.find(a => a.id === agentId || a.id.toString() === agentId.toString());
   },
@@ -861,36 +907,51 @@ export const DataService = {
       agent.longitude = lng;
       agent.last_seen = nowIso;
       agent.is_live = true;
-      if (agent.status === 'OFF_DUTY') agent.status = 'AVAILABLE';
+      if (agent.duty_status === 'OFF_DUTY') {
+        agent.duty_status = 'ON_DUTY';
+        agent.status = 'AVAILABLE';
+      }
     }
 
     try {
-      await supabase.from('agents').update({
+      const updatePayload = {
         latitude: lat,
         longitude: lng,
         last_seen: nowIso,
         is_live: true,
-      }).eq('id', agentId);
-    } catch (_) {}
+      };
+      if (heading !== null && heading !== undefined) updatePayload.heading = parseFloat(heading);
+      if (speed !== null && speed !== undefined) updatePayload.speed = parseFloat(speed);
+
+      await supabase.from('agents').update(updatePayload).eq('id', agentId);
+    } catch (e) {
+      console.warn('Error updating agent live location in Supabase:', e.message);
+    }
 
     return agent || { id: agentId, latitude: lat, longitude: lng, last_seen: nowIso };
   },
 
   async setAgentDutyStatus(agentId, status) {
     let agent = await this.getAgentById(agentId);
+    const isLive = status === 'ON_DUTY' || status === 'AVAILABLE';
+    const nowIso = new Date().toISOString();
+
     if (agent) {
+      agent.duty_status = status;
       agent.status = status;
-      agent.is_live = status === 'ON_DUTY' || status === 'AVAILABLE';
-      agent.last_seen = new Date().toISOString();
+      agent.is_live = isLive;
+      agent.last_seen = nowIso;
     }
     try {
       await supabase.from('agents').update({ 
-        status,
-        is_live: status === 'ON_DUTY' || status === 'AVAILABLE',
-        last_seen: new Date().toISOString()
+        duty_status: status,
+        is_live: isLive,
+        last_seen: nowIso
       }).eq('id', agentId);
-    } catch (_) {}
-    return agent;
+    } catch (e) {
+      console.error('Error updating duty status in Supabase:', e.message);
+    }
+    return agent || { id: agentId, duty_status: status, status, is_live: isLive, last_seen: nowIso };
   },
 
   async getAgentActiveAssignment(agentId) {
