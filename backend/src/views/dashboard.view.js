@@ -1729,7 +1729,10 @@ export function renderDashboardHtml() {
           await fetchResponders();
 
           const assignedPin = data.plainPin || pin;
-          alert('✅ Responder ' + name + ' Registered Successfully!\\n\\n📲 Login credentials & duty link have been automatically dispatched from our official DEVI Meta Number (+91 90806 85175) directly to ' + phone + '.\\n\\n🔑 4-Digit Security PIN: ' + assignedPin);
+          const confirmShare = confirm('✅ Responder ' + name + ' Registered Successfully in Supabase!\n\n🔑 4-Digit Security PIN: ' + assignedPin + '\n📲 Automated Meta WhatsApp Dispatched to: ' + phone + '\n\nWould you like to open WhatsApp Web / App to share or verify credentials directly?');
+          if (confirmShare && data.waMeUrl) {
+            window.open(data.waMeUrl, '_blank');
+          }
         } else {
           alert('Failed to register responder: ' + (data.message || 'Unknown error'));
         }
