@@ -69,3 +69,37 @@ export const verifyAdminKey = (req, res, next) => {
 
   next();
 };
+
+/**
+ * Middleware: Verify Field Responder JWT Token for On-Duty & GPS streaming APIs
+ */
+export const verifyResponderAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.split(' ')[1]
+    : (req.headers['x-responder-token'] || req.query.token);
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: 'Access denied. Field responder authentication required.',
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.role !== 'responder' && decoded.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden. Responder role required.',
+      });
+    }
+    req.responder = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid or expired session token. Please log in again.',
+    });
+  }
+};

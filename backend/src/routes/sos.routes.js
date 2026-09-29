@@ -6,6 +6,8 @@ import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
 import { verifyAdminKey, optionalToken } from '../middlewares/auth.middleware.js';
 import { SmsService } from '../services/sms.service.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
+import { socketService } from '../services/socket.service.js';
+import { Encryption } from '../utils/encryption.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -17,7 +19,14 @@ const router = Router();
 // POST /api/sos/trigger - Dispatches emergency alert, starts live tracking, and returns tracking URL
 router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
   try {
-    const { userPhone, location, latitude, longitude, accuracy, idempotency_key, idempotencyKey, captured_at } = req.body;
+    // Decrypt AES-256 payload if client sent encrypted payload
+    let reqData = req.body;
+    if (reqData.encrypted) {
+      const decrypted = Encryption.decryptObject(reqData.encrypted);
+      if (decrypted) reqData = { ...reqData, ...decrypted };
+    }
+
+    const { userPhone, location, latitude, longitude, accuracy, idempotency_key, idempotencyKey, captured_at } = reqData;
     const finalIdempotencyKey = idempotency_key || idempotencyKey || null;
 
     // STEP 1: Idempotency & Active Session Check (Prevents duplicate DB alerts & duplicate SMS)
@@ -55,7 +64,8 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       capturedAt: captured_at,
     });
 
-    const trackingUrl = `${protocol}://${host}/track/${alert.id}`;
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${protocol}://${host}`;
+    const trackingUrl = `${baseUrl}/track/${alert.id}`;
     console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
 
     // Retrieve victim's friendly display name if available
@@ -93,6 +103,19 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       console.log('ℹ️ No emergency contacts provided to alert.');
     }
 
+    // Broadcast real-time emergency alert via WebSockets to operator dashboard & responders
+    socketService.broadcastNewSosAlert({
+      id: alert.id,
+      userPhone,
+      userName: victimName,
+      latitude,
+      longitude,
+      location,
+      trackingUrl,
+      timestamp: alert.timestamp || new Date().toISOString(),
+      status: 'ACTIVE',
+    });
+
     res.status(201).json({
       success: true,
       duplicate: false,
@@ -110,7 +133,13 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
 // POST /api/sos/live-update - Updates live GPS coordinates stream from mobile app
 router.post('/live-update', async (req, res, next) => {
   try {
-    const { alertId, latitude, longitude, address, status } = req.body;
+    let reqData = req.body;
+    if (reqData.encrypted) {
+      const decrypted = Encryption.decryptObject(reqData.encrypted);
+      if (decrypted) reqData = { ...reqData, ...decrypted };
+    }
+
+    const { alertId, latitude, longitude, address, status } = reqData;
 
     if (!alertId || latitude == null || longitude == null) {
       return res.status(400).json({
@@ -125,6 +154,16 @@ router.post('/live-update', async (req, res, next) => {
       longitude,
       address,
       status: status || 'ACTIVE',
+    });
+
+    // Real-time broadcast to WebSockets (Zero-overhead update for guardians & dashboard)
+    socketService.broadcastLocationUpdate(alertId, {
+      alertId,
+      latitude: parseFloat(latitude),
+      longitude: parseFloat(longitude),
+      address,
+      status: status || 'ACTIVE',
+      lastUpdated: new Date().toISOString(),
     });
 
     res.status(200).json({
@@ -223,6 +262,9 @@ router.post('/resolve/:alertId', async (req, res, next) => {
     const session = await DataService.resolveSosAlert(alertId);
 
     console.log(`✅ [SOS RESOLVED/DEACTIVATED] ID: ${alertId}`);
+
+    // Broadcast status change immediately to all WebSocket listeners
+    socketService.broadcastSosStatus(alertId, { status: 'RESOLVED' });
 
     res.status(200).json({
       success: true,

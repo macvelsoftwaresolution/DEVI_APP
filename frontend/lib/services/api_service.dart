@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'encryption_service.dart';
 
 class ApiService {
   static final ApiService instance = ApiService._internal();
@@ -49,6 +50,18 @@ class ApiService {
       return localWebUrl;
     }
     return liveServerUrl;
+  }
+
+  /// WebSocket URL for ultra-low bandwidth real-time stream (/ws)
+  static String get wsUrl {
+    final base = baseUrl;
+    String ws = base.startsWith('https://')
+        ? base.replaceFirst('https://', 'wss://')
+        : base.replaceFirst('http://', 'ws://');
+    if (ws.endsWith('/api')) {
+      ws = ws.substring(0, ws.length - 4);
+    }
+    return '$ws/ws';
   }
 
   // Common authenticated headers
@@ -217,21 +230,29 @@ class ApiService {
     List<String>? emergencyContacts,
   }) async {
     try {
+      final payload = <String, dynamic>{
+        'userPhone': userPhone,
+        'userName': userName,
+        'location': location,
+        'latitude': latitude ?? 13.0827,
+        'longitude': longitude ?? 80.2707,
+        'accuracy': accuracy,
+        'idempotency_key': idempotencyKey,
+        'captured_at': capturedAt?.toIso8601String(),
+        'contactsAlerted': contactsAlerted,
+        'emergencyContacts': emergencyContacts ?? contactsAlerted,
+      };
+
+      // Encrypt payload with AES-256
+      final encryptedToken = EncryptionService.instance.encryptJson(payload);
+
       final res = await http
           .post(
             Uri.parse('$baseUrl/sos/trigger'),
             headers: _headers,
             body: jsonEncode({
-              'userPhone': userPhone,
-              'userName': userName,
-              'location': location,
-              'latitude': latitude ?? 13.0827,
-              'longitude': longitude ?? 80.2707,
-              'accuracy': accuracy,
-              'idempotency_key': idempotencyKey,
-              'captured_at': capturedAt?.toIso8601String(),
-              'contactsAlerted': contactsAlerted,
-              'emergencyContacts': emergencyContacts ?? contactsAlerted,
+              ...payload,
+              'encrypted': encryptedToken,
             }),
           )
           .timeout(const Duration(seconds: 8));
@@ -259,16 +280,24 @@ class ApiService {
     String status = 'ACTIVE',
   }) async {
     try {
+      final payload = <String, dynamic>{
+        'alertId': alertId,
+        'latitude': latitude,
+        'longitude': longitude,
+        'address': address,
+        'status': status,
+      };
+
+      // Encrypt live coordinates with AES-256
+      final encryptedToken = EncryptionService.instance.encryptJson(payload);
+
       final res = await http
           .post(
             Uri.parse('$baseUrl/sos/live-update'),
             headers: _headers,
             body: jsonEncode({
-              'alertId': alertId,
-              'latitude': latitude,
-              'longitude': longitude,
-              'address': address,
-              'status': status,
+              ...payload,
+              'encrypted': encryptedToken,
             }),
           )
           .timeout(const Duration(seconds: 5));

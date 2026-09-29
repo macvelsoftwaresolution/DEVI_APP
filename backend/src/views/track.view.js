@@ -601,77 +601,129 @@ export function renderLiveTrackingHtml({ alertId, initialSession }) {
 
     initGuardianLocation();
 
-    // 6. Polling Live GPS of Victim every 3 seconds to move marker & route
+    // 6. Real-time Location Updates via Low-Bandwidth WebSocket (with Polling Fallback)
+    function applyLocationUpdate(session) {
+      if (!session) return;
+      const lat = parseFloat(session.latitude);
+      const lng = parseFloat(session.longitude);
+
+      if (!isNaN(lat) && !isNaN(lng)) {
+        victimLat = lat;
+        victimLng = lng;
+
+        // Move Victim Marker smoothly
+        victimMarker.setLatLng([lat, lng]);
+
+        // Update Breadcrumb trail
+        if (session.breadcrumbs && session.breadcrumbs.length > 0) {
+          const pts = session.breadcrumbs.map(b => [b.latitude, b.longitude]);
+          trailPolyline.setLatLngs(pts);
+        }
+
+        // Update Connection Line to Guardian
+        if (guardianLat && guardianLng) {
+          connectionLine.setLatLngs([[guardianLat, guardianLng], [victimLat, victimLng]]);
+        }
+
+        // Update Navigation link destination if Guardian location not yet acquired
+        const navBtn = document.getElementById('navBtn');
+        if (navBtn && (!guardianLat || !guardianLng)) {
+          navBtn.href = 'https://www.google.com/maps/dir/?api=1&destination=' + victimLat + ',' + victimLng;
+        }
+
+        // Dynamically show Evidence link if uploaded to Cloudinary
+        if (session.evidenceUrl) {
+          const evCont = document.getElementById('evidenceContainer');
+          const evBtn = document.getElementById('evidencePlayBtn');
+          if (evCont && evBtn) {
+            evCont.style.display = 'flex';
+            evBtn.href = session.evidenceUrl;
+          }
+        }
+
+        const now = new Date();
+        const lastUpText = document.getElementById('lastUpdatedText');
+        if (lastUpText) {
+          lastUpText.innerText = 'GPS: ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+      }
+
+      // Handle Resolved / Safe State
+      if (session.status === 'RESOLVED') {
+        const badge = document.getElementById('statusBadge');
+        if (badge) {
+          badge.className = 'status-badge status-resolved';
+        }
+        const pulse = document.getElementById('pulseDot');
+        if (pulse) pulse.style.display = 'none';
+        const statusTxt = document.getElementById('statusText');
+        if (statusTxt) statusTxt.innerText = 'USER SAFE';
+      }
+    }
+
+    // Fallback HTTP Fetch
     async function fetchLiveLocation() {
       try {
         const res = await fetch('/api/sos/live/' + alertId);
         if (!res.ok) return;
-
         const data = await res.json();
         if (data && data.success && data.data) {
-          const session = data.data;
-          const lat = parseFloat(session.latitude);
-          const lng = parseFloat(session.longitude);
-
-          if (!isNaN(lat) && !isNaN(lng)) {
-            victimLat = lat;
-            victimLng = lng;
-
-            // Move Victim Marker
-            victimMarker.setLatLng([lat, lng]);
-
-            // Update Breadcrumb trail
-            if (session.breadcrumbs && session.breadcrumbs.length > 0) {
-              const pts = session.breadcrumbs.map(b => [b.latitude, b.longitude]);
-              trailPolyline.setLatLngs(pts);
-            }
-
-            // Update Connection Line to Guardian
-            if (guardianLat && guardianLng) {
-              connectionLine.setLatLngs([[guardianLat, guardianLng], [victimLat, victimLng]]);
-            }
-
-            // Update Navigation link destination if Guardian location not yet acquired
-            const navBtn = document.getElementById('navBtn');
-            if (navBtn && (!guardianLat || !guardianLng)) {
-              navBtn.href = 'https://www.google.com/maps/dir/?api=1&destination=' + victimLat + ',' + victimLng;
-            }
-
-            // Dynamically show Evidence link if uploaded to Cloudinary
-            if (session.evidenceUrl) {
-              const evCont = document.getElementById('evidenceContainer');
-              const evBtn = document.getElementById('evidencePlayBtn');
-              if (evCont && evBtn) {
-                evCont.style.display = 'flex';
-                evBtn.href = session.evidenceUrl;
-              }
-            }
-
-            const now = new Date();
-            const lastUpText = document.getElementById('lastUpdatedText');
-            if (lastUpText) {
-              lastUpText.innerText = 'GPS: ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            }
-          }
-
-          // Handle Resolved / Safe State
-          if (session.status === 'RESOLVED') {
-            const badge = document.getElementById('statusBadge');
-            if (badge) {
-              badge.className = 'status-badge status-resolved';
-            }
-            const pulse = document.getElementById('pulseDot');
-            if (pulse) pulse.style.display = 'none';
-            const statusTxt = document.getElementById('statusText');
-            if (statusTxt) statusTxt.innerText = 'USER SAFE';
-          }
+          applyLocationUpdate(data.data);
         }
       } catch (err) {
-        console.error('Error polling live location:', err);
+        console.warn('Fallback HTTP live check:', err);
       }
     }
 
-    setInterval(fetchLiveLocation, 3000);
+    // Persistent Low-Bandwidth WebSocket Connection
+    let ws = null;
+    let wsFallbackInterval = null;
+
+    function initWebSocketTracking() {
+      try {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = wsProtocol + '//' + window.location.host + '/ws';
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          console.log('⚡ [WEBSOCKET CONNECTED] Real-time tracking room joined for Alert #' + alertId);
+          ws.send(JSON.stringify({ type: 'join', room: 'alert:' + alertId }));
+          // When WebSocket is active, reduce fallback polling to 30s to conserve bandwidth
+          if (wsFallbackInterval) clearInterval(wsFallbackInterval);
+          wsFallbackInterval = setInterval(fetchLiveLocation, 30000);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'loc' && String(msg.alertId) === String(alertId)) {
+              applyLocationUpdate(msg);
+            } else if (msg.type === 'status' && String(msg.alertId) === String(alertId)) {
+              applyLocationUpdate({ status: msg.status });
+            }
+          } catch (e) {
+            console.error('Error handling WS tracking packet:', e);
+          }
+        };
+
+        ws.onclose = () => {
+          console.warn('⚠️ [WEBSOCKET DISCONNECTED] Falling back to polling, retrying WS in 4s...');
+          // Fast fallback polling while disconnected
+          if (wsFallbackInterval) clearInterval(wsFallbackInterval);
+          wsFallbackInterval = setInterval(fetchLiveLocation, 4000);
+          setTimeout(initWebSocketTracking, 4000);
+        };
+
+        ws.onerror = (e) => {
+          console.warn('WebSocket error:', e);
+        };
+      } catch (err) {
+        console.error('WebSocket init error:', err);
+        if (!wsFallbackInterval) wsFallbackInterval = setInterval(fetchLiveLocation, 4000);
+      }
+    }
+
+    initWebSocketTracking();
   </script>
 </body>
 </html>`;
