@@ -1729,7 +1729,7 @@ export function renderDashboardHtml() {
           await fetchResponders();
 
           const assignedPin = data.plainPin || pin;
-          alert('✅ Responder ' + name + ' Registered Successfully!\n\n📲 Login credentials & duty link have been automatically dispatched from our official DEVI Meta Number (+91 90806 85175) directly to ' + phone + '.\n\n🔑 4-Digit Security PIN: ' + assignedPin);
+          alert('✅ Responder ' + name + ' Registered Successfully!\\n\\n📲 Login credentials & duty link have been automatically dispatched from our official DEVI Meta Number (+91 90806 85175) directly to ' + phone + '.\\n\\n🔑 4-Digit Security PIN: ' + assignedPin);
         } else {
           alert('Failed to register responder: ' + (data.message || 'Unknown error'));
         }

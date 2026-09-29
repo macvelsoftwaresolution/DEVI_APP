@@ -51,34 +51,25 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "checkPermission" -> {
-                    val hasSms = ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.SEND_SMS
-                    ) == PackageManager.PERMISSION_GRANTED
                     val hasCall = ContextCompat.checkSelfPermission(
                         this,
                         Manifest.permission.CALL_PHONE
                     ) == PackageManager.PERMISSION_GRANTED
-                    result.success(hasSms && hasCall)
+                    result.success(hasCall)
                 }
                 "requestPermission" -> {
-                    val hasSms = ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.SEND_SMS
-                    ) == PackageManager.PERMISSION_GRANTED
                     val hasCall = ContextCompat.checkSelfPermission(
                         this,
                         Manifest.permission.CALL_PHONE
                     ) == PackageManager.PERMISSION_GRANTED
 
-                    if (hasSms && hasCall) {
+                    if (hasCall) {
                         result.success(true)
                     } else {
                         pendingPermissionResult = result
                         ActivityCompat.requestPermissions(
                             this,
                             arrayOf(
-                                Manifest.permission.SEND_SMS,
                                 Manifest.permission.CALL_PHONE
                             ),
                             SMS_PERMISSION_CODE
@@ -87,7 +78,6 @@ class MainActivity : FlutterActivity() {
                 }
                 "requestAllSafetyPermissions" -> {
                     val required = arrayOf(
-                        Manifest.permission.SEND_SMS,
                         Manifest.permission.CALL_PHONE,
                         Manifest.permission.CAMERA,
                         Manifest.permission.RECORD_AUDIO,
@@ -108,47 +98,8 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "sendSms" -> {
-                    val phone = call.argument<String>("phone")
-                    val message = call.argument<String>("message")
-
-                    if (phone.isNullOrEmpty() || message.isNullOrEmpty()) {
-                        result.error("INVALID_ARGS", "Phone or message is empty", null)
-                        return@setMethodCallHandler
-                    }
-
-                    val hasPermission = ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.SEND_SMS
-                    ) == PackageManager.PERMISSION_GRANTED
-
-                    if (!hasPermission) {
-                        result.error("NO_PERMISSION", "SEND_SMS permission not granted", null)
-                        return@setMethodCallHandler
-                    }
-
-                    try {
-                        val smsManager: SmsManager = try {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                applicationContext.getSystemService(SmsManager::class.java) ?: SmsManager.getDefault()
-                            } else {
-                                @Suppress("DEPRECATION")
-                                SmsManager.getDefault()
-                            }
-                        } catch (e: Exception) {
-                            @Suppress("DEPRECATION")
-                            SmsManager.getDefault()
-                        }
-
-                        val parts = smsManager.divideMessage(message)
-                        if (parts.size > 1) {
-                            smsManager.sendMultipartTextMessage(phone, null, parts, null, null)
-                        } else {
-                            smsManager.sendTextMessage(phone, null, message, null, null)
-                        }
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("SMS_ERROR", e.localizedMessage ?: "Failed to send SMS", null)
-                    }
+                    // Normal SMS permanently disabled per user requirement - alerts dispatched via WhatsApp Cloud API
+                    result.success(false)
                 }
                 "makeCall" -> {
                     val rawPhone = call.argument<String>("phone") ?: "112"
