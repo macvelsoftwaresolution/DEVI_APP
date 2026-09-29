@@ -269,13 +269,14 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     LocationService.startLiveTracking(alertId: alertId);
 
     // 4. Send single SMS broadcast with unique Live Tracking Link to guardians
-    final guardianPhones = guardiansList.map((g) => g.phone).toList();
-    await SmsService.broadcastEmergencySms(
-      phoneNumbers: guardianPhones,
-      userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
-      location: trackingUrl,
-      alertId: alertId,
-    );
+    // (Disabled local SIM SMS to rely entirely on Backend Fast2SMS API)
+    // final guardianPhones = guardiansList.map((g) => g.phone).toList();
+    // await SmsService.broadcastEmergencySms(
+    //   phoneNumbers: guardianPhones,
+    //   userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
+    //   location: trackingUrl,
+    //   alertId: alertId,
+    // );
 
     // 5. Immediately initiate phone call to the 1st Guardian
     await SmsService.makePhoneCall(primaryPhone);
