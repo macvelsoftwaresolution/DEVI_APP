@@ -1729,10 +1729,7 @@ export function renderDashboardHtml() {
           await fetchResponders();
 
           const assignedPin = data.plainPin || pin;
-          const confirmShare = confirm('✅ Responder ' + name + ' Registered Successfully in Supabase!\n\n🔑 4-Digit Security PIN: ' + assignedPin + '\n📲 Automated Meta WhatsApp Dispatched to: ' + phone + '\n\nWould you like to open WhatsApp Web / App to share or verify credentials directly?');
-          if (confirmShare && data.waMeUrl) {
-            window.open(data.waMeUrl, '_blank');
-          }
+          alert('✅ Responder ' + name + ' Registered Successfully in Supabase!\n\n🔑 4-Digit Security PIN: ' + assignedPin + '\n📲 Official Meta WhatsApp Dispatched from +91 90806 85175 directly to ' + phone);
         } else {
           alert('Failed to register responder: ' + (data.message || 'Unknown error'));
         }
