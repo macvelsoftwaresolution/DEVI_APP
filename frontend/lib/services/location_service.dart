@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'api_service.dart';
+import 'socket_service.dart';
 
 class LocationResult {
   final double? latitude;
@@ -129,13 +130,16 @@ class LocationService {
     _activeTrackingAlertId = alertId;
     debugPrint('🛰️ [LIVE TRACKING INITIATED] For Alert #$alertId');
 
+    // Connect Low-Bandwidth WebSocket Channel
+    SocketService.instance.connect();
+
     late LocationSettings locationSettings;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 3, // Stream updates every 3 meters
+        distanceFilter: 8, // Low-bandwidth optimization: send update every 8 meters
         forceLocationManager: true,
-        intervalDuration: const Duration(seconds: 3),
+        intervalDuration: const Duration(seconds: 4),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: "🚨 DEVI Emergency SOS Active",
           notificationText: "Live GPS is continuously streaming to your emergency guardians.",
@@ -147,14 +151,14 @@ class LocationService {
       locationSettings = AppleSettings(
         accuracy: LocationAccuracy.high,
         activityType: ActivityType.fitness,
-        distanceFilter: 3,
+        distanceFilter: 8,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
       );
     } else {
       locationSettings = const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 3,
+        distanceFilter: 8,
       );
     }
 
@@ -166,12 +170,14 @@ class LocationService {
         
         onUpdate?.call(position.latitude, position.longitude);
 
-        // Push update to backend in real-time
+        // Push update to backend in real-time via low-bandwidth WebSocket stream
         if (_activeTrackingAlertId != null) {
-          ApiService.instance.updateLiveLocation(
+          SocketService.instance.sendLocationUpdate(
             alertId: _activeTrackingAlertId!,
             latitude: position.latitude,
             longitude: position.longitude,
+            speed: position.speed,
+            heading: position.heading,
             status: 'ACTIVE',
           );
         }
@@ -190,6 +196,9 @@ class LocationService {
       await _positionStreamSub?.cancel();
       _positionStreamSub = null;
     }
+
+    // Disconnect WebSocket channel
+    SocketService.instance.disconnect();
 
     if (resolveBackend && _activeTrackingAlertId != null) {
       await ApiService.instance.resolveEmergencyAlert(_activeTrackingAlertId!);

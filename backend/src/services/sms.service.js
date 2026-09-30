@@ -3,13 +3,8 @@
  * High Speed Indian SMS Gateway using native fetch (zero external packages)
  */
 const sendEmergencySMS = async (toNumber, trackingUrl) => {
-  if (!toNumber) return false;
-
-  const apiKey = process.env.FAST2SMS_API_KEY;
-  if (!apiKey) {
-    console.warn('⚠️ Fast2SMS API key missing in .env. SMS skipped.');
-    return false;
-  }
+  console.log('ℹ️ [SMS SERVICE PAUSED] Fast2SMS normal SMS is paused per user request. WhatsApp Cloud API is active.');
+  return false;
 
   // Format to clean 10-digit Indian mobile number
   let cleanPhone = toNumber.toString().replace(/\D/g, '');

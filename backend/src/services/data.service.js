@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase.js';
+import { hashPin, verifyPin } from '../utils/pin.utils.js';
 
 export const DataService = {
   // --- USERS ---
@@ -751,35 +752,122 @@ export const DataService = {
   async getResponders() {
     try {
       const { data, error } = await supabase.from('agents').select('*').order('created_at', { ascending: false });
-      if (!error && Array.isArray(data) && data.length > 0) {
-        return data;
+      if (!error && Array.isArray(data)) {
+        return data.map(a => ({
+          ...a,
+          status: a.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (a.duty_status || 'OFF_DUTY')
+        }));
       }
-    } catch (_) {}
+    } catch (e) {
+      console.warn('Error reading agents from Supabase:', e.message);
+    }
     return respondersList;
   },
 
-  async addResponder({ name, phone, area, latitude, longitude, vehicle }) {
+  // --- RESPONDER AUTHENTICATION ---
+  async authenticateResponder(phone, pin) {
+    if (!phone || !pin) return { success: false, message: 'Mobile number and Security PIN are required' };
+    const cleanPhone = phone.toString().replace(/\D/g, '');
+    const phone10 = cleanPhone.length > 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    try {
+      // Find agent by phone in Supabase agents table (match 10 digits or with 91 prefix)
+      const { data, error } = await supabase
+        .from('agents')
+        .select('*')
+        .or(`phone.eq.${phone10},phone.eq.91${phone10},phone.ilike.%${phone10}%`)
+        .maybeSingle();
+
+      if (!error && data) {
+        if (data.is_active === false) {
+          return { success: false, message: 'Your responder account is deactivated. Contact Dispatcher.' };
+        }
+
+        // Verify PIN hash (PBKDF2)
+        const isMatch = verifyPin(pin, data.pin_hash);
+        if (!isMatch) {
+          return { success: false, message: 'Invalid 4-digit Security PIN' };
+        }
+        return { 
+          success: true, 
+          agent: { 
+            ...data, 
+            status: data.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (data.duty_status || 'OFF_DUTY') 
+          } 
+        };
+      }
+    } catch (e) {
+      console.warn('Error during Supabase agent auth:', e.message);
+    }
+
+    // In-memory fallback check
+    const dynamicAgent = respondersList.find(a => a.phone && (a.phone === phone10 || a.phone.includes(phone10)));
+    if (dynamicAgent) {
+      if (dynamicAgent.is_active === false) {
+        return { success: false, message: 'Your responder account is deactivated. Contact Dispatcher.' };
+      }
+      const isMatch = dynamicAgent.pin_hash ? verifyPin(pin, dynamicAgent.pin_hash) : (dynamicAgent.pin === pin);
+      if (isMatch) {
+        return { 
+          success: true, 
+          agent: { 
+            ...dynamicAgent, 
+            status: dynamicAgent.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (dynamicAgent.duty_status || 'OFF_DUTY') 
+          } 
+        };
+      }
+      return { success: false, message: 'Invalid 4-digit Security PIN' };
+    }
+
+    return { success: false, message: 'No registered responder found with this mobile number' };
+  },
+
+  async addResponder({ name, phone, pin, area, latitude, longitude, vehicle }) {
+    if (!phone) throw new Error('Phone number is required');
+    const digitsOnly = phone.toString().replace(/\D/g, '');
+    const cleanPhone = digitsOnly.length > 10 ? digitsOnly.slice(-10) : digitsOnly;
+    const plainPin = (pin && pin.toString().trim().length >= 4)
+      ? pin.toString().trim()
+      : Math.floor(1000 + Math.random() * 9000).toString();
+    const pinHash = hashPin(plainPin);
     const newAgent = {
       id: `agent-${Date.now()}`,
-      name: (name || 'Safety Volunteer').trim(),
-      phone: (phone || '').trim(),
-      area: (area || 'Assigned Patrol Sector').trim(),
-      latitude: latitude ? parseFloat(latitude) : 9.4532,
-      longitude: longitude ? parseFloat(longitude) : 77.7981,
-      vehicle: (vehicle || 'Motorcycle / Bike').trim(),
-      status: 'AVAILABLE',
+      name: (name || 'Field Responder').trim(),
+      phone: cleanPhone,
+      pin_hash: pinHash,
+      area: (area || 'Assigned Area').trim(),
+      latitude: (latitude !== undefined && latitude !== null && !isNaN(parseFloat(latitude))) ? parseFloat(latitude) : null,
+      longitude: (longitude !== undefined && longitude !== null && !isNaN(parseFloat(longitude))) ? parseFloat(longitude) : null,
+      heading: 0,
+      speed: 0,
+      vehicle: (vehicle || 'Patrol Unit').trim(),
+      duty_status: 'OFF_DUTY',
+      is_live: false,
+      is_active: true,
       created_at: new Date().toISOString()
     };
 
     try {
-      const { data, error } = await supabase.from('agents').insert([newAgent]).select().single();
+      // Upsert by unique phone so re-adding or updating credentials works smoothly
+      const { data, error } = await supabase
+        .from('agents')
+        .upsert(newAgent, { onConflict: 'phone' })
+        .select()
+        .single();
+
       if (!error && data) {
-        return data;
+        console.log(`✅ [AGENT CREATED IN SUPABASE] ID: ${data.id}, Name: ${data.name}, Phone: ${data.phone}`);
+        return { ...data, status: data.duty_status, plainPin };
       }
-    } catch (_) {}
+      if (error) {
+        console.error('❌ [SUPABASE AGENT INSERT ERROR]:', error.message || error);
+      }
+    } catch (e) {
+      console.error('❌ [SUPABASE AGENT INSERT EXCEPTION]:', e.message);
+    }
 
     respondersList.unshift(newAgent);
-    return newAgent;
+    return { ...newAgent, status: newAgent.duty_status, plainPin };
   },
 
   async deleteResponder(agentId) {
@@ -791,6 +879,18 @@ export const DataService = {
   },
 
   async getAgentById(agentId) {
+    if (!agentId) return null;
+    try {
+      const { data, error } = await supabase.from('agents').select('*').eq('id', agentId).maybeSingle();
+      if (!error && data) {
+        return {
+          ...data,
+          status: data.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (data.duty_status || 'OFF_DUTY')
+        };
+      }
+    } catch (e) {
+      console.warn('Error fetching agent by id from Supabase:', e.message);
+    }
     const list = await this.getResponders();
     return list.find(a => a.id === agentId || a.id.toString() === agentId.toString());
   },
@@ -801,41 +901,61 @@ export const DataService = {
     const lng = parseFloat(longitude);
     const nowIso = new Date().toISOString();
 
-    const agent = respondersList.find(a => a.id === agentId || a.id.toString() === agentId.toString());
+    let agent = await this.getAgentById(agentId);
     if (agent) {
       agent.latitude = lat;
       agent.longitude = lng;
       agent.last_seen = nowIso;
       agent.is_live = true;
-      if (agent.status === 'OFF_DUTY') agent.status = 'AVAILABLE';
+      if (agent.duty_status === 'OFF_DUTY') {
+        agent.duty_status = 'ON_DUTY';
+        agent.status = 'AVAILABLE';
+      }
     }
 
     try {
-      await supabase.from('agents').update({
+      const updatePayload = {
         latitude: lat,
         longitude: lng,
         last_seen: nowIso,
-      }).eq('id', agentId);
-    } catch (_) {}
+        is_live: true,
+      };
+      if (heading !== null && heading !== undefined) updatePayload.heading = parseFloat(heading);
+      if (speed !== null && speed !== undefined) updatePayload.speed = parseFloat(speed);
+
+      await supabase.from('agents').update(updatePayload).eq('id', agentId);
+    } catch (e) {
+      console.warn('Error updating agent live location in Supabase:', e.message);
+    }
 
     return agent || { id: agentId, latitude: lat, longitude: lng, last_seen: nowIso };
   },
 
   async setAgentDutyStatus(agentId, status) {
-    const agent = respondersList.find(a => a.id === agentId || a.id.toString() === agentId.toString());
+    let agent = await this.getAgentById(agentId);
+    const isLive = status === 'ON_DUTY' || status === 'AVAILABLE';
+    const nowIso = new Date().toISOString();
+
     if (agent) {
+      agent.duty_status = status;
       agent.status = status;
-      agent.is_live = status === 'ON_DUTY' || status === 'AVAILABLE';
-      agent.last_seen = new Date().toISOString();
+      agent.is_live = isLive;
+      agent.last_seen = nowIso;
     }
     try {
-      await supabase.from('agents').update({ status }).eq('id', agentId);
-    } catch (_) {}
-    return agent;
+      await supabase.from('agents').update({ 
+        duty_status: status,
+        is_live: isLive,
+        last_seen: nowIso
+      }).eq('id', agentId);
+    } catch (e) {
+      console.error('Error updating duty status in Supabase:', e.message);
+    }
+    return agent || { id: agentId, duty_status: status, status, is_live: isLive, last_seen: nowIso };
   },
 
   async getAgentActiveAssignment(agentId) {
-    const agent = respondersList.find(a => a.id === agentId || a.id.toString() === agentId.toString());
+    const agent = await this.getAgentById(agentId);
     if (!agent) return null;
 
     const incidents = await this.getAllIncidentsForDashboard();
@@ -870,50 +990,5 @@ export const DataService = {
 // Real-time live tracking sessions store
 const liveTrackSessions = new Map();
 
-// Active Field Responders Registry (Pre-seeded with trusted response team)
-let respondersList = [
-  {
-    id: 'agent-101',
-    name: 'Karthi (Rapid Volunteer)',
-    phone: '9876543210',
-    area: 'Sivakasi Town Center (Bus Stand)',
-    latitude: 9.4532,
-    longitude: 77.7981,
-    vehicle: 'Fast Bike Unit',
-    status: 'AVAILABLE',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'agent-102',
-    name: 'Priya (Community Responder)',
-    phone: '9123456780',
-    area: 'College Road, Sivakasi',
-    latitude: 9.4680,
-    longitude: 77.7850,
-    vehicle: 'Scooter',
-    status: 'AVAILABLE',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'agent-103',
-    name: 'Suresh (DEVI Safety Squad)',
-    phone: '9988776655',
-    area: 'Gnanagiri Road, Sivakasi',
-    latitude: 9.4610,
-    longitude: 77.7940,
-    vehicle: 'Quick Response Car',
-    status: 'AVAILABLE',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'agent-104',
-    name: 'Anand (District Coordinator)',
-    phone: '9443322110',
-    area: 'Madurai Road / Sattur Bypass',
-    latitude: 9.4750,
-    longitude: 77.7710,
-    vehicle: 'Motorcycle',
-    status: 'AVAILABLE',
-    created_at: new Date().toISOString()
-  }
-];
+// Active Field Responders Registry (Dynamically registered agents only)
+let respondersList = [];

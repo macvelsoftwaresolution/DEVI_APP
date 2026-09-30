@@ -114,20 +114,30 @@ class _GuestScreenState extends State<GuestScreen> {
       // 2. Fetch current GPS location honestly with accuracy
       final locResult = await LocationService.getCurrentLocation();
 
-      // 3. Save incident in database for verification (No Guardian SMS/Call)
+      // 3. Save incident in database & dispatch WhatsApp to locally stored guardians
       final guestId = _appState.phone.isNotEmpty
           ? _appState.phone
           : 'GUEST_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
 
+      final guardianPhones = _appState.guardians
+          .map((g) => g.phone.trim())
+          .where((p) => p.isNotEmpty)
+          .toList();
+      final contactStrings = _appState.guardians
+          .map((g) => '${g.name}: ${g.phone}')
+          .toList();
+
       final alertData = await ApiService.instance.triggerEmergencyAlert(
         userPhone: guestId,
+        userName: _appState.name.trim().isNotEmpty ? _appState.name.trim() : 'Guest User',
         location: locResult.mapsUrl ?? 'Guest Live Location (Stored for Verification)',
         latitude: locResult.latitude ?? 13.0827,
         longitude: locResult.longitude ?? 80.2707,
         accuracy: locResult.accuracy,
         idempotencyKey: _activeIdempotencyKey,
         capturedAt: locResult.capturedAt,
-        contactsAlerted: [],
+        contactsAlerted: contactStrings,
+        emergencyContacts: guardianPhones,
       );
 
       final alertId = alertData != null && alertData['id'] != null

@@ -1,3 +1,4 @@
+import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -11,6 +12,7 @@ import { renderLiveTrackingHtml } from './views/track.view.js';
 import { renderDashboardHtml } from './views/dashboard.view.js';
 import { renderAgentDutyHtml } from './views/agent_duty.view.js';
 import { DataService } from './services/data.service.js';
+import { socketService } from './services/socket.service.js';
 
 dotenv.config();
 
@@ -122,9 +124,14 @@ app.get('/', (req, res) => {
 app.use(notFoundHandler);
 app.use(errorHandler);
 
+// Create HTTP and WebSocket Server
+const server = http.createServer(app);
+socketService.init(server);
+
 // Start server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 DEVI Backend server running on port ${PORT}`);
+  console.log(`⚡ WebSocket Server listening on ws://localhost:${PORT}/ws`);
   console.log(`🛡️ Security enabled: Helmet, Rate Limiter, and JWT Auth active`);
   console.log(`📡 Health check available at: http://localhost:${PORT}/api/health`);
 });

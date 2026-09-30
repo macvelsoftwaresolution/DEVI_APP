@@ -497,27 +497,60 @@ export function renderAgentDutyHtml({ defaultAgentId = null } = {}) {
         <p>Field Safety Duty Portal</p>
       </div>
     </div>
-    <div class="status-pill" id="statusPill">
+    <div class="status-pill" id="statusPill" style="display: none;">
       <span class="status-dot"></span>
       <span id="statusText">OFF DUTY</span>
     </div>
   </header>
 
-  <!-- NON-EDITABLE RESPONDER CARD (NO DROPDOWN, 100% CLEAN & ALIGNED) -->
-  <div class="card responder-card">
-    <div class="responder-left">
-      <div class="responder-avatar">👮</div>
-      <div class="responder-details">
-        <div class="responder-role">ASSIGNED FIELD RESPONDER</div>
-        <div class="responder-name" id="agentDisplayName">Karthi (Rapid Volunteer)</div>
-        <div class="responder-meta" id="agentDisplayMeta">📍 Sivakasi Town Center (Bus Stand) • 📞 9876543210</div>
-      </div>
+  <!-- 1. SECURE RESPONDER LOGIN SCREEN -->
+  <div id="loginView" class="card" style="display: none; padding: 26px 20px; text-align: center; margin-top: 10px;">
+    <div style="width: 58px; height: 58px; margin: 0 auto 14px auto; background: rgba(2, 132, 199, 0.15); border: 1px solid rgba(2, 132, 199, 0.3); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 28px;">
+      👮
     </div>
-    <div class="responder-badge">VERIFIED</div>
+    <h2 style="font-family: 'Outfit', sans-serif; font-size: 20px; font-weight: 800; margin-bottom: 6px;">Field Responder Sign In</h2>
+    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 22px;">Enter your registered mobile number and 4-digit security PIN to access the Duty & Live Dispatch Network.</p>
+
+    <div id="loginError" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--red); color: #FCA5A5; padding: 10px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; font-weight: 600; text-align: left;"></div>
+
+    <form onsubmit="handleLoginSubmit(event)" style="display: flex; flex-direction: column; gap: 14px; text-align: left;">
+      <div>
+        <label style="font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; display: block; letter-spacing: 0.5px;">REGISTERED MOBILE NUMBER</label>
+        <input type="tel" id="loginPhone" placeholder="e.g. 9876543210" required style="width: 100%; padding: 13px 14px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); border-radius: 12px; color: #FFF; font-size: 15px; font-family: inherit; outline: none;">
+      </div>
+
+      <div>
+        <label style="font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; display: block; letter-spacing: 0.5px;">4-DIGIT SECURITY PIN</label>
+        <input type="password" id="loginPin" placeholder="••••" maxlength="6" required style="width: 100%; padding: 13px 14px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); border-radius: 12px; color: #FFF; font-size: 18px; font-family: inherit; letter-spacing: 6px; outline: none;">
+      </div>
+
+      <button type="submit" id="loginSubmitBtn" style="width: 100%; padding: 14px; background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%); color: #FFF; border: none; border-radius: 12px; font-weight: 800; font-size: 15px; cursor: pointer; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35); margin-top: 8px;">
+        SIGN IN TO DUTY
+      </button>
+    </form>
+    <div style="font-size: 11px; color: var(--text-dim); margin-top: 20px;">
+      🔒 256-Bit Encrypted Session • Authorized Responders & Police Volunteers Only
+    </div>
   </div>
 
-  <!-- 🚨 INCOMING SOS DISPATCH ALERT CARD -->
-  <div class="sos-alert-card" id="sosAlertCard">
+  <!-- 2. AUTHENTICATED DUTY PORTAL (HIDDEN UNTIL AUTHENTICATED) -->
+  <div id="dutyPortalView" style="display: none;">
+
+    <!-- NON-EDITABLE RESPONDER CARD (NO DROPDOWN, 100% CLEAN & ALIGNED) -->
+    <div class="card responder-card">
+      <div class="responder-left">
+        <div class="responder-avatar">👮</div>
+        <div class="responder-details">
+          <div class="responder-role">ASSIGNED FIELD RESPONDER</div>
+          <div class="responder-name" id="agentDisplayName">Loading Responder...</div>
+          <div class="responder-meta" id="agentDisplayMeta">📍 Patrol Sector • 📞 ...</div>
+        </div>
+      </div>
+      <div class="responder-badge">VERIFIED</div>
+    </div>
+
+    <!-- 🚨 INCOMING SOS DISPATCH ALERT CARD -->
+    <div class="sos-alert-card" id="sosAlertCard">
     <div class="sos-header">
       <div class="sos-title">
         <span>🚨</span>
@@ -605,9 +638,19 @@ export function renderAgentDutyHtml({ defaultAgentId = null } = {}) {
     </button>
   </div>
 
+  <!-- SUBTLE ONE-TIME LOGIN FOOTER -->
+  <div style="text-align: center; margin-top: 24px; padding-bottom: 24px;">
+    <button type="button" onclick="logoutResponder()" style="background: none; border: none; color: var(--text-dim); font-size: 11px; cursor: pointer; text-decoration: underline;">
+      Switch Responder Account / Sign Out
+    </button>
+  </div>
+</div> <!-- Close #dutyPortalView -->
+
   <script>
-    // State
-    let currentAgentId = '${defaultAgentId || ''}' || localStorage.getItem('devi_active_agent_id') || 'agent-1';
+    // State & Auth
+    let authToken = localStorage.getItem('devi_responder_token') || '';
+    let currentAgentId = '${defaultAgentId || ''}' || localStorage.getItem('devi_active_agent_id') || '';
+    let currentAgent = null;
     let isOnDuty = false;
     let watchId = null;
     let syncInterval = null;
@@ -618,6 +661,9 @@ export function renderAgentDutyHtml({ defaultAgentId = null } = {}) {
     let sirenInterval = null;
 
     // Elements
+    const loginView = document.getElementById('loginView');
+    const dutyPortalView = document.getElementById('dutyPortalView');
+    const logoutBtn = document.getElementById('logoutBtn');
     const dutyBtn = document.getElementById('dutyToggleBtn');
     const dutyBtnIcon = document.getElementById('dutyBtnIcon');
     const dutyBtnTitle = document.getElementById('dutyBtnTitle');
@@ -634,19 +680,104 @@ export function renderAgentDutyHtml({ defaultAgentId = null } = {}) {
     const agentDisplayName = document.getElementById('agentDisplayName');
     const agentDisplayMeta = document.getElementById('agentDisplayMeta');
 
-    // Load Responders from Backend
-    async function initResponders() {
+    // Check Auth Session
+    async function checkAuthSession() {
+      authToken = localStorage.getItem('devi_responder_token') || '';
+      if (!authToken) {
+        showLoginScreen();
+        return;
+      }
+
       try {
-        const res = await fetch('/api/dashboard/agents');
-        const data = await res.json();
-        if (data.success && Array.isArray(data.agents) && data.agents.length > 0) {
-          const matched = data.agents.find(a => a.id === currentAgentId) || data.agents[0];
-          setAgentProfile(matched);
-        } else {
-          setAgentProfile({ id: currentAgentId, name: 'Karthi (Rapid Volunteer)', area: 'Sivakasi Town Center (Bus Stand)', phone: '9876543210' });
+        const res = await fetch('/api/dashboard/duty/me', {
+          headers: { 'Authorization': 'Bearer ' + authToken }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.agent) {
+            currentAgent = data.agent;
+            currentAgentId = data.agent.id;
+            setAgentProfile(data.agent);
+            showDutyScreen();
+            if (data.hasAssignment && data.assignment) {
+              showEmergencyAlert(data.assignment);
+            }
+
+            // AUTO-RESUME ON-DUTY ON PAGE REFRESH:
+            const wasOnDuty = (
+              data.agent.duty_status === 'ON_DUTY' ||
+              data.agent.status === 'AVAILABLE' ||
+              data.agent.status === 'ON_DUTY' ||
+              localStorage.getItem('devi_duty_active') === 'true'
+            );
+
+            if (wasOnDuty) {
+              console.log('🔄 [AUTO-RESUMED] Responder was ON-DUTY before refresh. Resuming GPS stream...');
+              startDuty();
+            } else {
+              updateUI(false);
+            }
+            return;
+          }
         }
-      } catch (e) {
-        setAgentProfile({ id: currentAgentId, name: 'Karthi (Rapid Volunteer)', area: 'Sivakasi Town Center (Bus Stand)', phone: '9876543210' });
+      } catch (err) {}
+
+      localStorage.removeItem('devi_responder_token');
+      showLoginScreen();
+    }
+
+    function showLoginScreen() {
+      loginView.style.display = 'block';
+      dutyPortalView.style.display = 'none';
+      statusPill.style.display = 'none';
+    }
+
+    function showDutyScreen() {
+      loginView.style.display = 'none';
+      dutyPortalView.style.display = 'block';
+      statusPill.style.display = 'flex';
+    }
+
+    async function handleLoginSubmit(e) {
+      e.preventDefault();
+      const phone = document.getElementById('loginPhone').value.trim();
+      const pin = document.getElementById('loginPin').value.trim();
+      const errBox = document.getElementById('loginError');
+      const btn = document.getElementById('loginSubmitBtn');
+
+      errBox.style.display = 'none';
+      btn.disabled = true;
+      btn.innerText = 'Verifying PIN...';
+
+      try {
+        const res = await fetch('/api/dashboard/duty/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, pin })
+        });
+        const data = await res.json();
+        if (data.success && data.token) {
+          localStorage.setItem('devi_responder_token', data.token);
+          checkAuthSession();
+        } else {
+          errBox.innerText = '❌ ' + (data.message || 'Login failed');
+          errBox.style.display = 'block';
+        }
+      } catch (err) {
+        errBox.innerText = '❌ Network error connecting to server';
+        errBox.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'SIGN IN TO DUTY';
+      }
+    }
+
+    function logoutResponder() {
+      if (confirm('Are you sure you want to stop duty and sign out?')) {
+        stopDuty();
+        localStorage.removeItem('devi_responder_token');
+        localStorage.removeItem('devi_duty_active');
+        showLoginScreen();
       }
     }
 
@@ -673,35 +804,46 @@ export function renderAgentDutyHtml({ defaultAgentId = null } = {}) {
       }
 
       isOnDuty = true;
+      localStorage.setItem('devi_duty_active', 'true');
       updateUI(true);
 
       // Notify backend ON_DUTY
       fetch('/api/dashboard/agents/' + currentAgentId + '/duty', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + authToken
+        },
         body: JSON.stringify({ status: 'AVAILABLE' })
       }).catch(() => {});
 
       // Watch GPS position in high accuracy
-      watchId = navigator.geolocation.watchPosition(
-        onPositionSuccess,
-        onPositionError,
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 4000 }
-      );
+      if (!watchId) {
+        watchId = navigator.geolocation.watchPosition(
+          onPositionSuccess,
+          onPositionError,
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 4000 }
+        );
+      }
 
       // Stream coordinates to server every 5 seconds
-      syncInterval = setInterval(() => {
-        if (lastCoords) {
-          pushLocation(lastCoords);
-        }
-      }, 5000);
+      if (!syncInterval) {
+        syncInterval = setInterval(() => {
+          if (lastCoords) {
+            pushLocation(lastCoords);
+          }
+        }, 5000);
+      }
 
       // Poll for active emergency assignments every 3 seconds
-      pollInterval = setInterval(checkEmergencyAssignments, 3000);
+      if (!pollInterval) {
+        pollInterval = setInterval(checkEmergencyAssignments, 3000);
+      }
     }
 
     function stopDuty() {
       isOnDuty = false;
+      localStorage.removeItem('devi_duty_active');
       updateUI(false);
       stopSirenAlarm();
 
@@ -753,7 +895,10 @@ export function renderAgentDutyHtml({ defaultAgentId = null } = {}) {
     function pushLocation(coords) {
       fetch('/api/dashboard/agents/' + currentAgentId + '/location', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + authToken
+        },
         body: JSON.stringify({
           latitude: coords.lat,
           longitude: coords.lng,
@@ -763,16 +908,21 @@ export function renderAgentDutyHtml({ defaultAgentId = null } = {}) {
         })
       })
       .then(res => res.json())
-      .then(() => {
+      .then((data) => {
         const now = new Date();
         syncDisplay.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (data && data.hasAssignment && data.assignment) {
+          showEmergencyAlert(data.assignment);
+        }
       })
       .catch(() => {});
     }
 
     // Check if an emergency alert is assigned to this agent
     function checkEmergencyAssignments() {
-      fetch('/api/dashboard/agents/' + currentAgentId + '/status')
+      fetch('/api/dashboard/duty/me', {
+        headers: { 'Authorization': 'Bearer ' + authToken }
+      })
         .then(res => res.json())
         .then(data => {
           if (data && data.hasAssignment && data.assignment) {
@@ -886,8 +1036,8 @@ export function renderAgentDutyHtml({ defaultAgentId = null } = {}) {
       }
     }
 
-    // Auto-init on page load
-    initResponders();
+    // Auto-init on page load: Check secure session
+    checkAuthSession();
   </script>
 </body>
 </html>`;

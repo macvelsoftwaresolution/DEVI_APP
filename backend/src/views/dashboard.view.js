@@ -982,40 +982,30 @@ export function renderDashboardHtml() {
         </div>
 
         <div class="field">
-          <label>Mobile Number (For WhatsApp Alert)</label>
+          <label>Mobile Number (For WhatsApp Alert & Login)</label>
           <input type="tel" id="respPhone" class="input" placeholder="e.g. 9876543210" required>
         </div>
 
         <div class="field">
-          <label>Patrol Area / Landmark</label>
-          <input type="text" id="respArea" class="input" placeholder="e.g. Sivakasi Bus Stand" required>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label style="margin: 0;">4-Digit Security PIN</label>
+            <button type="button" onclick="generateRandomPin()" style="background: none; border: none; color: #38BDF8; font-size: 11px; font-weight: 700; cursor: pointer;">🎲 Auto-Generate PIN</button>
+          </div>
+          <input type="text" id="respPin" class="input" placeholder="e.g. 7421" maxlength="6" style="font-family: 'JetBrains Mono', monospace; font-size: 16px; letter-spacing: 4px; font-weight: 700; text-align: center; color: #38BDF8;" required>
         </div>
 
         <div class="field">
-          <label>Vehicle</label>
-          <select id="respVehicle" class="input">
-            <option value="Bike">🛵 Bike</option>
-            <option value="Scooter">🛵 Scooter</option>
-            <option value="Car">🚗 Car</option>
-            <option value="Foot">🚶 Foot</option>
-          </select>
+          <label>Patrol Area / Assigned Station</label>
+          <input type="text" id="respArea" class="input" placeholder="e.g. Central Bus Stand / Campus Gate" required>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-          <div class="field">
-            <label>Latitude</label>
-            <input type="number" step="any" id="respLat" class="input" placeholder="9.4532" required>
-          </div>
-          <div class="field">
-            <label>Longitude</label>
-            <input type="number" step="any" id="respLng" class="input" placeholder="77.7981" required>
-          </div>
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 10px; font-size: 11px; color: #6EE7B7; margin-bottom: 14px;">
+          🚀 <strong>Instant Meta WhatsApp Dispatch:</strong> Clicking Save will immediately send the login credentials and duty portal link from our official Meta WhatsApp number (<strong>+91 90806 85175</strong>) directly to the responder's phone.
         </div>
 
         <div class="modal-foot">
-          <button type="button" class="btn" onclick="useCurrentLocationForResponder()" style="margin-right: auto; font-size: 11px;">📍 My Location</button>
           <button type="button" class="btn" onclick="closeAddResponderModal()">Cancel</button>
-          <button type="submit" class="btn btn-green">Save Agent</button>
+          <button type="submit" class="btn btn-green">Save & Dispatch Credentials</button>
         </div>
       </form>
     </div>
@@ -1690,18 +1680,22 @@ export function renderDashboardHtml() {
       } catch (e) {}
     }
 
-    // Modal
+    // Modal & PIN Generation
+    function generateRandomPin() {
+      const pin = Math.floor(1000 + Math.random() * 9000).toString();
+      const pinInput = document.getElementById('respPin');
+      if (pinInput) pinInput.value = pin;
+      return pin;
+    }
+
     function openAddResponderModal() {
-      if (selectedIncidentId) {
-        const inc = incidents.find(i => i.id === selectedIncidentId);
-        if (inc && inc.latitude && inc.longitude) {
-          document.getElementById('respLat').value = inc.latitude;
-          document.getElementById('respLng').value = inc.longitude;
-        }
-      } else {
-        document.getElementById('respLat').value = '9.4532';
-        document.getElementById('respLng').value = '77.7981';
-      }
+      const nameInput = document.getElementById('respName');
+      const phoneInput = document.getElementById('respPhone');
+      const areaInput = document.getElementById('respArea');
+      if (nameInput) nameInput.value = '';
+      if (phoneInput) phoneInput.value = '';
+      if (areaInput) areaInput.value = '';
+      generateRandomPin();
       document.getElementById('addResponderModal').classList.remove('hidden');
     }
 
@@ -1709,41 +1703,47 @@ export function renderDashboardHtml() {
       document.getElementById('addResponderModal').classList.add('hidden');
     }
 
-    function useCurrentLocationForResponder() {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          pos => {
-            document.getElementById('respLat').value = pos.coords.latitude.toFixed(5);
-            document.getElementById('respLng').value = pos.coords.longitude.toFixed(5);
-            alert('Location captured!');
-          },
-          err => alert('Location error: ' + err.message)
-        );
-      }
-    }
-
     async function handleSaveResponder(e) {
       e.preventDefault();
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      const origText = submitBtn ? submitBtn.innerText : 'Save & Dispatch Credentials';
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerText = '⏳ Dispatching WhatsApp...';
+      }
+
       const name = document.getElementById('respName').value.trim();
       const phone = document.getElementById('respPhone').value.trim();
+      const pin = document.getElementById('respPin') ? document.getElementById('respPin').value.trim() : '';
       const area = document.getElementById('respArea').value.trim();
-      const vehicle = document.getElementById('respVehicle').value;
-      const latitude = document.getElementById('respLat').value;
-      const longitude = document.getElementById('respLng').value;
 
       try {
         const res = await fetch('/api/dashboard/agents', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, phone, area, vehicle, latitude, longitude }),
+          body: JSON.stringify({ name, phone, pin, area }),
         });
         const data = await res.json();
         if (data.success) {
           closeAddResponderModal();
           await fetchResponders();
-          alert(\`✓ Agent \${name} added successfully!\`);
+
+          const assignedPin = data.plainPin || pin;
+          const confirmShare = confirm('✅ Responder ' + name + ' Registered Successfully in Supabase!\n\n🔑 4-Digit Security PIN: ' + assignedPin + '\n📲 Automated Meta WhatsApp Dispatched to: ' + phone + '\n\nWould you like to open WhatsApp Web / App to share or verify credentials directly?');
+          if (confirmShare && data.waMeUrl) {
+            window.open(data.waMeUrl, '_blank');
+          }
+        } else {
+          alert('Failed to register responder: ' + (data.message || 'Unknown error'));
         }
-      } catch (err) {}
+      } catch (err) {
+        alert('Network error: ' + err.message);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerText = origText;
+        }
+      }
     }
 
     function escapeHtml(str) {
@@ -1751,15 +1751,49 @@ export function renderDashboardHtml() {
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    // WebSocket Real-time Listener for Instant Dashboard Updates
+    let dashWs = null;
+    function initDashboardWebSocket() {
+      try {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = wsProtocol + '//' + window.location.host + '/ws';
+        dashWs = new WebSocket(wsUrl);
+
+        dashWs.onopen = () => {
+          console.log('⚡ [DASHBOARD WEBSOCKET CONNECTED]');
+          dashWs.send(JSON.stringify({ type: 'join', room: 'dashboard' }));
+        };
+
+        dashWs.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'sos:new' || msg.type === 'loc' || msg.type === 'status' || msg.type === 'agent_loc') {
+              console.log('⚡ Realtime update via WS:', msg.type);
+              fetchIncidents(false);
+              fetchResponders();
+            }
+          } catch (e) {}
+        };
+
+        dashWs.onclose = () => {
+          setTimeout(initDashboardWebSocket, 5000);
+        };
+      } catch (err) {
+        console.warn('Dashboard WS init failed:', err);
+      }
+    }
+
     // Startup
     window.addEventListener('DOMContentLoaded', () => {
       initMap();
       fetchIncidents(true);
       fetchResponders();
+      initDashboardWebSocket();
+      // Relaxed polling fallback (15 seconds instead of 4 seconds)
       setInterval(() => {
         fetchIncidents(false);
         fetchResponders();
-      }, 4000);
+      }, 15000);
     });
   </script>
 </body>
