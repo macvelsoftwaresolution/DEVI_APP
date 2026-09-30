@@ -209,29 +209,98 @@ export const WhatsAppService = {
 
     try {
       const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
-      const response = await fetch(url, {
+
+      // 1. First Dispatch: devi_agent_welcome (Duty Link & Station Details)
+      let welcomeSuccess = false;
+      try {
+        const welcomePayload = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: clean,
+          type: 'template',
+          template: {
+            name: 'devi_agent_welcome',
+            language: { code: 'en_US' },
+            components: [
+              {
+                type: 'body',
+                parameters: [
+                  { type: 'text', text: name || 'Responder' },
+                  { type: 'text', text: area || 'Patrol Sector' },
+                  { type: 'text', text: dutyUrl },
+                  { type: 'text', text: clean.slice(-10) },
+                ],
+              },
+            ],
+          },
+        };
+
+        const welcomeRes = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(welcomePayload),
+        });
+        const welcomeData = await welcomeRes.json();
+        if (welcomeRes.ok) {
+          welcomeSuccess = true;
+          console.log(`✅ [APPROVED WELCOME TEMPLATE DISPATCHED] ID: ${welcomeData.messages?.[0]?.id} to +${clean}`);
+        } else {
+          console.warn(`ℹ️ [WELCOME TEMPLATE PENDING/NOTE]:`, welcomeData?.error?.message || welcomeData);
+        }
+      } catch (wErr) {
+        console.warn(`⚠️ [WELCOME TEMPLATE ERROR]:`, wErr.message);
+      }
+
+      // 2. Second Dispatch: devi_agent_pin (Official Meta Authentication Template with Copy-Code Button)
+      const pinPayload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: clean,
+        type: 'template',
+        template: {
+          name: 'devi_agent_pin',
+          language: { code: 'en_US' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: String(pin) },
+              ],
+            },
+            {
+              type: 'button',
+              sub_type: 'url',
+              index: '0',
+              parameters: [
+                { type: 'text', text: String(pin) },
+              ],
+            },
+          ],
+        },
+      };
+
+      const pinRes = await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: clean,
-          type: 'text',
-          text: { preview_url: true, body: messageText },
-        }),
+        body: JSON.stringify(pinPayload),
       });
-      const data = await response.json();
-      if (response.ok) {
-        console.log(`✅ [WHATSAPP CREDENTIALS SENT DIRECTLY via Meta +91 90806 85175] To: +${clean}`);
+
+      const pinData = await pinRes.json();
+      if (pinRes.ok) {
+        console.log(`✅ [ACTIVE AUTHENTICATION PIN DISPATCHED: devi_agent_pin] ID: ${pinData.messages?.[0]?.id} to +${clean}`);
+        return { success: true, messageText, pinData, welcomeSuccess };
       } else {
-        console.warn(`⚠️ [WHATSAPP META API RESPONSE]:`, JSON.stringify(data));
+        console.warn(`⚠️ [PIN DISPATCH RESPONSE]:`, JSON.stringify(pinData));
+        return { success: false, error: pinData.error, messageText };
       }
-      return { success: response.ok, messageText, data };
     } catch (e) {
-      console.warn('⚠️ [WHATSAPP CREDENTIALS ERROR]:', e.message);
+      console.warn('⚠️ [WHATSAPP CREDENTIALS DISPATCH ERROR]:', e.message);
       return { success: false, error: e.message, messageText };
     }
   },
