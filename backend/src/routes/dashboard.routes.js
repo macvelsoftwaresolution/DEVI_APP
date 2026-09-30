@@ -4,6 +4,7 @@ import { DataService } from '../services/data.service.js';
 import { socketService } from '../services/socket.service.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { verifyResponderAuth } from '../middlewares/auth.middleware.js';
+import { supabase } from '../config/supabase.js';
 
 const router = Router();
 
@@ -242,14 +243,91 @@ router.post('/assign-agent', async (req, res, next) => {
     }
 
     const updated = await DataService.assignAgent(alertId, agentName, agentPhone);
-    const trackingUrl = `${req.protocol}://${req.get('host')}/track/${alertId}`;
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const trackingUrl = `${baseUrl}/track/${alertId}`;
+
+    // Get victim info from DB or session
+    let victimName = 'DEVI Victim';
+    let lat = null;
+    let lng = null;
+    let locStr = null;
+
+    if (updated?.user?.name || updated?.userName) {
+      victimName = updated.user?.name || updated.userName;
+      lat = updated.latitude;
+      lng = updated.longitude;
+      locStr = updated.location;
+    } else {
+      try {
+        const { data: sosRow } = await supabase.from('sos_history').select('*').eq('id', alertId).maybeSingle();
+        if (sosRow) {
+          victimName = sosRow.victim_name || sosRow.user_name || 'DEVI User';
+          lat = sosRow.latitude;
+          lng = sosRow.longitude;
+          locStr = sosRow.address || sosRow.location;
+        }
+      } catch (_) {}
+    }
+
+    // DISPATCH OFFICIAL META WHATSAPP ALERT (devi_safety) TO THE ASSIGNED AGENT!
+    let waDispatched = false;
+    if (agentPhone) {
+      const waRes = await WhatsAppService.sendEmergencyAlert(
+        agentPhone,
+        trackingUrl,
+        victimName,
+        { latitude: lat, longitude: lng, location: locStr }
+      );
+      waDispatched = waRes?.success || false;
+      console.log(`🚨 [OFFICIAL META SOS DISPATCHED TO AGENT: ${agentName}] Phone: ${agentPhone}, Status: ${waDispatched}`);
+    }
+
+    // Broadcast incident assigned to dashboard WebSocket for instant UI update
+    socketService.broadcastToRoom('dashboard', {
+      type: 'incident:assigned',
+      alertId,
+      assignedAgent: updated?.assignedAgent || (agentPhone ? `${agentName} (${agentPhone})` : agentName),
+      status: 'DISPATCHED',
+      responderStatus: 'ASSIGNED',
+    });
 
     res.json({
       success: true,
-      message: `Responder ${agentName} assigned to incident #${alertId}`,
+      message: `Emergency Alert dispatched via official Meta WhatsApp (+91 90806 85175) to ${agentName}`,
       session: updated,
       trackingUrl,
+      waDispatched,
       dispatchText: `🚨 DEVI EMERGENCY ALERT: Assistance needed! Live Tracking: ${trackingUrl}`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST field responder accepts mission (Step 8.5 - En Route confirmation)
+router.post(['/agents/:id/accept-assignment', '/agents/accept-assignment'], async (req, res, next) => {
+  try {
+    const targetAgentId = req.params.id || req.body.agentId;
+    const targetAlertId = req.body.alertId || req.params.alertId;
+    if (!targetAlertId) {
+      return res.status(400).json({ success: false, message: 'alertId is required' });
+    }
+
+    const session = await DataService.acceptMission(targetAlertId, targetAgentId);
+
+    // Broadcast instant update to Command Dashboard
+    socketService.broadcastToRoom('dashboard', {
+      type: 'incident:en_route',
+      alertId: targetAlertId,
+      agentId: targetAgentId,
+      status: 'DISPATCHED',
+      responderStatus: 'EN_ROUTE',
+    });
+
+    res.json({
+      success: true,
+      message: 'Mission accepted. You are marked as EN ROUTE.',
+      session,
     });
   } catch (err) {
     next(err);

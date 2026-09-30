@@ -547,10 +547,29 @@ class _GuestScreenState extends State<GuestScreen> {
                       Row(
                         children: [
                           IconButton(
-                            icon: const Icon(
-                              Icons.history,
-                              color: AppColors.primaryNavy,
-                              size: 22,
+                            icon: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                const Icon(
+                                  Icons.history,
+                                  color: AppColors.primaryNavy,
+                                  size: 22,
+                                ),
+                                if (_activeAlertId != null)
+                                  Positioned(
+                                    top: -1,
+                                    right: -1,
+                                    child: Container(
+                                      width: 9,
+                                      height: 9,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0284C7),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.white, width: 1.5),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                             onPressed: () {
                               Navigator.of(context).push(

@@ -188,20 +188,133 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                                 ),
                                                 overflow: TextOverflow.ellipsis,
                                               ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                isRecent ? 'Emergency Alert Triggered' : 'Alert Triggered',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: isRecent ? AppColors.emergencyRed : AppColors.textMuted,
-                                                ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      (item['status'] == 'DISPATCHED' || item['assignedAgent'] != null)
+                                                          ? 'Assistance Dispatched'
+                                                          : isRecent
+                                                              ? 'Emergency Alert Triggered'
+                                                              : 'Alert Triggered',
+                                                      style: TextStyle(
+                                                        fontSize: 11,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: (item['status'] == 'DISPATCHED' || item['assignedAgent'] != null)
+                                                            ? const Color(0xFF0284C7)
+                                                            : isRecent
+                                                                ? AppColors.emergencyRed
+                                                                : AppColors.textMuted,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: (item['status'] == 'DISPATCHED' || item['assignedAgent'] != null)
+                                                          ? const Color(0xFFE0F2FE)
+                                                          : item['status'] == 'RESOLVED'
+                                                              ? const Color(0xFFF1F5F9)
+                                                              : const Color(0xFFFEE2E2),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(
+                                                        color: (item['status'] == 'DISPATCHED' || item['assignedAgent'] != null)
+                                                            ? const Color(0xFF7DD3FC)
+                                                            : item['status'] == 'RESOLVED'
+                                                                ? const Color(0xFFCBD5E1)
+                                                                : const Color(0xFFFCA5A5),
+                                                        width: 0.8,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      (item['status'] == 'DISPATCHED' || item['assignedAgent'] != null)
+                                                          ? 'DISPATCHED'
+                                                          : item['status'] == 'RESOLVED'
+                                                              ? 'RESOLVED'
+                                                              : 'TRIGGERED',
+                                                      style: TextStyle(
+                                                        fontSize: 9.5,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: (item['status'] == 'DISPATCHED' || item['assignedAgent'] != null)
+                                                            ? const Color(0xFF0369A1)
+                                                            : item['status'] == 'RESOLVED'
+                                                                ? const Color(0xFF64748B)
+                                                                : const Color(0xFFB91C1C),
+                                                        letterSpacing: 0.3,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ],
                                           ),
                                         ),
                                       ],
                                     ),
+                                    if (item['assignedAgent'] != null || item['status'] == 'DISPATCHED') ...[
+                                      const SizedBox(height: 10),
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF0FDF4),
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(color: const Color(0xFF86EFAC)),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: const Color(0xFF22C55E).withValues(alpha: 0.08),
+                                              blurRadius: 6,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Container(
+                                              width: 32,
+                                              height: 32,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFFDCFCE7),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.verified_user,
+                                                color: Color(0xFF16A34A),
+                                                size: 18,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    '🚨 Helper is on the way: ' + (item['assignedAgent'] ?? 'Safety Responder'),
+                                                    style: const TextStyle(
+                                                      fontSize: 12.5,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: Color(0xFF166534),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    item['responderStatus'] == 'EN_ROUTE'
+                                                        ? 'Responder confirmed OK and is actively en route to your live GPS coordinates. Stay calm!'
+                                                        : 'Emergency assistance has been dispatched. Help is arriving soon!',
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w500,
+                                                      color: Color(0xFF15803D),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                     if (contacts.isNotEmpty) ...[
                                       const SizedBox(height: 10),
                                       Container(

@@ -9,6 +9,8 @@ export default function DutyPage() {
   const [activeAlert, setActiveAlert] = useState(null);
   const [lastCoords, setLastCoords] = useState(null);
   const [gpsStatus, setGpsStatus] = useState('Standby');
+  const [isAcceptingMission, setIsAcceptingMission] = useState(false);
+  const [missionAccepted, setMissionAccepted] = useState(false);
 
   // Login Form
   const [loginPhone, setLoginPhone] = useState('');
@@ -131,12 +133,43 @@ export default function DutyPage() {
 
   const showEmergency = (assignment) => {
     setActiveAlert(assignment);
-    startSiren();
+    if (assignment?.responderStatus === 'EN_ROUTE') {
+      setMissionAccepted(true);
+      stopSiren();
+    } else {
+      setMissionAccepted(false);
+      startSiren();
+    }
   };
 
   const hideEmergency = () => {
     setActiveAlert(null);
+    setMissionAccepted(false);
     stopSiren();
+  };
+
+  const handleAcceptMission = async () => {
+    if (!activeAlert?.id || !currentAgent?.id) return;
+    setIsAcceptingMission(true);
+    try {
+      const res = await fetch(apiUrl(`/api/dashboard/agents/${currentAgent.id}/accept-assignment`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ alertId: activeAlert.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMissionAccepted(true);
+        stopSiren();
+      }
+    } catch (err) {
+      console.warn('Accept mission error:', err);
+    } finally {
+      setIsAcceptingMission(false);
+    }
   };
 
   // Toggle Duty
@@ -453,6 +486,54 @@ export default function DutyPage() {
                 <div><strong>Mobile:</strong> <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue)', fontWeight: '700' }}>{activeAlert.userPhone || activeAlert.phone}</span></div>
                 <div><strong>Location:</strong> <span>{activeAlert.location || activeAlert.address || 'GPS Location'}</span></div>
               </div>
+
+              {/* MISSION ACCEPTANCE BUTTON */}
+              {!missionAccepted ? (
+                <button
+                  disabled={isAcceptingMission}
+                  onClick={handleAcceptMission}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                    color: '#FFF',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontFamily: 'Outfit, sans-serif',
+                    fontWeight: '800',
+                    fontSize: '15px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+                    marginBottom: '10px',
+                  }}
+                >
+                  <CheckCircle size={18} /> {isAcceptingMission ? 'Confirming...' : '✅ OK, ACCEPT MISSION (I AM EN ROUTE)'}
+                </button>
+              ) : (
+                <div
+                  style={{
+                    width: '100%',
+                    padding: '11px',
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid #10B981',
+                    borderRadius: '12px',
+                    color: '#34D399',
+                    fontSize: '13px',
+                    fontWeight: '800',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginBottom: '10px',
+                  }}
+                >
+                  <span>✓</span> MISSION ACCEPTED — EN ROUTE TO SCENE
+                </div>
+              )}
 
               <a
                 href={`https://www.google.com/maps/dir/?api=1&destination=${activeAlert.latitude || 13.0827},${activeAlert.longitude || 80.2707}`}

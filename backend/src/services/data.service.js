@@ -495,15 +495,20 @@ export const DataService = {
         const formattedHour = hours % 12 || 12;
         const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
+        const key = alert.id.toString();
+        const liveSession = liveTrackSessions.get(key);
+
         return {
           id: alert.id,
           userId: alert.user_id,
           timestamp: alert.created_at,
           displayTime: `${dateStr}, ${formattedHour}:${minutes} ${ampm}`,
           location: alert.location_address || `GPS: ${alert.latitude}, ${alert.longitude}`,
-          latitude: alert.latitude,
-          longitude: alert.longitude,
-          status: alert.status || 'DISPATCHED',
+          latitude: liveSession?.latitude ?? alert.latitude,
+          longitude: liveSession?.longitude ?? alert.longitude,
+          status: liveSession?.status || alert.status || 'ACTIVE',
+          assignedAgent: liveSession?.assignedAgent || alert.assigned_agent || null,
+          responderStatus: liveSession?.responderStatus || alert.responder_status || (liveSession?.assignedAgent ? 'EN_ROUTE' : null),
           evidenceUrl: alert.evidence_url || alert.audio_url || null,
         };
       });
@@ -769,6 +774,7 @@ export const DataService = {
           status: liveSession?.status || alert.status || 'DISPATCHED',
           evidenceUrl: alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null,
           assignedAgent: alert.assigned_agent || liveSession?.assignedAgent || null,
+          responderStatus: liveSession?.responderStatus || (alert.assigned_agent ? 'ASSIGNED' : null),
           operatorNotes: alert.operator_notes || liveSession?.operatorNotes || '',
           user: {
             name: user?.full_name || (user?.is_guest ? 'Guest Victim' : 'DEVI User'),
@@ -800,31 +806,86 @@ export const DataService = {
 
     const displayName = agentPhone ? `${agentName} (${agentPhone})` : agentName;
 
-    if (session) {
+    if (!session) {
+      session = {
+        id: key,
+        assignedAgent: displayName,
+        status: 'DISPATCHED',
+        responderStatus: 'ASSIGNED',
+        lastUpdated: new Date().toISOString()
+      };
+    } else {
       session.assignedAgent = displayName;
-      session.status = 'ASSIGNED';
+      session.status = 'DISPATCHED';
+      session.responderStatus = 'ASSIGNED';
       session.lastUpdated = new Date().toISOString();
     }
+    liveTrackSessions.set(key, session);
 
     // Mark responder as ON_MISSION in memory
-    const matched = respondersList.find(r => r.name.toLowerCase().includes(agentName.toLowerCase()) || r.id === agentName);
+    const matched = respondersList.find(r => r.name.toLowerCase().includes(agentName.toLowerCase()) || r.id === agentName || (agentPhone && r.phone === agentPhone));
     if (matched) {
       matched.status = 'ON_MISSION';
+      matched.duty_status = 'DISPATCHED';
+    }
+
+    try {
+      const { error } = await supabase
+        .from('sos_history')
+        .update({
+          assigned_agent: displayName,
+          status: 'DISPATCHED',
+        })
+        .eq('id', alertId);
+
+      if (error && error.code === '42703') {
+        // Fallback if assigned_agent column does not exist yet
+        await supabase
+          .from('sos_history')
+          .update({
+            status: 'DISPATCHED',
+          })
+          .eq('id', alertId);
+      }
+    } catch (e) {
+      console.warn('Note updating assigned_agent in Supabase:', e.message);
+    }
+
+    return session;
+  },
+
+  // --- AGENT ACCEPTS DISPATCH MISSION (Step 8.5) ---
+  async acceptMission(alertId, agentId = null) {
+    if (!alertId) return null;
+    const key = alertId.toString();
+    let session = liveTrackSessions.get(key);
+
+    if (session) {
+      session.status = 'DISPATCHED';
+      session.responderStatus = 'EN_ROUTE';
+      session.lastUpdated = new Date().toISOString();
+    } else {
+      session = {
+        id: key,
+        status: 'DISPATCHED',
+        responderStatus: 'EN_ROUTE',
+        lastUpdated: new Date().toISOString()
+      };
+      liveTrackSessions.set(key, session);
+    }
+
+    if (agentId) {
+      await this.setAgentDutyStatus(agentId, 'DISPATCHED');
     }
 
     try {
       await supabase
         .from('sos_history')
-        .update({
-          assigned_agent: displayName,
-          status: 'ASSIGNED',
-        })
+        .update({ status: 'DISPATCHED' })
         .eq('id', alertId);
-    } catch (e) {
-      console.warn('Note updating assigned_agent in Supabase:', e.message);
-    }
+    } catch (_) {}
 
-    return session || { id: key, assignedAgent: displayName, status: 'ASSIGNED' };
+    return session;
   },
 
   // --- DASHBOARD: RESPONDERS / FIELD AGENTS MANAGEMENT ---
@@ -1038,7 +1099,16 @@ export const DataService = {
     if (!agent) return null;
 
     const incidents = await this.getAllIncidentsForDashboard();
-    return incidents.find(i => (i.status === 'ASSIGNED' || i.status === 'ACTIVE') && i.assignedAgent && i.assignedAgent.toLowerCase().includes(agent.name.toLowerCase()));
+    const cleanPhone10 = agent.phone ? agent.phone.toString().replace(/\D/g, '').slice(-10) : '';
+
+    return incidents.find(i => {
+      const isOngoing = i.status === 'ASSIGNED' || i.status === 'ACTIVE' || i.status === 'DISPATCHED';
+      if (!isOngoing || !i.assignedAgent) return false;
+      const assignedLower = i.assignedAgent.toLowerCase();
+      const matchName = agent.name && assignedLower.includes(agent.name.toLowerCase());
+      const matchPhone = cleanPhone10 && assignedLower.includes(cleanPhone10);
+      return matchName || matchPhone;
+    });
   },
 
   // --- DASHBOARD: ADD OPERATOR LOG NOTE (Step 9) ---

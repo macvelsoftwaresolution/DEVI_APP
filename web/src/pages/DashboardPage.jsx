@@ -242,7 +242,7 @@ export default function DashboardPage() {
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
-            if (msg.type === 'sos:new') {
+            if (msg.type === 'sos:new' || msg.type === 'incident:assigned' || msg.type === 'incident:en_route') {
               fetchIncidents(false);
               fetchResponders();
             } else if (msg.type === 'loc' || msg.type === 'status' || msg.type === 'agent_loc') {
@@ -359,14 +359,62 @@ export default function DashboardPage() {
   const selectedIncident = incidents.find((i) => i.id === selectedIncidentId);
 
   useEffect(() => {
-    if (!selectedIncident || !mapInstanceRef.current) return;
-    const lat = parseFloat(selectedIncident.latitude);
-    const lng = parseFloat(selectedIncident.longitude);
-    if (!isNaN(lat) && !isNaN(lng) && !isFlyingRef.current) {
-      smoothFlyTo(lat, lng, 17);
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (dispatchLineRef.current) {
+      map.removeLayer(dispatchLineRef.current);
+      dispatchLineRef.current = null;
+    }
+
+    if (!selectedIncident) return;
+    const vLat = parseFloat(selectedIncident.latitude);
+    const vLng = parseFloat(selectedIncident.longitude);
+
+    if (selectedIncident.assignedAgent) {
+      const assignedResp = responders.find((r) =>
+        selectedIncident.assignedAgent.toLowerCase().includes(r.name.toLowerCase()) ||
+        (r.phone && selectedIncident.assignedAgent.includes(r.phone.slice(-10)))
+      );
+
+      if (assignedResp) {
+        const rLat = parseFloat(assignedResp.latitude);
+        const rLng = parseFloat(assignedResp.longitude);
+        if (!isNaN(vLat) && !isNaN(vLng) && !isNaN(rLat) && !isNaN(rLng)) {
+          const polyline = L.polyline(
+            [
+              [rLat, rLng],
+              [vLat, vLng],
+            ],
+            {
+              color: '#38BDF8',
+              weight: 4,
+              opacity: 0.9,
+              dashArray: '8, 8',
+              lineCap: 'round',
+            }
+          ).addTo(map);
+
+          dispatchLineRef.current = polyline;
+
+          map.fitBounds(
+            [
+              [rLat, rLng],
+              [vLat, vLng],
+            ],
+            { padding: [70, 70], maxZoom: 16 }
+          );
+          setOperatorNote(selectedIncident.operatorNotes || '');
+          return;
+        }
+      }
+    }
+
+    if (!isNaN(vLat) && !isNaN(vLng) && !isFlyingRef.current) {
+      smoothFlyTo(vLat, vLng, 17);
     }
     setOperatorNote(selectedIncident.operatorNotes || '');
-  }, [selectedIncidentId]);
+  }, [selectedIncidentId, selectedIncident?.assignedAgent, responders]);
 
   // Distance Calculator
   const calcDistKm = (lat1, lon1, lat2, lon2) => {
@@ -411,12 +459,7 @@ export default function DashboardPage() {
       if (data.success) {
         fetchIncidents(true);
         fetchResponders();
-        const waMsg = `🚨 DEVI EMERGENCY ALERT!\nVictim: ${selectedIncident.user?.name}\nPhone: ${selectedIncident.user?.phone}\nLocation: ${selectedIncident.location}\n\n🔴 LIVE GPS TRACKING:\n${window.location.origin}/track/${selectedIncident.id}\n\nPlease reach immediately!`;
-        const phoneClean = (responder.phone || '').replace(/[^0-9]/g, '');
-        const waUrl = `https://wa.me/91${phoneClean.slice(-10)}?text=${encodeURIComponent(waMsg)}`;
-        if (confirm(`✓ ${responder.name} assigned!\n\nOpen WhatsApp to send live tracking link to ${responder.name}?`)) {
-          window.open(waUrl, '_blank');
-        }
+        alert(`🚨 Emergency Alert Dispatched to ${responder.name}!\n\nOfficial Meta WhatsApp alert (+91 90806 85175) sent directly to ${responder.phone} with Victim Details & Live GPS Tracking link.`);
       }
     } catch (e) {
       alert('Error assigning agent');
@@ -927,54 +970,137 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* NEARBY AGENTS */}
+              {/* NEARBY AGENTS & DISPATCH */}
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
                 <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
                   <span>Nearby Responders</span>
                   <span style={{ color: '#06B6D4' }}>{rankedResponders.length} Available</span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {rankedResponders.slice(0, 4).map((r, idx) => (
-                    <div
-                      key={r.id}
-                      style={{
-                        background: 'var(--bg-elevated)',
-                        border: `1px solid ${idx === 0 ? 'rgba(6, 182, 212, 0.6)' : 'var(--border)'}`,
-                        borderRadius: '8px',
-                        padding: '8px 10px',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#FFF' }}>{r.name}</span>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: '700', color: '#67E8F9' }}>
-                          {r.distKm < 900 ? `${r.distKm.toFixed(1)} km (~${r.estMins}m)` : 'Standby'}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between', margin: '4px 0' }}>
-                        <span>📍 {r.area || 'Patrol Sector'}</span>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>📞 {r.phone}</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                        <button
-                          onClick={() => handleAssignResponder(r)}
-                          style={{
-                            flex: 1,
-                            padding: '6px',
-                            background: 'var(--cyan)',
-                            color: '#000',
-                            border: 'none',
-                            borderRadius: '5px',
-                            fontSize: '11px',
-                            fontWeight: '700',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Assign & Alert
-                        </button>
-                      </div>
+                {/* CURRENTLY ASSIGNED RESPONDER BANNER */}
+                {selectedIncident.assignedAgent && (
+                  <div style={{
+                    background: selectedIncident.responderStatus === 'EN_ROUTE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(56, 189, 248, 0.12)',
+                    border: `1px solid ${selectedIncident.responderStatus === 'EN_ROUTE' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(56, 189, 248, 0.4)'}`,
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    marginBottom: '10px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: '800', color: selectedIncident.responderStatus === 'EN_ROUTE' ? '#34D399' : '#38BDF8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        ✓ ASSIGNED SAFETY RESPONDER
+                      </span>
+                      <span style={{
+                        fontSize: '9px',
+                        fontWeight: '800',
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        background: selectedIncident.responderStatus === 'EN_ROUTE' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+                        color: selectedIncident.responderStatus === 'EN_ROUTE' ? '#34D399' : '#FBBF24',
+                        border: `1px solid ${selectedIncident.responderStatus === 'EN_ROUTE' ? '#10B981' : '#F59E0B'}`,
+                      }}>
+                        {selectedIncident.responderStatus === 'EN_ROUTE' ? '🚀 EN ROUTE (CONFIRMED OK)' : '⏳ ALERT DISPATCHED'}
+                      </span>
                     </div>
-                  ))}
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: '#FFF' }}>
+                      👮 {selectedIncident.assignedAgent}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {rankedResponders.slice(0, 4).map((r, idx) => {
+                    const cleanPhone10 = r.phone ? r.phone.toString().replace(/\D/g, '').slice(-10) : '';
+                    const isThisAssigned = selectedIncident?.assignedAgent && (
+                      selectedIncident.assignedAgent.toLowerCase().includes(r.name.toLowerCase()) ||
+                      (cleanPhone10 && selectedIncident.assignedAgent.includes(cleanPhone10))
+                    );
+
+                    return (
+                      <div
+                        key={r.id}
+                        style={{
+                          background: isThisAssigned ? 'rgba(56, 189, 248, 0.08)' : 'var(--bg-elevated)',
+                          border: `1px solid ${isThisAssigned ? '#38BDF8' : idx === 0 ? 'rgba(6, 182, 212, 0.6)' : 'var(--border)'}`,
+                          borderRadius: '8px',
+                          padding: '8px 10px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#FFF' }}>{r.name}</span>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: '700', color: '#67E8F9' }}>
+                            {r.distKm < 900 ? `${r.distKm.toFixed(1)} km (~${r.estMins}m)` : 'Standby'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between', margin: '4px 0' }}>
+                          <span>📍 {r.area || 'Patrol Sector'}</span>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>📞 {r.phone}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                          {isThisAssigned ? (
+                            selectedIncident.responderStatus === 'EN_ROUTE' ? (
+                              <div
+                                style={{
+                                  flex: 1,
+                                  padding: '7px',
+                                  background: 'rgba(16, 185, 129, 0.22)',
+                                  border: '1px solid #10B981',
+                                  color: '#34D399',
+                                  borderRadius: '5px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                <span>🚀</span> En Route to Scene (Confirmed OK)
+                              </div>
+                            ) : (
+                              <div
+                                style={{
+                                  flex: 1,
+                                  padding: '7px',
+                                  background: 'rgba(56, 189, 248, 0.22)',
+                                  border: '1px solid #38BDF8',
+                                  color: '#38BDF8',
+                                  borderRadius: '5px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                <span>✓</span> Assigned & Alerted (Awaiting Acceptance)
+                              </div>
+                            )
+                          ) : (
+                            <button
+                              onClick={() => handleAssignResponder(r)}
+                              style={{
+                                flex: 1,
+                                padding: '6px',
+                                background: selectedIncident.assignedAgent ? 'rgba(255, 255, 255, 0.08)' : 'var(--cyan)',
+                                color: selectedIncident.assignedAgent ? '#E2E8F0' : '#000',
+                                border: selectedIncident.assignedAgent ? '1px solid var(--border)' : 'none',
+                                borderRadius: '5px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {selectedIncident.assignedAgent ? 'Re-assign & Alert' : 'Assign & Alert'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
