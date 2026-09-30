@@ -8,6 +8,7 @@ export function renderDashboardHtml() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DEVI Command Center</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
   
   <!-- Leaflet Map CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
@@ -1728,8 +1729,10 @@ export function renderDashboardHtml() {
           closeAddResponderModal();
           await fetchResponders();
 
-          const assignedPin = data.plainPin || pin;
-          alert('✅ Responder ' + name + ' Registered Successfully in Supabase!\n\n🔑 4-Digit Security PIN: ' + assignedPin + '\n📲 Official Meta WhatsApp Dispatched from +91 90806 85175 directly to ' + phone);
+          const confirmShare = confirm('✅ Responder ' + name + ' Registered Successfully in Supabase!\\n\\n🔑 4-Digit Security PIN: ' + assignedPin + '\\n📲 Automated Meta WhatsApp Dispatched to: ' + phone + '\\n\\nWould you like to open WhatsApp Web / App to share or verify credentials directly?');
+          if (confirmShare && data.waMeUrl) {
+            window.open(data.waMeUrl, '_blank');
+          }
         } else {
           alert('Failed to register responder: ' + (data.message || 'Unknown error'));
         }
@@ -1748,9 +1751,19 @@ export function renderDashboardHtml() {
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // WebSocket Real-time Listener for Instant Dashboard Updates
+    // WebSocket Real-time Listener with bfcache & lifecycle resilience
     let dashWs = null;
+    let dashWsReconnectTimer = null;
+
     function initDashboardWebSocket() {
+      if (dashWs && (dashWs.readyState === WebSocket.OPEN || dashWs.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+      if (dashWsReconnectTimer) {
+        clearTimeout(dashWsReconnectTimer);
+        dashWsReconnectTimer = null;
+      }
+
       try {
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = wsProtocol + '//' + window.location.host + '/ws';
@@ -1758,7 +1771,9 @@ export function renderDashboardHtml() {
 
         dashWs.onopen = () => {
           console.log('⚡ [DASHBOARD WEBSOCKET CONNECTED]');
-          dashWs.send(JSON.stringify({ type: 'join', room: 'dashboard' }));
+          if (dashWs && dashWs.readyState === WebSocket.OPEN) {
+            dashWs.send(JSON.stringify({ type: 'join', room: 'dashboard' }));
+          }
         };
 
         dashWs.onmessage = (event) => {
@@ -1773,24 +1788,61 @@ export function renderDashboardHtml() {
         };
 
         dashWs.onclose = () => {
-          setTimeout(initDashboardWebSocket, 5000);
+          dashWs = null;
+          if (document.visibilityState !== 'hidden') {
+            dashWsReconnectTimer = setTimeout(initDashboardWebSocket, 4000);
+          }
+        };
+
+        dashWs.onerror = () => {
+          try { dashWs.close(); } catch(e) {}
         };
       } catch (err) {
-        console.warn('Dashboard WS init failed:', err);
+        console.warn('Dashboard WS init error:', err);
       }
     }
 
-    // Startup
+    // Startup & Page Lifecycle (Handles Back-Forward Cache / Visibility)
     window.addEventListener('DOMContentLoaded', () => {
       initMap();
       fetchIncidents(true);
       fetchResponders();
       initDashboardWebSocket();
-      // Relaxed polling fallback (15 seconds instead of 4 seconds)
       setInterval(() => {
+        if (document.visibilityState !== 'hidden') {
+          fetchIncidents(false);
+          fetchResponders();
+        }
+      }, 15000);
+    });
+
+    // Reconnect & refresh when returning from back-forward cache or restoring tab
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) {
+        console.log('⚡ Page restored from Back-Forward Cache, re-establishing connection...');
+        fetchIncidents(true);
+        fetchResponders();
+      }
+      initDashboardWebSocket();
+    });
+
+    window.addEventListener('pagehide', () => {
+      if (dashWsReconnectTimer) {
+        clearTimeout(dashWsReconnectTimer);
+        dashWsReconnectTimer = null;
+      }
+      if (dashWs) {
+        try { dashWs.close(); } catch(e) {}
+        dashWs = null;
+      }
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
         fetchIncidents(false);
         fetchResponders();
-      }, 15000);
+        initDashboardWebSocket();
+      }
     });
   </script>
 </body>
