@@ -73,6 +73,12 @@ app.post(['/webhook', '/api/webhook'], (req, res) => {
   return res.status(200).send('EVENT_RECEIVED');
 });
 
+// Favicon handler
+app.get('/favicon.ico', (req, res) => {
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.send(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🛡️</text></svg>`);
+});
+
 // Operator Command Center Web View (Protected by Admin Key check)
 app.get('/dashboard', verifyAdminKey, (req, res) => {
   const html = renderDashboardHtml();

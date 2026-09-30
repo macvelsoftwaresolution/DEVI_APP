@@ -66,31 +66,58 @@ export const WhatsAppService = {
     messageText += `🛡️ *Immediate Action:* Please call them immediately or dial Police *112* / Women Helpline *1091*.`;
 
     const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+    const alertTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-    // Try sending direct text message with live link preview
+    // Send via Meta Approved Utility Template: devi_safety
     try {
+      const templatePayload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: clean,
+        type: 'template',
+        template: {
+          name: 'devi_safety',
+          language: {
+            code: 'en_US',
+          },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                {
+                  type: 'text',
+                  parameter_name: 'name',
+                  text: victimName || 'DEVI User',
+                },
+                {
+                  type: 'text',
+                  parameter_name: 'location_link',
+                  text: trackingUrl || googleMapsUrl,
+                },
+                {
+                  type: 'text',
+                  parameter_name: 'alert_time',
+                  text: alertTime,
+                },
+              ],
+            },
+          ],
+        },
+      };
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          recipient_type: 'individual',
-          to: clean,
-          type: 'text',
-          text: {
-            preview_url: true,
-            body: messageText,
-          },
-        }),
+        body: JSON.stringify(templatePayload),
       });
 
       const data = await response.json();
 
       if (response.ok && data.messages && data.messages.length > 0) {
-        console.log(`✅ [WHATSAPP DISPATCHED] ID: ${data.messages[0].id} to +${clean}`);
+        console.log(`✅ [APPROVED TEMPLATE DISPATCHED: devi_safety] ID: ${data.messages[0].id} to +${clean}`);
 
         // Also attempt sending native WhatsApp interactive Location Pin if coordinates are valid
         if (hasValidCoords) {
