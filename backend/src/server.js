@@ -8,9 +8,6 @@ import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
 import { verifyAdminKey } from './middlewares/auth.middleware.js';
-import { renderLiveTrackingHtml } from './views/track.view.js';
-import { renderDashboardHtml } from './views/dashboard.view.js';
-import { renderAgentDutyHtml } from './views/agent_duty.view.js';
 import { DataService } from './services/data.service.js';
 import { socketService } from './services/socket.service.js';
 
@@ -18,6 +15,9 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5005;
+
+// Trust reverse proxy (NGINX / Cloudflare) for accurate client IPs and SSL detection
+app.set('trust proxy', 1);
 
 // Security Headers with Helmet
 // CSP & Embedder disabled for embedded views to allow Leaflet CDN and OpenStreetMap tiles
@@ -79,37 +79,6 @@ app.get('/favicon.ico', (req, res) => {
   res.send(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🛡️</text></svg>`);
 });
 
-// Operator Command Center Web View (Protected by Admin Key check)
-app.get('/dashboard', verifyAdminKey, (req, res) => {
-  const html = renderDashboardHtml();
-  res.setHeader('Content-Type', 'text/html');
-  res.send(html);
-});
-
-// Field Responder On-Duty Live GPS Tracking View
-app.get(['/duty', '/duty/:agentId'], (req, res) => {
-  const { agentId } = req.params;
-  const html = renderAgentDutyHtml({ defaultAgentId: agentId });
-  res.setHeader('Content-Type', 'text/html');
-  res.send(html);
-});
-
-// Guardian Live Tracking Web View
-app.get('/track/:alertId', async (req, res, next) => {
-  try {
-    const { alertId } = req.params;
-    const session = await DataService.getLiveLocation(alertId);
-    const html = renderLiveTrackingHtml({
-      alertId,
-      initialSession: session,
-    });
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-  } catch (err) {
-    next(err);
-  }
-});
-
 // Root route
 app.get('/', (req, res) => {
   res.json({
@@ -121,7 +90,6 @@ app.get('/', (req, res) => {
       helmetHeaders: 'active',
       jwtAuth: 'active',
     },
-    dashboard: '/dashboard',
     documentation: '/api/health',
   });
 });

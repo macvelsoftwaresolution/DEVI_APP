@@ -299,6 +299,62 @@ export const DataService = {
     return null;
   },
 
+  // In-memory reverse geocoding cache
+  geocodeCache: new Map(),
+
+  // Reverse Geocode GPS coordinates to human-readable address name (e.g. Sivakasi, Tamil Nadu)
+  async reverseGeocode(lat, lng) {
+    if (!lat || !lng) return null;
+    const cacheKey = `${parseFloat(lat).toFixed(4)},${parseFloat(lng).toFixed(4)}`;
+    if (this.geocodeCache.has(cacheKey)) {
+      return this.geocodeCache.get(cacheKey);
+    }
+
+    // Provider 1: OpenStreetMap Nominatim
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+        headers: { 'User-Agent': 'DEVI-Women-Safety-ReverseGeocode/1.0' },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.address) {
+          const addr = data.address;
+          const road = addr.road || addr.pedestrian || addr.suburb || addr.neighbourhood || '';
+          const town = addr.city || addr.town || addr.village || addr.county || addr.state_district || '';
+          const state = addr.state || '';
+          const parts = [road, town, state].filter(Boolean);
+          const result = parts.length > 0 ? parts.join(', ') : data.display_name?.split(',').slice(0, 3).join(', ');
+          if (result) {
+            this.geocodeCache.set(cacheKey, result);
+            return result;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // Provider 2: BigDataCloud Free Client API (Fast Fallback)
+    try {
+      const bdcRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (bdcRes.ok) {
+        const bdcData = await bdcRes.json();
+        const locality = bdcData.locality || bdcData.city || bdcData.principalSubdivision || '';
+        const district = bdcData.localityInfo?.administrative?.[2]?.name || bdcData.principalSubdivision || '';
+        const state = bdcData.principalSubdivision || 'Tamil Nadu';
+        const parts = Array.from(new Set([locality, district, state].filter(Boolean)));
+        if (parts.length > 0) {
+          const result = parts.join(', ');
+          this.geocodeCache.set(cacheKey, result);
+          return result;
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  },
+
   async createSosAlert({ userPhone, location, latitude, longitude, accuracy, idempotencyKey, capturedAt }) {
     let userId = null;
     if (userPhone) {
@@ -309,11 +365,34 @@ export const DataService = {
       if (user) userId = user.id;
     }
 
+    // Auto-resolve real place name if location is missing or generic coordinates or URL
+    let resolvedAddress = location;
+    const isGenericLocation =
+      !resolvedAddress ||
+      resolvedAddress.startsWith('GPS') ||
+      resolvedAddress.includes('maps.google.com') ||
+      resolvedAddress.includes('http') ||
+      resolvedAddress.includes('Latitude') ||
+      resolvedAddress.includes('Location disabled') ||
+      /^\s*[-+]?[0-9]*\.?[0-9]+\s*,\s*[-+]?[0-9]*\.?[0-9]+\s*$/.test(resolvedAddress);
+
+    if (isGenericLocation && latitude && longitude) {
+      const placeName = await this.reverseGeocode(latitude, longitude);
+      if (placeName) {
+        resolvedAddress = placeName;
+      }
+    }
+    if (!resolvedAddress || resolvedAddress.startsWith('GPS')) {
+      resolvedAddress = (latitude && longitude)
+        ? (await this.reverseGeocode(latitude, longitude)) || 'Sivakasi, Tamil Nadu'
+        : 'Emergency Location';
+    }
+
     try {
       const alertPayload = {
         latitude: latitude ? parseFloat(latitude) : 13.0827,
         longitude: longitude ? parseFloat(longitude) : 80.2707,
-        location_address: location || `GPS Location (${latitude || 13.0827}, ${longitude || 80.2707})`,
+        location_address: resolvedAddress,
         status: 'DISPATCHED',
       };
       if (userId) {

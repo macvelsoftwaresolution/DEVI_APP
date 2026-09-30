@@ -1,0 +1,1200 @@
+import React, { useState, useEffect, useRef } from 'react';
+import L from 'leaflet';
+import { Shield, Radio, Volume2, VolumeX, RefreshCw, Plus, Link2, X, Phone, CheckCircle, Navigation, MapPin } from 'lucide-react';
+import { apiUrl, WS_URL } from '../config/api';
+
+export default function DashboardPage() {
+  const [incidents, setIncidents] = useState([]);
+  const [responders, setResponders] = useState([]);
+  const [filter, setFilter] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const [selectedIncidentId, setSelectedIncidentId] = useState(null);
+  const [showResponders, setShowResponders] = useState(true);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [liveTime, setLiveTime] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [emergencyAlertModal, setEmergencyAlertModal] = useState(null); // { id, name, phone, location, lat, lng }
+  const [operatorNote, setOperatorNote] = useState('');
+  const [isSavingResponder, setIsSavingResponder] = useState(false);
+
+  // Responder Form
+  const [respName, setRespName] = useState('');
+  const [respPhone, setRespPhone] = useState('');
+  const [respPin, setRespPin] = useState('7421');
+  const [respArea, setRespArea] = useState('');
+
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markersRef = useRef(new Map());
+  const responderMarkersRef = useRef(new Map());
+  const dispatchLineRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const prevActiveIdsRef = useRef(new Set());
+  const wsRef = useRef(null);
+
+  // Digital Clock
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setLiveTime(now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' IST');
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Initialize Map
+  useEffect(() => {
+    if (!mapContainerRef.current || mapInstanceRef.current) return;
+
+    const map = L.map(mapContainerRef.current, { zoomControl: false }).setView([10.85, 78.70], 8);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    const satellite = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+      attribution: '© Google Satellite',
+      subdomains: ['0', '1', '2', '3'],
+      maxZoom: 21,
+    });
+
+    const dark = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+      maxZoom: 19,
+      className: 'tactical-dark-tiles',
+    });
+
+    const street = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+      attribution: '© Google Maps',
+      subdomains: ['0', '1', '2', '3'],
+      maxZoom: 20,
+    });
+
+    satellite.addTo(map);
+    L.control.layers({ '🛰️ Satellite': satellite, '🌑 Dark Map': dark, '🗺️ Streets': street }, null, { position: 'topright' }).addTo(map);
+
+    mapInstanceRef.current = map;
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+    };
+  }, []);
+
+  // Smooth Cinematic Map FlyTo Helper (Prevents animation jitter / abrupt snap)
+  const isFlyingRef = useRef(false);
+  const smoothFlyTo = (lat, lng, zoom = 17) => {
+    const map = mapInstanceRef.current;
+    if (!map || isNaN(lat) || isNaN(lng)) return;
+    
+    // Stop any conflicting animation and smoothly glide
+    map.stop();
+    isFlyingRef.current = true;
+    map.flyTo([lat, lng], zoom, {
+      animate: true,
+      duration: 2.8, // Smooth cinematic glide while audio speaks
+      easeLinearity: 0.2,
+      noMoveStart: true,
+    });
+
+    setTimeout(() => {
+      isFlyingRef.current = false;
+    }, 2900);
+  };
+
+  // Audio Siren & Voice Announcement (Speaks Real Place Name, NEVER raw GPS numbers)
+  const speakEmergencyAlert = async (victimName, location, lat, lng) => {
+    if (!audioEnabled || !('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+
+      let placeName = location || '';
+
+      // Check if location is raw GPS numbers, URL, or placeholder
+      const isRawCoordinates =
+        !placeName ||
+        placeName.includes('GPS') ||
+        placeName.includes('http') ||
+        placeName.includes('maps.google') ||
+        placeName.includes('Latitude') ||
+        placeName.includes('அட்சரேகை') ||
+        /^\s*[-+]?[0-9]*\.?[0-9]+\s*,\s*[-+]?[0-9]*\.?[0-9]+\s*$/.test(placeName);
+
+      if (isRawCoordinates && lat && lng) {
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=14`);
+          if (res.ok) {
+            const data = await res.json();
+            const addr = data.address || {};
+            const town = addr.city || addr.town || addr.village || addr.suburb || addr.state_district || 'Sivakasi';
+            const state = addr.state || 'Tamil Nadu';
+            placeName = `${town}, ${state}`;
+          }
+        } catch (_) {}
+      }
+
+      // Final fallback to clean human-readable place if still contains numbers
+      if (!placeName || placeName.includes('GPS') || placeName.includes('http')) {
+        placeName = (lat && lng && Math.abs(lat - 9.466) < 0.1) ? 'Sivakasi, Tamil Nadu' : 'Current Incident Location';
+      }
+
+      const text = `Emergency SOS Alert! Victim ${victimName || 'User'} needs assistance at ${placeName}.`;
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.95; // Steady, neat and clear voice cadence
+      utterance.pitch = 1.05;
+      utterance.lang = 'en-US';
+      window.speechSynthesis.speak(utterance);
+    } catch (_) {}
+  };
+
+  const playSiren = (inc = null) => {
+    if (!audioEnabled) return;
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+
+      const osc = audioCtxRef.current.createOscillator();
+      const gain = audioCtxRef.current.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtxRef.current.destination);
+      osc.type = 'sawtooth';
+
+      const now = audioCtxRef.current.currentTime;
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(660, now + 0.15);
+      osc.frequency.setValueAtTime(880, now + 0.30);
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+      osc.start(now);
+      osc.stop(now + 0.5);
+
+      if (inc) {
+        setTimeout(() => {
+          speakEmergencyAlert(inc.user?.name, inc.location, parseFloat(inc.latitude), parseFloat(inc.longitude));
+        }, 500);
+      }
+    } catch (_) {}
+  };
+
+  // Fetch Incidents
+  const fetchIncidents = async (manual = false) => {
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/incidents'));
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && Array.isArray(data.incidents)) {
+        setIncidents(data.incidents);
+
+        const currentActive = new Set();
+        data.incidents.forEach((inc) => {
+          if (inc.status === 'DISPATCHED' || inc.status === 'ACTIVE') {
+            currentActive.add(inc.id);
+            if (!prevActiveIdsRef.current.has(inc.id) && !manual) {
+              const lat = parseFloat(inc.latitude);
+              const lng = parseFloat(inc.longitude);
+              playSiren(inc);
+              setEmergencyAlertModal({
+                id: inc.id,
+                name: inc.user?.name || 'Emergency Victim',
+                phone: inc.user?.phone || 'N/A',
+                location: inc.location || 'Live GPS Location',
+                lat,
+                lng,
+              });
+              setSelectedIncidentId(inc.id);
+              smoothFlyTo(lat, lng, 17);
+            }
+          }
+        });
+        prevActiveIdsRef.current = currentActive;
+      }
+    } catch (e) {
+      console.warn('Fetch incidents error:', e);
+    }
+  };
+
+  // Fetch Responders
+  const fetchResponders = async () => {
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/agents'));
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && Array.isArray(data.agents)) {
+        setResponders(data.agents);
+      }
+    } catch (e) {}
+  };
+
+  // WebSocket Connection
+  useEffect(() => {
+    let ws = null;
+    let reconnectTimeout = null;
+
+    const connectWs = () => {
+      try {
+        ws = new WebSocket(WS_URL);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          console.log('⚡ [REACT DASHBOARD WS CONNECTED]');
+          ws.send(JSON.stringify({ type: 'join', room: 'dashboard' }));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'sos:new') {
+              fetchIncidents(false);
+              fetchResponders();
+            } else if (msg.type === 'loc' || msg.type === 'status' || msg.type === 'agent_loc') {
+              fetchIncidents(false);
+              fetchResponders();
+            }
+          } catch (_) {}
+        };
+
+        ws.onclose = () => {
+          if (document.visibilityState !== 'hidden') {
+            reconnectTimeout = setTimeout(connectWs, 4000);
+          }
+        };
+      } catch (err) {
+        console.warn('WS error:', err);
+      }
+    };
+
+    connectWs();
+    fetchIncidents(true);
+    fetchResponders();
+
+    const pollInterval = setInterval(() => {
+      fetchIncidents(false);
+      fetchResponders();
+    }, 15000);
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      clearInterval(pollInterval);
+      if (ws) ws.close();
+    };
+  }, []);
+
+  // Update Incident Map Markers
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const currentIds = new Set(incidents.map((i) => i.id));
+    for (const [id, marker] of markersRef.current.entries()) {
+      if (!currentIds.has(id)) {
+        map.removeLayer(marker);
+        markersRef.current.delete(id);
+      }
+    }
+
+    incidents.forEach((inc) => {
+      const lat = parseFloat(inc.latitude);
+      const lng = parseFloat(inc.longitude);
+      if (isNaN(lat) || isNaN(lng)) return;
+
+      const icon = L.divIcon({
+        className: 'custom-marker',
+        html: '<div class="pulse-dot"></div>',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
+
+      if (markersRef.current.has(inc.id)) {
+        markersRef.current.get(inc.id).setLatLng([lat, lng]);
+      } else {
+        const marker = L.marker([lat, lng], { icon }).addTo(map);
+        marker.bindTooltip(`<strong>${inc.user?.name || 'Victim'}</strong><br/>${inc.status}`, { direction: 'top' });
+        marker.on('click', () => setSelectedIncidentId(inc.id));
+        markersRef.current.set(inc.id, marker);
+      }
+    });
+  }, [incidents]);
+
+  // Update Responder Map Markers
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (!showResponders) {
+      for (const marker of responderMarkersRef.current.values()) map.removeLayer(marker);
+      responderMarkersRef.current.clear();
+      return;
+    }
+
+    const currentIds = new Set(responders.map((r) => r.id));
+    for (const [id, marker] of responderMarkersRef.current.entries()) {
+      if (!currentIds.has(id)) {
+        map.removeLayer(marker);
+        responderMarkersRef.current.delete(id);
+      }
+    }
+
+    responders.forEach((r) => {
+      const lat = parseFloat(r.latitude);
+      const lng = parseFloat(r.longitude);
+      if (isNaN(lat) || isNaN(lng)) return;
+
+      const icon = L.divIcon({
+        className: 'custom-responder-marker',
+        html: '<div class="agent-pin">🛡️</div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+
+      if (responderMarkersRef.current.has(r.id)) {
+        responderMarkersRef.current.get(r.id).setLatLng([lat, lng]);
+      } else {
+        const marker = L.marker([lat, lng], { icon }).addTo(map);
+        marker.bindTooltip(`<strong>${r.name}</strong><br/>📍 ${r.area || 'Sector'}<br/>📞 ${r.phone}`, { direction: 'top' });
+        responderMarkersRef.current.set(r.id, marker);
+      }
+    });
+  }, [responders, showResponders]);
+
+  // Selected Incident Focus
+  const selectedIncident = incidents.find((i) => i.id === selectedIncidentId);
+
+  useEffect(() => {
+    if (!selectedIncident || !mapInstanceRef.current) return;
+    const lat = parseFloat(selectedIncident.latitude);
+    const lng = parseFloat(selectedIncident.longitude);
+    if (!isNaN(lat) && !isNaN(lng) && !isFlyingRef.current) {
+      smoothFlyTo(lat, lng, 17);
+    }
+    setOperatorNote(selectedIncident.operatorNotes || '');
+  }, [selectedIncidentId]);
+
+  // Distance Calculator
+  const calcDistKm = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  // Rank Responders for Selected Incident
+  const rankedResponders = selectedIncident
+    ? responders
+        .map((r) => {
+          const vLat = parseFloat(selectedIncident.latitude);
+          const vLng = parseFloat(selectedIncident.longitude);
+          const rLat = parseFloat(r.latitude);
+          const rLng = parseFloat(r.longitude);
+          const distKm = !isNaN(vLat) && !isNaN(vLng) && !isNaN(rLat) && !isNaN(rLng) ? calcDistKm(vLat, vLng, rLat, rLng) : 999;
+          const estMins = Math.max(1, Math.round(distKm * 2.5));
+          return { ...r, distKm, estMins };
+        })
+        .sort((a, b) => a.distKm - b.distKm)
+    : [];
+
+  // Assign Responder
+  const handleAssignResponder = async (responder) => {
+    if (!selectedIncident) return;
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/assign-agent'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          alertId: selectedIncident.id,
+          agentName: responder.name,
+          agentPhone: responder.phone,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchIncidents(true);
+        fetchResponders();
+        const waMsg = `🚨 DEVI EMERGENCY ALERT!\nVictim: ${selectedIncident.user?.name}\nPhone: ${selectedIncident.user?.phone}\nLocation: ${selectedIncident.location}\n\n🔴 LIVE GPS TRACKING:\n${window.location.origin}/track/${selectedIncident.id}\n\nPlease reach immediately!`;
+        const phoneClean = (responder.phone || '').replace(/[^0-9]/g, '');
+        const waUrl = `https://wa.me/91${phoneClean.slice(-10)}?text=${encodeURIComponent(waMsg)}`;
+        if (confirm(`✓ ${responder.name} assigned!\n\nOpen WhatsApp to send live tracking link to ${responder.name}?`)) {
+          window.open(waUrl, '_blank');
+        }
+      }
+    } catch (e) {
+      alert('Error assigning agent');
+    }
+  };
+
+  // Save Notes
+  const handleSaveNote = async () => {
+    if (!selectedIncidentId || !operatorNote.trim()) return;
+    try {
+      await fetch(apiUrl('/api/dashboard/add-note'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alertId: selectedIncidentId, note: operatorNote.trim() }),
+      });
+      fetchIncidents(true);
+      alert('Note saved');
+    } catch (_) {}
+  };
+
+  // Resolve Incident
+  const handleResolveIncident = async () => {
+    if (!selectedIncidentId || !confirm('Mark this incident as RESOLVED?')) return;
+    try {
+      await fetch(apiUrl(`/api/dashboard/resolve/${selectedIncidentId}`), { method: 'POST' });
+      fetchIncidents(true);
+      setSelectedIncidentId(null);
+    } catch (_) {}
+  };
+
+  // Save Responder Modal
+  const handleSaveNewResponder = async (e) => {
+    e.preventDefault();
+    setIsSavingResponder(true);
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/agents'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: respName, phone: respPhone, pin: respPin, area: respArea }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowAddModal(false);
+        fetchResponders();
+        setRespName('');
+        setRespPhone('');
+        setRespArea('');
+        alert(`✅ Responder ${respName} Registered!\nSecurity PIN: ${respPin}\nCredentials dispatched via WhatsApp.`);
+      } else {
+        alert('Failed: ' + (data.message || 'Error'));
+      }
+    } catch (err) {
+      alert('Network error: ' + err.message);
+    } finally {
+      setIsSavingResponder(false);
+    }
+  };
+
+  // Filtered Incidents
+  const filteredIncidents = incidents
+    .filter((inc) => {
+      if (filter === 'ACTIVE') return inc.status === 'DISPATCHED' || inc.status === 'ACTIVE';
+      if (filter === 'ASSIGNED') return inc.status === 'ASSIGNED';
+      if (filter === 'RESOLVED') return inc.status === 'RESOLVED';
+      return true;
+    })
+    .filter((inc) => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return (
+        (inc.user?.name || '').toLowerCase().includes(q) ||
+        (inc.user?.phone || '').toLowerCase().includes(q) ||
+        (inc.id || '').toLowerCase().includes(q) ||
+        (inc.location || '').toLowerCase().includes(q)
+      );
+    });
+
+  const activeCount = incidents.filter((i) => i.status === 'DISPATCHED' || i.status === 'ACTIVE').length;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      {/* TOP HEADER */}
+      <header
+        style={{
+          height: '60px',
+          background: 'var(--bg-dark)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 18px',
+          flexShrink: 0,
+          zIndex: 100,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div
+            style={{
+              width: '36px',
+              height: '36px',
+              background: 'linear-gradient(135deg, #EF4444 0%, #B91C1C 100%)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '18px',
+              boxShadow: '0 0 14px rgba(239, 68, 68, 0.35)',
+            }}
+          >
+            🛡️
+          </div>
+          <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: '16px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>DEVI Response Center</span>
+            <span
+              style={{
+                fontSize: '10px',
+                fontWeight: '700',
+                color: '#34D399',
+                background: 'var(--green-soft)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                padding: '2px 7px',
+                borderRadius: '12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <span style={{ width: '6px', height: '6px', background: '#34D399', borderRadius: '50%', animation: 'pulse 1.6s infinite' }}></span>
+              Live
+            </span>
+          </div>
+        </div>
+
+        {/* STATS */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {activeCount > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 12px',
+                background: 'var(--red-soft)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: '20px',
+                fontSize: '12px',
+                fontWeight: '600',
+                color: '#FCA5A5',
+              }}
+            >
+              <span style={{ color: '#EF4444' }}>●</span>
+              <span>{activeCount} Active</span>
+            </div>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '5px 12px',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: '20px',
+              fontSize: '12px',
+              fontWeight: '600',
+            }}
+          >
+            <span>Agents: <strong style={{ color: '#67E8F9' }}>{responders.length}</strong></span>
+          </div>
+          <div
+            style={{
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: '12px',
+              color: 'var(--text-muted)',
+              background: 'var(--bg-surface)',
+              padding: '5px 12px',
+              borderRadius: '6px',
+              border: '1px solid var(--border)',
+            }}
+          >
+            {liveTime || '--:--:-- IST'}
+          </div>
+        </div>
+
+        {/* BUTTONS */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            onClick={() => setShowAddModal(true)}
+            style={{
+              background: 'var(--green-soft)',
+              borderColor: 'rgba(16, 185, 129, 0.4)',
+              color: '#34D399',
+              height: '34px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '700',
+            }}
+          >
+            <Plus size={14} /> Add Agent
+          </button>
+          <button
+            onClick={() => {
+              const url = `${window.location.origin}/duty`;
+              navigator.clipboard.writeText(url);
+              alert('Duty Portal Link Copied:\n' + url);
+            }}
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              color: '#FFF',
+              height: '34px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '600',
+            }}
+          >
+            <Link2 size={14} /> Duty Link
+          </button>
+          <button
+            onClick={() => setShowResponders(!showResponders)}
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              color: '#FFF',
+              height: '34px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '600',
+            }}
+          >
+            🛡️ Agents ({responders.length})
+          </button>
+          <button
+            onClick={() => setAudioEnabled(!audioEnabled)}
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              color: audioEnabled ? '#34D399' : 'var(--text-dim)',
+              height: '34px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '600',
+            }}
+          >
+            {audioEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            {audioEnabled ? 'Sound ON' : 'Sound OFF'}
+          </button>
+          <button
+            onClick={() => fetchIncidents(true)}
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              color: '#FFF',
+              height: '34px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '600',
+            }}
+          >
+            <RefreshCw size={14} />
+          </button>
+        </div>
+      </header>
+
+      {/* MAIN CONTAINER */}
+      <div style={{ display: 'flex', flex: 1, height: 'calc(100vh - 60px)', overflow: 'hidden', position: 'relative' }}>
+        {/* SIDEBAR: INCIDENTS */}
+        <aside
+          style={{
+            width: '360px',
+            background: 'var(--bg-dark)',
+            borderRight: '1px solid var(--border)',
+            display: 'flex',
+            flexDirection: 'column',
+            flexShrink: 0,
+            zIndex: 20,
+          }}
+        >
+          <div style={{ padding: '14px 14px 10px', borderBottom: '1px solid var(--border)' }}>
+            <input
+              type="text"
+              placeholder="Search name, phone, or location..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border)',
+                borderRadius: '8px',
+                padding: '7px 10px',
+                fontSize: '12px',
+                color: '#FFF',
+                outline: 'none',
+                marginBottom: '10px',
+              }}
+            />
+
+            {/* MINI STATS */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '10px' }}>
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '6px', padding: '6px 4px', textAlign: 'center' }}>
+                <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: '700' }}>{incidents.length}</div>
+                <div style={{ fontSize: '9px', color: 'var(--text-dim)', textTransform: 'uppercase', marginTop: '1px' }}>Total</div>
+              </div>
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', padding: '6px 4px', textAlign: 'center' }}>
+                <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: '700', color: '#F87171' }}>{activeCount}</div>
+                <div style={{ fontSize: '9px', color: '#F87171', textTransform: 'uppercase', marginTop: '1px' }}>Active</div>
+              </div>
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '6px', padding: '6px 4px', textAlign: 'center' }}>
+                <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: '700', color: '#FCD34D' }}>
+                  {incidents.filter((i) => i.status === 'ASSIGNED').length}
+                </div>
+                <div style={{ fontSize: '9px', color: 'var(--text-dim)', textTransform: 'uppercase', marginTop: '1px' }}>Assigned</div>
+              </div>
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '6px', padding: '6px 4px', textAlign: 'center' }}>
+                <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: '700', color: '#34D399' }}>
+                  {incidents.filter((i) => i.status === 'RESOLVED').length}
+                </div>
+                <div style={{ fontSize: '9px', color: 'var(--text-dim)', textTransform: 'uppercase', marginTop: '1px' }}>Resolved</div>
+              </div>
+            </div>
+
+            {/* TABS */}
+            <div style={{ display: 'flex', background: 'var(--bg-surface)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border)', gap: '2px' }}>
+              {['ALL', 'ACTIVE', 'ASSIGNED', 'RESOLVED'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setFilter(tab)}
+                  style={{
+                    flex: 1,
+                    padding: '4px',
+                    background: filter === tab ? 'var(--bg-elevated)' : 'transparent',
+                    border: 'none',
+                    color: filter === tab ? '#FFF' : 'var(--text-muted)',
+                    fontSize: '11px',
+                    fontWeight: '600',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                  }}
+                >
+                  {tab.charAt(0) + tab.slice(1).toLowerCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* INCIDENT CARDS */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {filteredIncidents.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 10px', color: 'var(--text-dim)', fontSize: '11px' }}>No incidents found.</div>
+            ) : (
+              filteredIncidents.map((inc) => {
+                const isEmergency = inc.status === 'DISPATCHED' || inc.status === 'ACTIVE';
+                const isAssigned = inc.status === 'ASSIGNED';
+                const isSelected = selectedIncidentId === inc.id;
+
+                return (
+                  <div
+                    key={inc.id}
+                    onClick={() => setSelectedIncidentId(inc.id)}
+                    style={{
+                      background: isSelected ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-surface)',
+                      border: `1px solid ${isSelected ? 'var(--red)' : 'var(--border)'}`,
+                      borderLeft: isEmergency ? '3px solid var(--red)' : isAssigned ? '3px solid var(--amber)' : '3px solid var(--green)',
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', fontWeight: '600', color: 'var(--text-muted)' }}>
+                        #{inc.id.substring(0, 6).toUpperCase()}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          fontWeight: '700',
+                          padding: '2px 6px',
+                          borderRadius: '12px',
+                          background: isEmergency ? 'var(--red-soft)' : isAssigned ? 'var(--amber-soft)' : 'var(--green-soft)',
+                          color: isEmergency ? '#FCA5A5' : isAssigned ? '#FCD34D' : '#6EE7B7',
+                        }}
+                      >
+                        {inc.status}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '2px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#FFF' }}>{inc.user?.name || 'Victim'}</span>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '11px', color: 'var(--text-muted)' }}>{inc.user?.phone}</span>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '6px' }}>
+                      📍 {inc.location || 'GPS Location'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-dim)', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                      <span>{inc.timeAgo || 'Just now'}</span>
+                      {inc.assignedAgent && (
+                        <span style={{ fontSize: '9px', fontWeight: '600', padding: '1px 5px', borderRadius: '4px', background: 'var(--amber-soft)', color: '#FCD34D' }}>
+                          👮 {inc.assignedAgent.split(' ')[0]}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </aside>
+
+        {/* MAP */}
+        <main style={{ flex: 1, height: '100%', position: 'relative', background: '#0B0E14' }}>
+          <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }}></div>
+        </main>
+
+        {/* RIGHT DRAWER */}
+        {selectedIncident && (
+          <aside
+            style={{
+              width: '440px',
+              background: 'var(--bg-dark)',
+              borderLeft: '1px solid var(--border)',
+              display: 'flex',
+              flexDirection: 'column',
+              flexShrink: 0,
+              zIndex: 30,
+            }}
+          >
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: '700' }}>#{selectedIncident.id.substring(0, 6).toUpperCase()}</span>
+                <span style={{ fontSize: '9px', fontWeight: '700', padding: '2px 6px', borderRadius: '12px', background: 'var(--red-soft)', color: '#FCA5A5' }}>
+                  {selectedIncident.status}
+                </span>
+              </div>
+              <button onClick={() => setSelectedIncidentId(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* EVIDENCE */}
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>
+                  Live Evidence
+                </div>
+                {selectedIncident.evidenceUrl ? (
+                  <video src={selectedIncident.evidenceUrl} controls style={{ width: '100%', height: '190px', borderRadius: '8px', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)', fontSize: '11px' }}>
+                    ⏳ Video evidence recording in progress or pending upload...
+                  </div>
+                )}
+              </div>
+
+              {/* VICTIM DETAILS */}
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>
+                  Victim Details
+                </div>
+                <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-dim)' }}>Name</span>
+                    <span style={{ fontWeight: '600' }}>{selectedIncident.user?.name}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-dim)' }}>Phone</span>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue)', fontWeight: '700' }}>{selectedIncident.user?.phone}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-dim)' }}>Location</span>
+                    <span style={{ fontSize: '11px', textAlign: 'right', maxWidth: '240px' }}>{selectedIncident.location}</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '12px' }}>
+                  <a href={`tel:${selectedIncident.user?.phone}`} style={{ padding: '8px', background: 'var(--red)', color: '#FFF', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textAlign: 'center', textDecoration: 'none' }}>
+                    📞 Call Victim
+                  </a>
+                  <a href="tel:112" style={{ padding: '8px', background: 'var(--bg-elevated)', border: '1px solid rgba(245,158,11,0.4)', color: '#FCD34D', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textAlign: 'center', textDecoration: 'none' }}>
+                    🚨 Call 112
+                  </a>
+                </div>
+              </div>
+
+              {/* NEARBY AGENTS */}
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Nearby Responders</span>
+                  <span style={{ color: '#06B6D4' }}>{rankedResponders.length} Available</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {rankedResponders.slice(0, 4).map((r, idx) => (
+                    <div
+                      key={r.id}
+                      style={{
+                        background: 'var(--bg-elevated)',
+                        border: `1px solid ${idx === 0 ? 'rgba(6, 182, 212, 0.6)' : 'var(--border)'}`,
+                        borderRadius: '8px',
+                        padding: '8px 10px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#FFF' }}>{r.name}</span>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: '700', color: '#67E8F9' }}>
+                          {r.distKm < 900 ? `${r.distKm.toFixed(1)} km (~${r.estMins}m)` : 'Standby'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between', margin: '4px 0' }}>
+                        <span>📍 {r.area || 'Patrol Sector'}</span>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>📞 {r.phone}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                        <button
+                          onClick={() => handleAssignResponder(r)}
+                          style={{
+                            flex: 1,
+                            padding: '6px',
+                            background: 'var(--cyan)',
+                            color: '#000',
+                            border: 'none',
+                            borderRadius: '5px',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Assign & Alert
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* OPERATOR NOTES */}
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>
+                  Incident Notes
+                </div>
+                <textarea
+                  value={operatorNote}
+                  onChange={(e) => setOperatorNote(e.target.value)}
+                  placeholder="Operator notes..."
+                  style={{
+                    width: '100%',
+                    height: '55px',
+                    background: 'var(--bg-dark)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    padding: '6px 8px',
+                    fontSize: '11px',
+                    color: '#FFF',
+                    outline: 'none',
+                    resize: 'none',
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                  <button onClick={handleSaveNote} style={{ padding: '6px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '6px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}>
+                    Save Note
+                  </button>
+                  <button onClick={handleResolveIncident} style={{ padding: '6px 12px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '6px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>
+                    ✓ Mark Resolved
+                  </button>
+                </div>
+              </div>
+            </div>
+          </aside>
+        )}
+      </div>
+
+      {/* ADD AGENT MODAL */}
+      {showAddModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '400px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', fontSize: '15px', fontWeight: '700' }}>
+              <span>+ Add Response Agent</span>
+              <button onClick={() => setShowAddModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleSaveNewResponder}>
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Agent Name</label>
+                <input required type="text" placeholder="e.g. Karthi" value={respName} onChange={(e) => setRespName(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', color: '#FFF', outline: 'none' }} />
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Mobile Number</label>
+                <input required type="tel" placeholder="e.g. 9876543210" value={respPhone} onChange={(e) => setRespPhone(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', color: '#FFF', outline: 'none' }} />
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', textTransform: 'uppercase' }}>4-Digit Security PIN</label>
+                  <button type="button" onClick={() => setRespPin(Math.floor(1000 + Math.random() * 9000).toString())} style={{ background: 'none', border: 'none', color: '#38BDF8', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>🎲 Auto-Generate</button>
+                </div>
+                <input required type="text" maxLength={6} value={respPin} onChange={(e) => setRespPin(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '16px', letterSpacing: '4px', fontWeight: '700', textAlign: 'center', color: '#38BDF8', outline: 'none' }} />
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Patrol Area / Station</label>
+                <input required type="text" placeholder="e.g. Central Bus Stand" value={respArea} onChange={(e) => setRespArea(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', color: '#FFF', outline: 'none' }} />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '14px' }}>
+                <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '8px 14px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>Cancel</button>
+                <button disabled={isSavingResponder} type="submit" style={{ padding: '8px 14px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
+                  {isSavingResponder ? '⏳ Saving...' : 'Save & Dispatch'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* FLOATING TACTICAL EMERGENCY SOS HUD (Non-blocking, live map zoom visible) */}
+      {emergencyAlertModal && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '75px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '540px',
+            maxWidth: '92vw',
+            background: 'linear-gradient(180deg, rgba(30, 18, 20, 0.95) 0%, rgba(15, 11, 12, 0.95) 100%)',
+            border: '2px solid #EF4444',
+            boxShadow: '0 8px 32px rgba(239, 68, 68, 0.5), 0 0 20px rgba(0,0,0,0.8)',
+            backdropFilter: 'blur(12px)',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            zIndex: 1000,
+            display: 'flex',
+            flexDirection: 'column',
+            animation: 'slideDown 0.3s ease-out',
+          }}
+        >
+          {/* ALERT HEADER */}
+          <div
+            style={{
+              background: 'linear-gradient(90deg, #EF4444 0%, #B91C1C 100%)',
+              padding: '10px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              color: '#FFF',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '20px', animation: 'bounce 1s infinite' }}>🚨</span>
+              <div>
+                <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: '900', letterSpacing: '0.5px' }}>
+                  EMERGENCY SOS TRIGGERED!
+                </div>
+                <div style={{ fontSize: '10px', opacity: 0.9 }}>Auto-Zooming Map & Dispatching Tactical Unit...</div>
+              </div>
+            </div>
+            <button
+              onClick={() => setEmergencyAlertModal(null)}
+              style={{
+                background: 'rgba(0, 0, 0, 0.25)',
+                border: 'none',
+                color: '#FFF',
+                borderRadius: '50%',
+                width: '26px',
+                height: '26px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* ALERT BODY */}
+          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: '700' }}>Victim: </span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: '#FFF' }}>{emergencyAlertModal.name}</span>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: '#38BDF8', fontWeight: '700', marginLeft: '8px' }}>
+                  📞 {emergencyAlertModal.phone}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <a
+                  href={`tel:${emergencyAlertModal.phone}`}
+                  style={{
+                    background: 'var(--red)',
+                    color: '#FFF',
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    fontWeight: '700',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    textDecoration: 'none',
+                  }}
+                >
+                  <Phone size={13} /> Call
+                </a>
+                <button
+                  onClick={() => {
+                    if (mapInstanceRef.current && !isNaN(emergencyAlertModal.lat) && !isNaN(emergencyAlertModal.lng)) {
+                      mapInstanceRef.current.flyTo([emergencyAlertModal.lat, emergencyAlertModal.lng], 19, { animate: true, duration: 1.5 });
+                    }
+                  }}
+                  style={{
+                    background: 'var(--bg-elevated)',
+                    border: '1px solid var(--border)',
+                    color: '#67E8F9',
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    fontWeight: '700',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Navigation size={13} /> Re-Zoom
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: 'rgba(0, 0, 0, 0.4)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '8px',
+                padding: '8px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <MapPin size={15} color="#EF4444" style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#FEE2E2', lineHeight: '1.2' }}>
+                  {emergencyAlertModal.location}
+                </span>
+              </div>
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--text-dim)', flexShrink: 0, marginLeft: '8px' }}>
+                {emergencyAlertModal.lat?.toFixed(5)}, {emergencyAlertModal.lng?.toFixed(5)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
