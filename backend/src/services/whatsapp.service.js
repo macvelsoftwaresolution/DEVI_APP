@@ -250,54 +250,10 @@ export const WhatsAppService = {
         } else {
           console.warn(`ℹ️ [WELCOME TEMPLATE PENDING/NOTE]:`, welcomeData?.error?.message || welcomeData);
         }
+        return { success: welcomeSuccess, messageText, welcomeData };
       } catch (wErr) {
         console.warn(`⚠️ [WELCOME TEMPLATE ERROR]:`, wErr.message);
-      }
-
-      // 2. Second Dispatch: devi_agent_pin (Official Meta Authentication Template with Copy-Code Button)
-      const pinPayload = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: clean,
-        type: 'template',
-        template: {
-          name: 'devi_agent_pin',
-          language: { code: 'en_US' },
-          components: [
-            {
-              type: 'body',
-              parameters: [
-                { type: 'text', text: String(pin) },
-              ],
-            },
-            {
-              type: 'button',
-              sub_type: 'url',
-              index: '0',
-              parameters: [
-                { type: 'text', text: String(pin) },
-              ],
-            },
-          ],
-        },
-      };
-
-      const pinRes = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(pinPayload),
-      });
-
-      const pinData = await pinRes.json();
-      if (pinRes.ok) {
-        console.log(`✅ [ACTIVE AUTHENTICATION PIN DISPATCHED: devi_agent_pin] ID: ${pinData.messages?.[0]?.id} to +${clean}`);
-        return { success: true, messageText, pinData, welcomeSuccess };
-      } else {
-        console.warn(`⚠️ [PIN DISPATCH RESPONSE]:`, JSON.stringify(pinData));
-        return { success: welcomeSuccess, messageText, pinData, welcomeSuccess };
+        return { success: false, error: wErr.message, messageText };
       }
     } catch (e) {
       console.warn('⚠️ [WHATSAPP CREDENTIALS DISPATCH ERROR]:', e.message);
@@ -333,12 +289,33 @@ export const WhatsAppService = {
 
       try {
         const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
-        const payload = {
+        
+        // Use Official Approved Meta Authentication Template: devi_agent_pin
+        const templatePayload = {
           messaging_product: 'whatsapp',
           recipient_type: 'individual',
           to: clean,
-          type: 'text',
-          text: { preview_url: false, body: messageText },
+          type: 'template',
+          template: {
+            name: 'devi_agent_pin',
+            language: { code: 'en_US' },
+            components: [
+              {
+                type: 'body',
+                parameters: [
+                  { type: 'text', text: String(otp) },
+                ],
+              },
+              {
+                type: 'button',
+                sub_type: 'url',
+                index: '0',
+                parameters: [
+                  { type: 'text', text: String(otp) },
+                ],
+              },
+            ],
+          },
         };
 
         const res = await fetch(url, {
@@ -347,16 +324,33 @@ export const WhatsAppService = {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(templatePayload),
         });
 
         const data = await res.json();
         if (res.ok) {
-          console.log(`✅ [OTP DISPATCHED VIA WHATSAPP] ID: ${data.messages?.[0]?.id} to +${clean}`);
+          console.log(`✅ [OFFICIAL META OTP TEMPLATE DISPATCHED: devi_agent_pin] ID: ${data.messages?.[0]?.id} to +${clean}`);
           return { success: true, messageId: data.messages?.[0]?.id };
         } else {
-          console.warn(`ℹ️ [WHATSAPP OTP DISPATCH PENDING/NOTE]:`, data?.error?.message || data);
-          return { success: false, error: data?.error?.message, messageText };
+          console.warn(`ℹ️ [WHATSAPP OTP TEMPLATE NOTE/FALLBACK]:`, data?.error?.message || data);
+          
+          // Fallback to text if template has issue
+          const textRes = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: clean,
+              type: 'text',
+              text: { preview_url: false, body: messageText },
+            }),
+          });
+          const textData = await textRes.json();
+          return { success: textRes.ok, messageId: textData.messages?.[0]?.id, messageText };
         }
       } catch (err) {
         console.warn(`⚠️ [WHATSAPP OTP NETWORK ERROR]:`, err.message);

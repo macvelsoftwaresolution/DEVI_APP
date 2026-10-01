@@ -473,8 +473,8 @@ export default function DutyPage() {
         </div>
       </header>
 
-      {/* UNAUTHENTICATED OR INVITE FLOW */}
-      {!currentAgent ? (
+      {/* 1. INVITE FLOW (ALWAYS DISPLAYED WHEN inviteToken IS PRESENT IN URL) */}
+      {inviteToken ? (
         <>
           {/* INVITE FLOW: LOADING STATE */}
           {inviteLoading && (
@@ -633,59 +633,57 @@ export default function DutyPage() {
           </div>
         </div>
       )}
+    </>
+  ) : !currentAgent ? (
+    /* 2. FIELD RESPONDER SIGN IN FORM */
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '26px 20px', textAlign: 'center', marginTop: '10px' }}>
+      <div style={{ width: '58px', height: '58px', margin: '0 auto 14px auto', background: 'rgba(2, 132, 199, 0.15)', border: '1px solid rgba(2, 132, 199, 0.3)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px' }}>
+        👮
+      </div>
+      <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '20px', fontWeight: '800', marginBottom: '6px' }}>Field Responder Sign In</h2>
+      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '22px' }}>Enter your registered mobile number and 4-digit security PIN to access the Duty & Live Dispatch Network.</p>
 
-      {/* LOGIN VIEW (ONLY WHEN NO INVITE ACTIVE AND NOT LOGGED IN) */}
-      {!inviteToken && !inviteLoading && !inviteError && !inviteDeclined && (
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '26px 20px', textAlign: 'center', marginTop: '10px' }}>
-          <div style={{ width: '58px', height: '58px', margin: '0 auto 14px auto', background: 'rgba(2, 132, 199, 0.15)', border: '1px solid rgba(2, 132, 199, 0.3)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px' }}>
-            👮
-          </div>
-          <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '20px', fontWeight: '800', marginBottom: '6px' }}>Field Responder Sign In</h2>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '22px' }}>Enter your registered mobile number and 4-digit security PIN to access the Duty & Live Dispatch Network.</p>
-
-          {loginError && (
-            <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--red)', color: '#FCA5A5', padding: '10px', borderRadius: '10px', fontSize: '13px', marginBottom: '16px', fontWeight: '600', textAlign: 'left' }}>
-              ❌ {loginError}
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left' }}>
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>REGISTERED MOBILE NUMBER</label>
-              <input
-                type="tel"
-                required
-                placeholder="e.g. 9876543210"
-                value={loginPhone}
-                onChange={(e) => setLoginPhone(e.target.value)}
-                style={{ width: '100%', padding: '13px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '12px', color: '#FFF', fontSize: '15px', outline: 'none' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>4-DIGIT SECURITY PIN</label>
-              <input
-                type="password"
-                required
-                maxLength={6}
-                placeholder="••••"
-                value={loginPin}
-                onChange={(e) => setLoginPin(e.target.value)}
-                style={{ width: '100%', padding: '13px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '12px', color: '#FFF', fontSize: '18px', letterSpacing: '6px', outline: 'none' }}
-              />
-            </div>
-
-            <button
-              disabled={isLoggingIn}
-              type="submit"
-              style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', color: '#FFF', border: 'none', borderRadius: '12px', fontWeight: '800', fontSize: '15px', cursor: 'pointer', marginTop: '8px' }}
-            >
-              {isLoggingIn ? 'Verifying PIN...' : 'SIGN IN TO DUTY'}
-            </button>
-          </form>
+      {loginError && (
+        <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--red)', color: '#FCA5A5', padding: '10px', borderRadius: '10px', fontSize: '13px', marginBottom: '16px', fontWeight: '600', textAlign: 'left' }}>
+          ❌ {loginError}
         </div>
       )}
-    </>
+
+      <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px', textAlign: 'left' }}>
+        <div>
+          <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>REGISTERED MOBILE NUMBER</label>
+          <input
+            type="tel"
+            required
+            placeholder="e.g. 9876543210"
+            value={loginPhone}
+            onChange={(e) => setLoginPhone(e.target.value)}
+            style={{ width: '100%', padding: '13px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '12px', color: '#FFF', fontSize: '15px', outline: 'none' }}
+          />
+        </div>
+
+        <div>
+          <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>4-DIGIT SECURITY PIN</label>
+          <input
+            type="password"
+            required
+            maxLength={6}
+            placeholder="••••"
+            value={loginPin}
+            onChange={(e) => setLoginPin(e.target.value)}
+            style={{ width: '100%', padding: '13px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', borderRadius: '12px', color: '#FFF', fontSize: '18px', letterSpacing: '6px', outline: 'none' }}
+          />
+        </div>
+
+        <button
+          disabled={isLoggingIn}
+          type="submit"
+          style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', color: '#FFF', border: 'none', borderRadius: '12px', fontWeight: '800', fontSize: '15px', cursor: 'pointer', marginTop: '8px' }}
+        >
+          {isLoggingIn ? 'Verifying PIN...' : 'SIGN IN TO DUTY'}
+        </button>
+      </form>
+    </div>
   ) : (
         /* AUTHENTICATED PORTAL */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>

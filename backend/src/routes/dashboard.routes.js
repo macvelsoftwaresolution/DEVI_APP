@@ -152,19 +152,21 @@ router.post(['/agents', '/agents/verify-and-create'], async (req, res, next) => 
       return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit mobile number' });
     }
 
-    // Verify OTP if submitted or present in store
-    if (otp) {
-      const stored = agentOtpStore.get(cleanPhone);
-      if (!stored) {
-        return res.status(400).json({ success: false, message: 'OTP has expired or was not requested. Please tap Send OTP.' });
-      }
-      if (stored.otp !== otp.toString().trim()) {
-        return res.status(400).json({ success: false, message: 'Invalid OTP code. Please enter the correct 6-digit code.' });
-      }
-      // OTP verified successfully!
-      agentOtpStore.delete(cleanPhone);
-      console.log(`✅ [PHONE NUMBER VERIFIED BY OTP] +91 ${cleanPhone}`);
+    // Strict Requirement: OTP must be provided and valid
+    if (!otp) {
+      return res.status(400).json({ success: false, message: 'Verification OTP is strictly required to register an agent.' });
     }
+
+    const stored = agentOtpStore.get(cleanPhone);
+    if (!stored) {
+      return res.status(400).json({ success: false, message: 'OTP has expired or was not requested. Please tap Send OTP.' });
+    }
+    if (stored.otp !== otp.toString().trim()) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP code. Please enter the correct 6-digit code received on WhatsApp.' });
+    }
+    // OTP verified successfully!
+    agentOtpStore.delete(cleanPhone);
+    console.log(`✅ [PHONE NUMBER VERIFIED BY OTP] +91 ${cleanPhone}`);
 
     const agent = await DataService.addResponder({ name, phone: cleanPhone, pin, area, latitude, longitude, vehicle });
     

@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { supabase } from '../config/supabase.js';
 import { hashPin, verifyPin } from '../utils/pin.utils.js';
 
@@ -981,7 +983,7 @@ export const DataService = {
       heading: 0,
       speed: 0,
       vehicle: (vehicle || 'Patrol Unit').trim(),
-      duty_status: 'OFF_DUTY',
+      duty_status: 'PENDING_APPROVAL',
       is_live: false,
       is_active: true,
       created_at: new Date().toISOString()
@@ -1035,9 +1037,37 @@ export const DataService = {
     return list.find(a => a.id === agentId || a.id.toString() === agentId.toString());
   },
 
+  _ensureInvitesMap() {
+    if (!global._deviAgentInvites) {
+      global._deviAgentInvites = new Map();
+      try {
+        const filePath = path.resolve(process.cwd(), 'agent_invites.json');
+        if (fs.existsSync(filePath)) {
+          const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+          for (const [k, v] of Object.entries(raw)) {
+            global._deviAgentInvites.set(k, v);
+          }
+        }
+      } catch (_) {}
+    }
+    return global._deviAgentInvites;
+  },
+
+  _persistInvites() {
+    try {
+      const map = this._ensureInvitesMap();
+      const obj = {};
+      for (const [k, v] of map.entries()) {
+        obj[k] = v;
+      }
+      const filePath = path.resolve(process.cwd(), 'agent_invites.json');
+      fs.writeFileSync(filePath, JSON.stringify(obj, null, 2), 'utf8');
+    } catch (_) {}
+  },
+
   // --- Unique 1-Time Device-Locked Agent Invitations ---
   createAgentInvite({ agentId, token, phone, name, area, pin }) {
-    if (!global._deviAgentInvites) global._deviAgentInvites = new Map();
+    const map = this._ensureInvitesMap();
     const invite = {
       agentId,
       token,
@@ -1051,21 +1081,24 @@ export const DataService = {
       status: 'PENDING',
       createdAt: new Date().toISOString(),
     };
-    global._deviAgentInvites.set(token, invite);
+    map.set(token, invite);
+    this._persistInvites();
     console.log(`🎫 [AGENT 1-TIME INVITE CREATED] Token: ${token}, Agent: ${name} (${phone})`);
     return invite;
   },
 
   getAgentInvite(token) {
-    if (!token || !global._deviAgentInvites) return null;
-    return global._deviAgentInvites.get(token) || null;
+    if (!token) return null;
+    const map = this._ensureInvitesMap();
+    return map.get(token) || null;
   },
 
   async respondToAgentInvite(token, action, deviceFingerprint = null) {
-    if (!token || !global._deviAgentInvites) {
+    if (!token) {
       return { success: false, reason: 'NOT_FOUND', message: 'Invite token not found or expired.' };
     }
-    const invite = global._deviAgentInvites.get(token);
+    const map = this._ensureInvitesMap();
+    const invite = map.get(token);
     if (!invite) {
       return { success: false, reason: 'NOT_FOUND', message: 'Invite token not found or expired.' };
     }
@@ -1081,6 +1114,7 @@ export const DataService = {
       invite.claimedAt = new Date().toISOString();
       invite.deviceFingerprint = deviceFingerprint;
       invite.status = 'ACCEPTED';
+      this._persistInvites();
 
       try {
         await supabase.from('agents').update({ duty_status: 'ON_DUTY', is_live: true, is_active: true }).eq('id', invite.agentId);
@@ -1097,6 +1131,7 @@ export const DataService = {
       return { success: true, invite, agent: agent || { id: invite.agentId, name: invite.name, phone: invite.phone, area: invite.area } };
     } else {
       invite.status = 'REJECTED';
+      this._persistInvites();
       try {
         await supabase.from('agents').update({ duty_status: 'REJECTED', is_active: false }).eq('id', invite.agentId);
       } catch (_) {}

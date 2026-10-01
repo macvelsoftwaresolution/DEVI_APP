@@ -109,6 +109,31 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       console.log('ℹ️ No emergency contacts provided to alert.');
     }
 
+    // STEP 3.5: Instant WhatsApp Emergency Dispatch ONLY to Active Approved On-Duty Agents
+    try {
+      const allResponders = await DataService.getResponders();
+      const onDutyAgents = allResponders.filter(a =>
+        a.is_active !== false &&
+        a.is_live === true &&
+        (a.duty_status === 'ON_DUTY' || a.duty_status === 'AVAILABLE')
+      );
+
+      console.log(`🚨 [DISPATCHING LIVE SOS TO ${onDutyAgents.length} APPROVED ON-DUTY RESPONDERS VIA WHATSAPP]`);
+      for (const agent of onDutyAgents) {
+        if (agent.phone) {
+          console.log(`📲 [WHATSAPP DISPATCH] Alerting On-Duty Agent ${agent.name} (+91 ${agent.phone})`);
+          WhatsAppService.sendEmergencyAlert(
+            agent.phone,
+            trackingUrl,
+            victimName,
+            { latitude, longitude, location }
+          );
+        }
+      }
+    } catch (agentDispatchErr) {
+      console.warn('⚠️ [ON-DUTY AGENT WHATSAPP DISPATCH ERROR]:', agentDispatchErr.message);
+    }
+
     // Broadcast real-time emergency alert via WebSockets to operator dashboard & responders
     socketService.broadcastNewSosAlert({
       id: alert.id,
