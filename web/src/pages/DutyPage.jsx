@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, LogOut, Navigation, Phone, CheckCircle, Radio, Bell, Lock, XCircle, AlertTriangle, ArrowRight, Smartphone, MapPin } from 'lucide-react';
+import { Shield, LogOut, Navigation, Phone, CheckCircle, Radio, Bell, Lock, XCircle, AlertTriangle, ArrowRight, Smartphone, MapPin, Download } from 'lucide-react';
 import { apiUrl, WS_URL } from '../config/api';
 
 export default function DutyPage() {
@@ -835,34 +835,34 @@ export default function DutyPage() {
                 </span>
               </div>
 
-              {/* Open in Mobile App for 24/7 Locked-Screen Tracking */}
-              <div style={{ marginBottom: '14px' }}>
+              {/* Download DEVI Responder Mobile APK */}
+              <div style={{ marginBottom: '16px' }}>
                 <a
-                  href="devi://responder-duty"
-                  onClick={() => {
-                    setTimeout(() => {
-                      alert('If DEVI Mobile App is not yet installed on this phone, ask Admin for the DEVI Responder APK for 100% uninterrupted 24/7 tracking when locked in your pocket!');
-                    }, 1500);
-                  }}
+                  href="/downloads/devi-responder.apk"
+                  download="DEVI-Responder.apk"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '8px',
                     width: '100%',
-                    padding: '12px 14px',
-                    background: 'rgba(56, 189, 248, 0.12)',
-                    border: '1px solid rgba(56, 189, 248, 0.4)',
+                    padding: '13px 14px',
+                    background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.22) 0%, rgba(3, 105, 161, 0.18) 100%)',
+                    border: '1px solid #38BDF8',
                     color: '#38BDF8',
                     borderRadius: '12px',
-                    fontSize: '12px',
+                    fontSize: '13px',
                     fontWeight: '800',
                     textDecoration: 'none',
                     textAlign: 'center',
+                    boxShadow: '0 4px 14px rgba(56, 189, 248, 0.12)',
                   }}
                 >
-                  <Smartphone size={16} /> Launch in DEVI Mobile App (Locked-Screen Mode)
+                  <Download size={16} /> 📥 Download DEVI Responder App (APK)
                 </a>
+                <p style={{ fontSize: '10.5px', color: '#94A3B8', marginTop: '6px', textAlign: 'center' }}>
+                  Install on Android for 24/7 locked-in-pocket tracking with persistent notification
+                </p>
               </div>
 
               {/* Exit Duty button */}
