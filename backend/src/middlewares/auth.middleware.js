@@ -53,6 +53,17 @@ export const optionalToken = (req, res, next) => {
  * Middleware: Verify Admin Secret Key for Operator / Emergency Management routes
  */
 export const verifyAdminKey = (req, res, next) => {
+  // Public Duty Portal, Agent Invite acceptance, Agent Location Streaming, & Duty Settings do NOT require admin secret
+  if (
+    req.path.startsWith('/duty') ||
+    req.path.includes('/location') ||
+    req.path.includes('/accept-assignment') ||
+    req.path.includes('/status') ||
+    req.path.startsWith('/settings/duty')
+  ) {
+    return next();
+  }
+
   const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
 
   // In local development, if no key is configured or provided, allow with warning

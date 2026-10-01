@@ -1,3 +1,4 @@
+
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
@@ -169,7 +170,7 @@ router.post(['/agents', '/agents/verify-and-create'], async (req, res, next) => 
     console.log(`✅ [PHONE NUMBER VERIFIED BY OTP] +91 ${cleanPhone}`);
 
     const agent = await DataService.addResponder({ name, phone: cleanPhone, pin, area, latitude, longitude, vehicle });
-    
+
     // Generate Unique 1-Time UUID Token for Device Lock & Single-Use Access
     const inviteToken = randomUUID();
     DataService.createAgentInvite({
@@ -289,6 +290,9 @@ router.post('/duty/invite/respond', async (req, res, next) => {
         success: true,
         message: 'Duty invitation accepted! You are now ON-DUTY.',
         token: authToken,
+        shift_expires_at: result.shift_expires_at,
+        shift_duration_hours: result.shift_duration_hours,
+        gps_interval_seconds: result.gps_interval_seconds,
         agent: {
           id: agent.id,
           name: agent.name,
@@ -296,6 +300,8 @@ router.post('/duty/invite/respond', async (req, res, next) => {
           area: agent.area,
           vehicle: agent.vehicle,
           duty_status: 'ON_DUTY',
+          shift_expires_at: result.shift_expires_at,
+          shift_duration_hours: result.shift_duration_hours,
         },
       });
     } else {
@@ -334,7 +340,7 @@ router.post('/agents/:id/location', async (req, res, next) => {
     }
 
     const updated = await DataService.updateAgentLiveLocation(id, { latitude, longitude, heading, speed });
-    
+
     // Broadcast agent location to dashboard WebSocket
     socketService.broadcastAgentLocation(id, {
       id,
@@ -360,12 +366,46 @@ router.post('/agents/:id/location', async (req, res, next) => {
   }
 });
 
+// GET duty settings (shift duration, GPS frequency)
+router.get('/settings/duty', async (req, res, next) => {
+  try {
+    const settings = DataService.getDutySettings();
+    res.json({ success: true, settings });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST update duty settings
+router.post('/settings/duty', async (req, res, next) => {
+  try {
+    const { shiftDurationHours, gpsIntervalSeconds, autoEndDuty } = req.body;
+    const updated = DataService.updateDutySettings({ shiftDurationHours, gpsIntervalSeconds, autoEndDuty });
+    res.json({ success: true, settings: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST force end agent duty manually by Admin
+router.post('/agents/:id/end-duty', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const updated = await DataService.setAgentDutyStatus(id, 'OFF_DUTY');
+    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
+    res.json({ success: true, agent: updated, message: 'Agent duty ended successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST toggle agent duty status (ON_DUTY / OFF_DUTY)
 router.post('/agents/:id/duty', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
     const updated = await DataService.setAgentDutyStatus(id, status || 'ON_DUTY');
+    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
     res.json({
       success: true,
       agent: updated,
@@ -429,7 +469,7 @@ router.post('/assign-agent', async (req, res, next) => {
           lng = sosRow.longitude;
           locStr = sosRow.address || sosRow.location;
         }
-      } catch (_) {}
+      } catch (_) { }
     }
 
     // DISPATCH OFFICIAL META WHATSAPP ALERT (devi_safety) TO THE ASSIGNED AGENT!

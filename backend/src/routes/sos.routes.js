@@ -109,24 +109,45 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       console.log('ℹ️ No emergency contacts provided to alert.');
     }
 
-    // STEP 3.5: Instant WhatsApp Emergency Dispatch ONLY to Active Approved On-Duty Agents
+    // STEP 3.5: Instant WhatsApp Emergency Dispatch to Active Approved On-Duty Agents (Nearest First)
     try {
       const allResponders = await DataService.getResponders();
-      const onDutyAgents = allResponders.filter(a =>
-        a.is_active !== false &&
-        a.is_live === true &&
-        (a.duty_status === 'ON_DUTY' || a.duty_status === 'AVAILABLE')
-      );
+      const onDutyAgents = allResponders
+        .filter(a =>
+          a.is_active !== false &&
+          a.is_live === true &&
+          (a.duty_status === 'ON_DUTY' || a.duty_status === 'AVAILABLE')
+        )
+        .map(agent => {
+          let distanceKm = null;
+          if (latitude && longitude && agent.latitude && agent.longitude) {
+            const R = 6371;
+            const dLat = (agent.latitude - latitude) * Math.PI / 180;
+            const dLon = (agent.longitude - longitude) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(latitude * Math.PI / 180) * Math.cos(agent.latitude * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            distanceKm = Math.round((R * c) * 10) / 10;
+          }
+          return { ...agent, distanceKm };
+        })
+        .sort((a, b) => {
+          if (a.distanceKm == null) return 1;
+          if (b.distanceKm == null) return -1;
+          return a.distanceKm - b.distanceKm;
+        });
 
-      console.log(`🚨 [DISPATCHING LIVE SOS TO ${onDutyAgents.length} APPROVED ON-DUTY RESPONDERS VIA WHATSAPP]`);
+      console.log(`🚨 [DISPATCHING LIVE SOS TO ${onDutyAgents.length} APPROVED ON-DUTY RESPONDERS VIA WHATSAPP (NEAREST FIRST)]`);
       for (const agent of onDutyAgents) {
         if (agent.phone) {
-          console.log(`📲 [WHATSAPP DISPATCH] Alerting On-Duty Agent ${agent.name} (+91 ${agent.phone})`);
+          const proxStr = agent.distanceKm != null ? `[~${agent.distanceKm} KM Away] ` : '';
+          console.log(`📲 [WHATSAPP DISPATCH] Alerting On-Duty Agent ${agent.name} (+91 ${agent.phone}) ${proxStr}`);
           WhatsAppService.sendEmergencyAlert(
             agent.phone,
             trackingUrl,
             victimName,
-            { latitude, longitude, location }
+            { latitude, longitude, location: `${proxStr}${location || 'Live GPS Coordinates'}` }
           );
         }
       }

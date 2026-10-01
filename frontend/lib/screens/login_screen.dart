@@ -365,6 +365,37 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
 
+                  const SizedBox(height: 24),
+
+                  // DEVI Responder Duty Portal Access
+                  Center(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pushNamed(context, '/responder-duty'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0284C7).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFF0284C7).withOpacity(0.3)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('🛡️ ', style: TextStyle(fontSize: 13)),
+                            Text(
+                              'DEVI Field Responder Portal',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0284C7),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
                   SizedBox(height: size.height * 0.04),
                 ],
               ),

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
-import { Shield, Radio, Volume2, VolumeX, RefreshCw, Plus, Link2, X, Phone, CheckCircle, Navigation, MapPin } from 'lucide-react';
+import { Shield, Radio, Volume2, VolumeX, RefreshCw, Plus, Link2, X, Phone, CheckCircle, Navigation, MapPin, Settings, Clock, UserCheck, Power } from 'lucide-react';
 import { apiUrl, WS_URL } from '../config/api';
 import { createVictimDivIcon, createResponderDivIcon } from '../utils/mapMarkers';
 
@@ -14,6 +14,11 @@ export default function DashboardPage() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [liveTime, setLiveTime] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showShiftSettingsModal, setShowShiftSettingsModal] = useState(false);
+  const [showAgentsListModal, setShowAgentsListModal] = useState(false);
+  const [shiftHours, setShiftHours] = useState(8);
+  const [gpsInterval, setGpsInterval] = useState(10);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [emergencyAlertModal, setEmergencyAlertModal] = useState(null); // { id, name, phone, location, lat, lng }
   const [operatorNote, setOperatorNote] = useState('');
   const [isSavingResponder, setIsSavingResponder] = useState(false);
@@ -231,6 +236,57 @@ export default function DashboardPage() {
     } catch (e) {}
   };
 
+  // Fetch System Duty Settings
+  const fetchDutySettings = async () => {
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/settings/duty'));
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && data.settings) {
+        setShiftHours(data.settings.shiftDurationHours || 8);
+        setGpsInterval(data.settings.gpsIntervalSeconds || 10);
+      }
+    } catch (_) {}
+  };
+
+  // Save Duty Settings
+  const handleSaveDutySettings = async (e) => {
+    if (e) e.preventDefault();
+    setIsSavingSettings(true);
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/settings/duty'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftDurationHours: Number(shiftHours), gpsIntervalSeconds: Number(gpsInterval) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowShiftSettingsModal(false);
+        alert(`✅ Duty Shift Configuration Updated!\n• Shift Duration: ${shiftHours} Hours\n• GPS Update Frequency: Every ${gpsInterval}s`);
+      } else {
+        alert(data.message || 'Failed to update settings');
+      }
+    } catch (err) {
+      alert('Network error: ' + err.message);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  // End Agent Duty Manually
+  const handleEndAgentDuty = async (agentId, agentName) => {
+    if (!window.confirm(`Are you sure you want to end ${agentName}'s duty shift now?`)) return;
+    try {
+      const res = await fetch(apiUrl(`/api/dashboard/agents/${agentId}/end-duty`), {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchResponders();
+      }
+    } catch (_) {}
+  };
+
   // WebSocket Connection
   useEffect(() => {
     let ws = null;
@@ -252,7 +308,7 @@ export default function DashboardPage() {
             if (msg.type === 'sos:new' || msg.type === 'incident:assigned' || msg.type === 'incident:en_route') {
               fetchIncidents(false);
               fetchResponders();
-            } else if (msg.type === 'loc' || msg.type === 'status' || msg.type === 'agent_loc') {
+            } else if (msg.type === 'loc' || msg.type === 'status' || msg.type === 'agent_loc' || msg.type === 'agent_update') {
               fetchIncidents(false);
               fetchResponders();
             }
@@ -272,6 +328,7 @@ export default function DashboardPage() {
     connectWs();
     fetchIncidents(true);
     fetchResponders();
+    fetchDutySettings();
 
     const pollInterval = setInterval(() => {
       fetchIncidents(false);
@@ -746,7 +803,26 @@ export default function DashboardPage() {
             <Link2 size={14} /> Duty Link
           </button>
           <button
-            onClick={() => setShowResponders(!showResponders)}
+            onClick={() => setShowShiftSettingsModal(true)}
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              color: '#38BDF8',
+              height: '34px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '700',
+            }}
+          >
+            <Settings size={14} /> Shift: {shiftHours}h
+          </button>
+          <button
+            onClick={() => setShowAgentsListModal(true)}
             style={{
               background: 'var(--bg-surface)',
               border: '1px solid var(--border)',
@@ -1433,6 +1509,268 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* SHIFT & GPS SETTINGS MODAL */}
+      {showShiftSettingsModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '450px', maxWidth: '94vw', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '24px', boxShadow: '0 25px 60px rgba(0,0,0,0.7)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.15)', border: '1px solid #38BDF8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>
+                  ⚙️
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>Shift & GPS Tracking Settings</h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Control responder duty duration & battery sync rate</p>
+                </div>
+              </div>
+              <button onClick={() => setShowShiftSettingsModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleSaveDutySettings}>
+              {/* Shift Duration Selection */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                  Default Shift Duration
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '10px' }}>
+                  {[4, 8, 10, 12].map((hrs) => (
+                    <button
+                      type="button"
+                      key={hrs}
+                      onClick={() => setShiftHours(hrs)}
+                      style={{
+                        padding: '10px 0',
+                        borderRadius: '8px',
+                        border: `1px solid ${shiftHours === hrs ? '#38BDF8' : 'var(--border)'}`,
+                        background: shiftHours === hrs ? 'rgba(56, 189, 248, 0.2)' : 'var(--bg-dark)',
+                        color: shiftHours === hrs ? '#38BDF8' : '#FFF',
+                        fontWeight: '800',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {hrs} Hours
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Custom Shift Hours:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={shiftHours}
+                    onChange={(e) => setShiftHours(parseInt(e.target.value) || 8)}
+                    style={{ width: '60px', background: 'transparent', border: 'none', color: '#38BDF8', fontWeight: '800', fontSize: '14px', outline: 'none' }}
+                  />
+                  <span style={{ fontSize: '11px', color: '#94A3B8' }}>hrs (Auto-ends duty afterwards)</span>
+                </div>
+              </div>
+
+              {/* GPS Update Rate */}
+              <div style={{ marginBottom: '22px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                  GPS Telemetry Sync Frequency
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {[
+                    { sec: 5, label: '5s (Ultra Live)' },
+                    { sec: 10, label: '10s (Standard)' },
+                    { sec: 30, label: '30s (Eco Saver)' },
+                  ].map((item) => (
+                    <button
+                      type="button"
+                      key={item.sec}
+                      onClick={() => setGpsInterval(item.sec)}
+                      style={{
+                        padding: '10px 0',
+                        borderRadius: '8px',
+                        border: `1px solid ${gpsInterval === item.sec ? '#10B981' : 'var(--border)'}`,
+                        background: gpsInterval === item.sec ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-dark)',
+                        color: gpsInterval === item.sec ? '#34D399' : '#FFF',
+                        fontWeight: '800',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowShiftSettingsModal(false)}
+                  style={{ padding: '10px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={isSavingSettings}
+                  type="submit"
+                  style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #0284C7, #0369A1)', border: 'none', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+                >
+                  {isSavingSettings ? 'Saving...' : '💾 Save Settings'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* AGENTS & ON-DUTY MANAGEMENT MODAL */}
+      {showAgentsListModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '640px', maxWidth: '94vw', maxHeight: '85vh', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 60px rgba(0,0,0,0.7)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10B981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>
+                  🛡️
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>Field Responders ({responders.length})</h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Manage live shift statuses & emergency patrol units</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAgentsListModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }}>
+              {responders.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dim)' }}>
+                  No agents registered yet. Click "+ Add Agent" to onboard with OTP.
+                </div>
+              ) : (
+                responders.map((agent) => {
+                  const isOnDuty = agent.duty_status === 'ON_DUTY' || agent.duty_status === 'AVAILABLE';
+                  const isPending = agent.duty_status === 'PENDING_APPROVAL';
+
+                  // Calculate remaining shift time if on duty
+                  let remainingStr = '';
+                  if (isOnDuty && agent.shift_expires_at) {
+                    const diffMs = new Date(agent.shift_expires_at).getTime() - Date.now();
+                    if (diffMs > 0) {
+                      const hrs = Math.floor(diffMs / (3600 * 1000));
+                      const mins = Math.floor((diffMs % (3600 * 1000)) / (60 * 1000));
+                      remainingStr = `⏳ ${hrs}h ${mins}m left`;
+                    } else {
+                      remainingStr = '⏰ Shift Expired';
+                    }
+                  }
+
+                  return (
+                    <div
+                      key={agent.id}
+                      style={{
+                        background: 'var(--bg-dark)',
+                        border: `1px solid ${isOnDuty ? 'rgba(16, 185, 129, 0.4)' : isPending ? 'rgba(245, 158, 11, 0.4)' : 'var(--border)'}`,
+                        borderRadius: '12px',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '800', color: '#FFF' }}>{agent.name}</span>
+                          <span
+                            style={{
+                              fontSize: '9.5px',
+                              fontWeight: '800',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              background: isOnDuty ? 'rgba(16, 185, 129, 0.15)' : isPending ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+                              color: isOnDuty ? '#34D399' : isPending ? '#FBBF24' : '#94A3B8',
+                              border: `1px solid ${isOnDuty ? '#10B981' : isPending ? '#F59E0B' : 'transparent'}`,
+                            }}
+                          >
+                            {isOnDuty ? '🟢 ON DUTY' : isPending ? '🟡 PENDING APPROVAL' : '⚪ OFF DUTY'}
+                          </span>
+                          {remainingStr && (
+                            <span style={{ fontSize: '10px', color: '#FBBF24', fontWeight: '700' }}>
+                              {remainingStr}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'flex', gap: '12px' }}>
+                          <span>📞 +91 {agent.phone}</span>
+                          <span>📍 {agent.area || 'All Sectors'}</span>
+                          <span>{agent.vehicle || 'Patrol Unit'}</span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {isOnDuty ? (
+                          <button
+                            onClick={() => handleEndAgentDuty(agent.id, agent.name)}
+                            style={{
+                              padding: '6px 12px',
+                              background: 'rgba(239, 68, 68, 0.15)',
+                              border: '1px solid rgba(239, 68, 68, 0.4)',
+                              color: '#F87171',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <Power size={12} /> End Duty
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              const dutyUrl = `${window.location.origin}/duty`;
+                              navigator.clipboard.writeText(dutyUrl);
+                              alert(`Duty portal link copied for ${agent.name}:\n${dutyUrl}`);
+                            }}
+                            style={{
+                              padding: '6px 12px',
+                              background: 'rgba(56, 189, 248, 0.1)',
+                              border: '1px solid rgba(56, 189, 248, 0.3)',
+                              color: '#38BDF8',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Copy Link
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+              <button
+                onClick={() => { setShowAgentsListModal(false); setShowAddModal(true); }}
+                style={{ padding: '8px 14px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Plus size={14} /> Add New Agent
+              </button>
+              <button
+                onClick={() => setShowAgentsListModal(false)}
+                style={{ padding: '8px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FLOATING TACTICAL EMERGENCY SOS HUD (Non-blocking, live map zoom visible) */}
       {emergencyAlertModal && (
         <div

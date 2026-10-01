@@ -1,0 +1,58 @@
+{
+  "9475bdfa-d8ad-4ac6-a991-b03109315b05": {
+    "agentId": "agent-karthik",
+    "token": "9475bdfa-d8ad-4ac6-a991-b03109315b05",
+    "phone": "6381592501",
+    "name": "Karthik",
+    "area": "RJPM Safety Zone",
+    "pin": "1234",
+    "claimed": false,
+    "claimedAt": null,
+    "deviceFingerprint": null,
+    "status": "PENDING",
+    "createdAt": "2026-10-01T11:52:57.763Z"
+  },
+  "9a414457-e894-441f-b613-e631f756f3e8": {
+    "agentId": "agent-1790859629561",
+    "token": "9a414457-e894-441f-b613-e631f756f3e8",
+    "phone": "9876599999",
+    "name": "Shift Test Agent",
+    "area": "Test Sector",
+    "pin": "1234",
+    "claimed": true,
+    "claimedAt": "2026-10-01T13:00:30.772Z",
+    "deviceFingerprint": "Test_Device_Android",
+    "status": "ACCEPTED",
+    "createdAt": "2026-10-01T13:00:29.829Z"
+  },
+  "6db7d521-eb21-4bca-8fa0-ed64cf6aa24e": {
+    "agentId": "agent-1790859770203",
+    "token": "6db7d521-eb21-4bca-8fa0-ed64cf6aa24e",
+    "phone": "9500238347",
+    "name": "Ten Hour Patrol Agent",
+    "area": "Rajapalayam North",
+    "pin": "7421",
+    "claimed": true,
+    "claimedAt": "2026-10-01T13:02:51.579Z",
+    "deviceFingerprint": "Android_DEVI_Mobile_App",
+    "status": "ACCEPTED",
+    "createdAt": "2026-10-01T13:02:50.442Z",
+    "shiftDurationHours": 10,
+    "shiftExpiresAt": "2026-10-01T23:02:51.579Z"
+  },
+  "577c5264-08c5-4399-83a9-4258896cf3e9": {
+    "agentId": "agent-1790859809998",
+    "token": "577c5264-08c5-4399-83a9-4258896cf3e9",
+    "phone": "9500238347",
+    "name": "Ten Hour Patrol Agent",
+    "area": "Rajapalayam North",
+    "pin": "7421",
+    "claimed": true,
+    "claimedAt": "2026-10-01T13:03:31.002Z",
+    "deviceFingerprint": "Android_DEVI_Mobile_App",
+    "status": "ACCEPTED",
+    "createdAt": "2026-10-01T13:03:30.228Z",
+    "shiftDurationHours": 10,
+    "shiftExpiresAt": "2026-10-01T23:03:31.002Z"
+  }
+}

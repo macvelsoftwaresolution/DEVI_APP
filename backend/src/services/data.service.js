@@ -333,7 +333,7 @@ export const DataService = {
           }
         }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // Provider 2: BigDataCloud Free Client API (Fast Fallback)
     try {
@@ -352,7 +352,7 @@ export const DataService = {
           return result;
         }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     return null;
   },
@@ -570,7 +570,7 @@ export const DataService = {
           status,
         })
         .eq('id', alertId)
-        .then(() => {})
+        .then(() => { })
         .catch((e) => console.error('Supabase live update error:', e));
     } catch (e) {
       // ignore
@@ -645,15 +645,15 @@ export const DataService = {
           .from('sos_history')
           .update({ audio_url: evidenceUrl })
           .eq('id', alertId)
-          .then(() => {})
-          .catch(() => {});
+          .then(() => { })
+          .catch(() => { });
 
         await supabase
           .from('sos_history')
           .update({ evidence_url: evidenceUrl })
           .eq('id', alertId)
-          .then(() => {})
-          .catch(() => {});
+          .then(() => { })
+          .catch(() => { });
       }
     } catch (e) {
       console.error('Error updating evidence/audio URL in Supabase:', e);
@@ -885,25 +885,55 @@ export const DataService = {
         .from('sos_history')
         .update({ status: 'DISPATCHED' })
         .eq('id', alertId);
-    } catch (_) {}
+    } catch (_) { }
 
     return session;
   },
 
   // --- DASHBOARD: RESPONDERS / FIELD AGENTS MANAGEMENT ---
   async getResponders() {
+    const nowTime = Date.now();
     try {
       const { data, error } = await supabase.from('agents').select('*').order('created_at', { ascending: false });
       if (!error && Array.isArray(data)) {
-        return data.map(a => ({
-          ...a,
-          status: a.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (a.duty_status || 'OFF_DUTY')
-        }));
+        return data.map(a => {
+          let dutyStatus = a.duty_status || 'OFF_DUTY';
+          let isLive = a.is_live;
+          if (a.shift_expires_at && dutyStatus === 'ON_DUTY') {
+            const exp = new Date(a.shift_expires_at).getTime();
+            if (nowTime > exp) {
+              dutyStatus = 'COMPLETED';
+              isLive = false;
+            }
+          }
+          return {
+            ...a,
+            duty_status: dutyStatus,
+            is_live: isLive,
+            status: dutyStatus === 'ON_DUTY' ? 'AVAILABLE' : dutyStatus
+          };
+        });
       }
     } catch (e) {
       console.warn('Error reading agents from Supabase:', e.message);
     }
-    return respondersList;
+    return respondersList.map(a => {
+      let dutyStatus = a.duty_status || 'OFF_DUTY';
+      let isLive = a.is_live;
+      if (a.shift_expires_at && dutyStatus === 'ON_DUTY') {
+        const exp = new Date(a.shift_expires_at).getTime();
+        if (nowTime > exp) {
+          dutyStatus = 'COMPLETED';
+          isLive = false;
+        }
+      }
+      return {
+        ...a,
+        duty_status: dutyStatus,
+        is_live: isLive,
+        status: dutyStatus === 'ON_DUTY' ? 'AVAILABLE' : dutyStatus
+      };
+    });
   },
 
   // --- RESPONDER AUTHENTICATION ---
@@ -930,12 +960,12 @@ export const DataService = {
         if (!isMatch) {
           return { success: false, message: 'Invalid 4-digit Security PIN' };
         }
-        return { 
-          success: true, 
-          agent: { 
-            ...data, 
-            status: data.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (data.duty_status || 'OFF_DUTY') 
-          } 
+        return {
+          success: true,
+          agent: {
+            ...data,
+            status: data.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (data.duty_status || 'OFF_DUTY')
+          }
         };
       }
     } catch (e) {
@@ -950,12 +980,12 @@ export const DataService = {
       }
       const isMatch = dynamicAgent.pin_hash ? verifyPin(pin, dynamicAgent.pin_hash) : (dynamicAgent.pin === pin);
       if (isMatch) {
-        return { 
-          success: true, 
-          agent: { 
-            ...dynamicAgent, 
-            status: dynamicAgent.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (dynamicAgent.duty_status || 'OFF_DUTY') 
-          } 
+        return {
+          success: true,
+          agent: {
+            ...dynamicAgent,
+            status: dynamicAgent.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (dynamicAgent.duty_status || 'OFF_DUTY')
+          }
         };
       }
       return { success: false, message: 'Invalid 4-digit Security PIN' };
@@ -1015,7 +1045,7 @@ export const DataService = {
   async deleteResponder(agentId) {
     try {
       await supabase.from('agents').delete().eq('id', agentId);
-    } catch (_) {}
+    } catch (_) { }
     respondersList = respondersList.filter(a => a.id !== agentId);
     return true;
   },
@@ -1037,6 +1067,42 @@ export const DataService = {
     return list.find(a => a.id === agentId || a.id.toString() === agentId.toString());
   },
 
+  // --- Admin Configurable Duty Shift & GPS Settings ---
+  getDutySettings() {
+    try {
+      const filePath = path.resolve(process.cwd(), 'duty_settings.json');
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(raw);
+      }
+    } catch (_) { }
+    return {
+      shiftDurationHours: 8,
+      gpsIntervalSeconds: 10,
+      autoEndDuty: true,
+    };
+  },
+
+  updateDutySettings(settings) {
+    try {
+      const current = this.getDutySettings();
+      const updated = {
+        ...current,
+        shiftDurationHours: settings.shiftDurationHours ? Number(settings.shiftDurationHours) : current.shiftDurationHours,
+        gpsIntervalSeconds: settings.gpsIntervalSeconds ? Number(settings.gpsIntervalSeconds) : current.gpsIntervalSeconds,
+        autoEndDuty: settings.autoEndDuty !== undefined ? Boolean(settings.autoEndDuty) : current.autoEndDuty,
+        updatedAt: new Date().toISOString(),
+      };
+      const filePath = path.resolve(process.cwd(), 'duty_settings.json');
+      fs.writeFileSync(filePath, JSON.stringify(updated, null, 2), 'utf8');
+      console.log(`⚙️ [DUTY SETTINGS UPDATED] Shift: ${updated.shiftDurationHours}h, GPS: ${updated.gpsIntervalSeconds}s`);
+      return updated;
+    } catch (e) {
+      console.error('Error updating duty settings:', e);
+      return this.getDutySettings();
+    }
+  },
+
   _ensureInvitesMap() {
     if (!global._deviAgentInvites) {
       global._deviAgentInvites = new Map();
@@ -1048,7 +1114,7 @@ export const DataService = {
             global._deviAgentInvites.set(k, v);
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     return global._deviAgentInvites;
   },
@@ -1062,7 +1128,7 @@ export const DataService = {
       }
       const filePath = path.resolve(process.cwd(), 'agent_invites.json');
       fs.writeFileSync(filePath, JSON.stringify(obj, null, 2), 'utf8');
-    } catch (_) {}
+    } catch (_) { }
   },
 
   // --- Unique 1-Time Device-Locked Agent Invitations ---
@@ -1110,31 +1176,63 @@ export const DataService = {
     }
 
     if (action === 'APPROVE') {
+      const settings = this.getDutySettings();
+      const shiftHours = Number(settings.shiftDurationHours || 8);
+      const dutyStartedAt = new Date().toISOString();
+      const shiftExpiresAt = new Date(Date.now() + shiftHours * 3600 * 1000).toISOString();
+
       invite.claimed = true;
-      invite.claimedAt = new Date().toISOString();
+      invite.claimedAt = dutyStartedAt;
       invite.deviceFingerprint = deviceFingerprint;
       invite.status = 'ACCEPTED';
+      invite.shiftDurationHours = shiftHours;
+      invite.shiftExpiresAt = shiftExpiresAt;
       this._persistInvites();
 
       try {
-        await supabase.from('agents').update({ duty_status: 'ON_DUTY', is_live: true, is_active: true }).eq('id', invite.agentId);
-      } catch (_) {}
+        await supabase.from('agents').update({
+          duty_status: 'ON_DUTY',
+          is_live: true,
+          is_active: true,
+          duty_started_at: dutyStartedAt,
+          shift_expires_at: shiftExpiresAt,
+        }).eq('id', invite.agentId);
+      } catch (_) { }
 
       const agent = respondersList.find(a => a.id === invite.agentId);
       if (agent) {
         agent.duty_status = 'ON_DUTY';
         agent.status = 'ON_DUTY';
         agent.is_live = true;
+        agent.duty_started_at = dutyStartedAt;
+        agent.shift_expires_at = shiftExpiresAt;
+        agent.shift_duration_hours = shiftHours;
       }
 
-      console.log(`✅ [AGENT INVITE ACCEPTED & DEVICE LOCKED] Agent: ${invite.name}, Token: ${token}`);
-      return { success: true, invite, agent: agent || { id: invite.agentId, name: invite.name, phone: invite.phone, area: invite.area } };
+      console.log(`✅ [AGENT INVITE ACCEPTED & SHIFT STARTED] Agent: ${invite.name}, Shift: ${shiftHours}h, Expires: ${shiftExpiresAt}`);
+      return {
+        success: true,
+        invite,
+        shift_expires_at: shiftExpiresAt,
+        shift_duration_hours: shiftHours,
+        gps_interval_seconds: settings.gpsIntervalSeconds || 10,
+        agent: agent || {
+          id: invite.agentId,
+          name: invite.name,
+          phone: invite.phone,
+          area: invite.area,
+          duty_status: 'ON_DUTY',
+          is_live: true,
+          shift_expires_at: shiftExpiresAt,
+          shift_duration_hours: shiftHours,
+        }
+      };
     } else {
       invite.status = 'REJECTED';
       this._persistInvites();
       try {
         await supabase.from('agents').update({ duty_status: 'REJECTED', is_active: false }).eq('id', invite.agentId);
-      } catch (_) {}
+      } catch (_) { }
 
       const agent = respondersList.find(a => a.id === invite.agentId);
       if (agent) {
@@ -1194,13 +1292,20 @@ export const DataService = {
       agent.status = status;
       agent.is_live = isLive;
       agent.last_seen = nowIso;
+      if (!isLive) {
+        agent.shift_expires_at = null;
+      }
     }
     try {
-      await supabase.from('agents').update({ 
+      const updateData = {
         duty_status: status,
         is_live: isLive,
-        last_seen: nowIso
-      }).eq('id', agentId);
+        last_seen: nowIso,
+      };
+      if (!isLive) {
+        updateData.shift_expires_at = null;
+      }
+      await supabase.from('agents').update(updateData).eq('id', agentId);
     } catch (e) {
       console.error('Error updating duty status in Supabase:', e.message);
     }
