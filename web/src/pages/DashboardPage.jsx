@@ -1691,6 +1691,21 @@ export default function DashboardPage() {
                               {remainingStr}
                             </span>
                           )}
+                          {isOnDuty && (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: (!isNaN(parseFloat(agent.latitude)) && parseFloat(agent.latitude) !== 0) ? 'rgba(56, 189, 248, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: (!isNaN(parseFloat(agent.latitude)) && parseFloat(agent.latitude) !== 0) ? '#38BDF8' : '#F87171',
+                                border: `1px solid ${(!isNaN(parseFloat(agent.latitude)) && parseFloat(agent.latitude) !== 0) ? 'rgba(56, 189, 248, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                                fontWeight: '600'
+                              }}
+                            >
+                              {(!isNaN(parseFloat(agent.latitude)) && parseFloat(agent.latitude) !== 0) ? '📡 GPS Streaming' : '⚠️ No GPS Lock Yet'}
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'flex', gap: '12px' }}>
                           <span>📞 +91 {agent.phone}</span>
@@ -1700,35 +1715,39 @@ export default function DashboardPage() {
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button
-                          onClick={() => {
-                            setShowAgentsListModal(false);
-                            const lat = parseFloat(agent.latitude);
-                            const lng = parseFloat(agent.longitude);
-                            if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
-                              smoothFlyTo(lat, lng, 17);
-                              const marker = responderMarkersRef.current.get(agent.id);
-                              if (marker) marker.openTooltip();
-                            } else {
-                              alert(`📍 ${agent.name} is currently ON-DUTY.\nWaiting for GPS coordinates update from the device.`);
-                            }
-                          }}
-                          style={{
-                            padding: '6px 12px',
-                            background: 'rgba(56, 189, 248, 0.15)',
-                            border: '1px solid rgba(56, 189, 248, 0.4)',
-                            color: '#38BDF8',
-                            borderRadius: '6px',
-                            fontSize: '11px',
-                            fontWeight: '700',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                        >
-                          <MapPin size={12} /> View on Map
-                        </button>
+                        {(() => {
+                          const hasCoords = !isNaN(parseFloat(agent.latitude)) && !isNaN(parseFloat(agent.longitude)) && parseFloat(agent.latitude) !== 0 && parseFloat(agent.longitude) !== 0;
+                          return (
+                            <button
+                              onClick={() => {
+                                setShowAgentsListModal(false);
+                                if (hasCoords) {
+                                  smoothFlyTo(parseFloat(agent.latitude), parseFloat(agent.longitude), 17);
+                                  const marker = responderMarkersRef.current.get(agent.id);
+                                  if (marker) marker.openTooltip();
+                                } else {
+                                  alert(`📍 ${agent.name} is currently ON-DUTY, but GPS coordinates have not reached the server yet.\n\nPlease check on Agent's phone:\n1. Open the DEVI Duty link/app on mobile.\n2. Tap "ALLOW" when browser/app asks for Location permission.\n3. Make sure GPS / Location is turned ON in Phone Quick Settings.`);
+                                }
+                              }}
+                              style={{
+                                padding: '6px 12px',
+                                background: hasCoords ? 'rgba(56, 189, 248, 0.2)' : 'rgba(100, 116, 139, 0.15)',
+                                border: `1px solid ${hasCoords ? 'rgba(56, 189, 248, 0.5)' : 'rgba(100, 116, 139, 0.3)'}`,
+                                color: hasCoords ? '#38BDF8' : '#94A3B8',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                              title={hasCoords ? 'View live location on map' : 'Waiting for GPS from agent phone'}
+                            >
+                              <MapPin size={12} /> {hasCoords ? 'View on Map' : 'Waiting GPS...'}
+                            </button>
+                          );
+                        })()}
                         {isOnDuty ? (
                           <button
                             onClick={() => handleEndAgentDuty(agent.id, agent.name)}
