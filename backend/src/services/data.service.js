@@ -1035,6 +1035,84 @@ export const DataService = {
     return list.find(a => a.id === agentId || a.id.toString() === agentId.toString());
   },
 
+  // --- Unique 1-Time Device-Locked Agent Invitations ---
+  createAgentInvite({ agentId, token, phone, name, area, pin }) {
+    if (!global._deviAgentInvites) global._deviAgentInvites = new Map();
+    const invite = {
+      agentId,
+      token,
+      phone,
+      name,
+      area,
+      pin,
+      claimed: false,
+      claimedAt: null,
+      deviceFingerprint: null,
+      status: 'PENDING',
+      createdAt: new Date().toISOString(),
+    };
+    global._deviAgentInvites.set(token, invite);
+    console.log(`🎫 [AGENT 1-TIME INVITE CREATED] Token: ${token}, Agent: ${name} (${phone})`);
+    return invite;
+  },
+
+  getAgentInvite(token) {
+    if (!token || !global._deviAgentInvites) return null;
+    return global._deviAgentInvites.get(token) || null;
+  },
+
+  async respondToAgentInvite(token, action, deviceFingerprint = null) {
+    if (!token || !global._deviAgentInvites) {
+      return { success: false, reason: 'NOT_FOUND', message: 'Invite token not found or expired.' };
+    }
+    const invite = global._deviAgentInvites.get(token);
+    if (!invite) {
+      return { success: false, reason: 'NOT_FOUND', message: 'Invite token not found or expired.' };
+    }
+    if (invite.claimed) {
+      return { success: false, reason: 'ALREADY_CLAIMED', message: 'This invitation has already been claimed on another device. For security, links cannot be shared or reused.' };
+    }
+    if (invite.status === 'REJECTED') {
+      return { success: false, reason: 'REJECTED', message: 'This duty assignment was previously declined.' };
+    }
+
+    if (action === 'APPROVE') {
+      invite.claimed = true;
+      invite.claimedAt = new Date().toISOString();
+      invite.deviceFingerprint = deviceFingerprint;
+      invite.status = 'ACCEPTED';
+
+      try {
+        await supabase.from('agents').update({ duty_status: 'ON_DUTY', is_live: true, is_active: true }).eq('id', invite.agentId);
+      } catch (_) {}
+
+      const agent = respondersList.find(a => a.id === invite.agentId);
+      if (agent) {
+        agent.duty_status = 'ON_DUTY';
+        agent.status = 'ON_DUTY';
+        agent.is_live = true;
+      }
+
+      console.log(`✅ [AGENT INVITE ACCEPTED & DEVICE LOCKED] Agent: ${invite.name}, Token: ${token}`);
+      return { success: true, invite, agent: agent || { id: invite.agentId, name: invite.name, phone: invite.phone, area: invite.area } };
+    } else {
+      invite.status = 'REJECTED';
+      try {
+        await supabase.from('agents').update({ duty_status: 'REJECTED', is_active: false }).eq('id', invite.agentId);
+      } catch (_) {}
+
+      const agent = respondersList.find(a => a.id === invite.agentId);
+      if (agent) {
+        agent.duty_status = 'REJECTED';
+        agent.status = 'REJECTED';
+        agent.is_active = false;
+      }
+
+      console.log(`❌ [AGENT INVITE REJECTED] Agent: ${invite.name}, Token: ${token}`);
+      return { success: true, invite, rejected: true };
+    }
+  },
+
   async updateAgentLiveLocation(agentId, { latitude, longitude, heading = null, speed = null }) {
     if (!agentId || !latitude || !longitude) return null;
     const lat = parseFloat(latitude);

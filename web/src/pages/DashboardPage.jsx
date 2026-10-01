@@ -18,11 +18,17 @@ export default function DashboardPage() {
   const [operatorNote, setOperatorNote] = useState('');
   const [isSavingResponder, setIsSavingResponder] = useState(false);
 
-  // Responder Form
+  // Responder Form & OTP Verification
   const [respName, setRespName] = useState('');
   const [respPhone, setRespPhone] = useState('');
   const [respPin, setRespPin] = useState('7421');
   const [respArea, setRespArea] = useState('');
+  const [respVehicle, setRespVehicle] = useState('Patrol Bike');
+  const [addAgentStep, setAddAgentStep] = useState(1); // 1 = Details, 2 = OTP Verification
+  const [respOtp, setRespOtp] = useState('');
+  const [devOtp, setDevOtp] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [createdInviteInfo, setCreatedInviteInfo] = useState(null);
 
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -486,26 +492,80 @@ export default function DashboardPage() {
     } catch (_) {}
   };
 
-  // Save Responder Modal
-  const handleSaveNewResponder = async (e) => {
-    e.preventDefault();
-    setIsSavingResponder(true);
+  // Send Verification OTP to Agent's Phone
+  const handleSendOtp = async (e) => {
+    if (e) e.preventDefault();
+    const clean = respPhone.replace(/\D/g, '').slice(-10);
+    if (!clean || clean.length !== 10) {
+      alert('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    if (!respName.trim()) {
+      alert('Please enter the agent name');
+      return;
+    }
+    setIsSendingOtp(true);
     try {
-      const res = await fetch(apiUrl('/api/dashboard/agents'), {
+      const res = await fetch(apiUrl('/api/dashboard/agents/send-otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: respName, phone: respPhone, pin: respPin, area: respArea }),
+        body: JSON.stringify({ phone: clean, name: respName.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDevOtp(data.devOtp || '');
+        setAddAgentStep(2);
+      } else {
+        alert(data.message || 'Failed to dispatch verification OTP');
+      }
+    } catch (err) {
+      alert('Network connection error: ' + err.message);
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  // Verify OTP & Save Responder with Single-Use Invite Token
+  const handleVerifyAndSaveResponder = async (e) => {
+    if (e) e.preventDefault();
+    if (!respOtp || respOtp.trim().length !== 6) {
+      alert('Please enter the 6-digit verification code');
+      return;
+    }
+    setIsSavingResponder(true);
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/agents/verify-and-create'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: respName.trim(),
+          phone: respPhone.trim(),
+          pin: respPin.trim(),
+          area: respArea.trim(),
+          vehicle: respVehicle,
+          otp: respOtp.trim(),
+        }),
       });
       const data = await res.json();
       if (data.success) {
         setShowAddModal(false);
+        setAddAgentStep(1);
+        setRespOtp('');
+        setDevOtp('');
         fetchResponders();
+        setCreatedInviteInfo({
+          name: data.agent?.name || respName,
+          phone: data.agent?.phone || respPhone,
+          pin: data.plainPin || respPin,
+          dutyUrl: data.dutyUrl,
+          waMeUrl: data.waMeUrl,
+          inviteToken: data.inviteToken,
+        });
         setRespName('');
         setRespPhone('');
         setRespArea('');
-        alert(`✅ Responder ${respName} Registered!\nSecurity PIN: ${respPin}\nCredentials dispatched via WhatsApp.`);
       } else {
-        alert('Failed: ' + (data.message || 'Error'));
+        alert('Verification failed: ' + (data.message || 'Invalid OTP code'));
       }
     } catch (err) {
       alert('Network error: ' + err.message);
@@ -1136,46 +1196,240 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ADD AGENT MODAL */}
+      {/* ADD AGENT MODAL WITH TWO-STEP OTP VERIFICATION */}
       {showAddModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: '400px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', fontSize: '15px', fontWeight: '700' }}>
-              <span>+ Add Response Agent</span>
-              <button onClick={() => setShowAddModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '440px', maxWidth: '94vw', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.6)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.2)', border: '1px solid #38BDF8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+                  🛡️
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>
+                    {addAgentStep === 1 ? 'Add & Verify Responder' : 'Confirm Phone OTP'}
+                  </h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                    {addAgentStep === 1 ? 'Step 1 of 2: Responder Details' : 'Step 2 of 2: Authentic Mobile Number Check'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => { setShowAddModal(false); setAddAgentStep(1); setRespOtp(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
             </div>
 
-            <form onSubmit={handleSaveNewResponder}>
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Agent Name</label>
-                <input required type="text" placeholder="e.g. Karthi" value={respName} onChange={(e) => setRespName(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', color: '#FFF', outline: 'none' }} />
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Mobile Number</label>
-                <input required type="tel" placeholder="e.g. 9876543210" value={respPhone} onChange={(e) => setRespPhone(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', color: '#FFF', outline: 'none' }} />
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', textTransform: 'uppercase' }}>4-Digit Security PIN</label>
-                  <button type="button" onClick={() => setRespPin(Math.floor(1000 + Math.random() * 9000).toString())} style={{ background: 'none', border: 'none', color: '#38BDF8', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>🎲 Auto-Generate</button>
+            {addAgentStep === 1 ? (
+              /* STEP 1: Details & Send OTP */
+              <form onSubmit={handleSendOtp}>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Responder Name</label>
+                  <input required type="text" placeholder="e.g. Karthik" value={respName} onChange={(e) => setRespName(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '9px 12px', fontSize: '13px', color: '#FFF', outline: 'none' }} />
                 </div>
-                <input required type="text" maxLength={6} value={respPin} onChange={(e) => setRespPin(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '16px', letterSpacing: '4px', fontWeight: '700', textAlign: 'center', color: '#38BDF8', outline: 'none' }} />
-              </div>
 
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Patrol Area / Station</label>
-                <input required type="text" placeholder="e.g. Central Bus Stand" value={respArea} onChange={(e) => setRespArea(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', color: '#FFF', outline: 'none' }} />
-              </div>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Mobile Number (10 Digits)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <span style={{ padding: '0 10px', fontSize: '13px', fontWeight: '700', color: '#38BDF8', background: 'rgba(56, 189, 248, 0.1)', borderRight: '1px solid var(--border)' }}>+91</span>
+                    <input required type="tel" maxLength={10} placeholder="e.g. 9876543210" value={respPhone} onChange={(e) => setRespPhone(e.target.value)} style={{ width: '100%', background: 'transparent', border: 'none', padding: '9px 12px', fontSize: '14px', fontWeight: '700', color: '#FFF', outline: 'none' }} />
+                  </div>
+                </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '14px' }}>
-                <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '8px 14px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>Cancel</button>
-                <button disabled={isSavingResponder} type="submit" style={{ padding: '8px 14px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
-                  {isSavingResponder ? '⏳ Saving...' : 'Save & Dispatch'}
-                </button>
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', textTransform: 'uppercase' }}>4-Digit Security PIN</label>
+                    <button type="button" onClick={() => setRespPin(Math.floor(1000 + Math.random() * 9000).toString())} style={{ background: 'none', border: 'none', color: '#38BDF8', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>🎲 Auto-Generate</button>
+                  </div>
+                  <input required type="text" maxLength={6} value={respPin} onChange={(e) => setRespPin(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px', fontSize: '16px', letterSpacing: '4px', fontWeight: '800', textAlign: 'center', color: '#38BDF8', outline: 'none' }} />
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Patrol Area / Station</label>
+                  <input required type="text" placeholder="e.g. Central Sector / Sivakasi" value={respArea} onChange={(e) => setRespArea(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '9px 12px', fontSize: '13px', color: '#FFF', outline: 'none' }} />
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Patrol Unit Vehicle</label>
+                  <select value={respVehicle} onChange={(e) => setRespVehicle(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '9px 12px', fontSize: '13px', color: '#FFF', outline: 'none' }}>
+                    <option value="Patrol Bike">🏍️ Rapid Response Patrol Bike</option>
+                    <option value="Patrol Car">🚓 Emergency Safety Patrol Car</option>
+                    <option value="Quick Response Team">🛡️ Tactical Response Unit</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '9px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+                  <button disabled={isSendingOtp} type="submit" style={{ padding: '9px 18px', background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', border: 'none', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {isSendingOtp ? '⏳ Sending OTP...' : 'Send Verification OTP 📲'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* STEP 2: Confirm OTP & Issue 1-Time UUID Invite */
+              <form onSubmit={handleVerifyAndSaveResponder}>
+                <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '20px' }}>📲</span>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: '800', color: '#FFF' }}>Verification Code Sent!</div>
+                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>Sent to <strong style={{ color: '#38BDF8' }}>+91 {respPhone}</strong>. Ask responder for the 6-digit code.</div>
+                  </div>
+                </div>
+
+                {devOtp && (
+                  <div
+                    onClick={() => setRespOtp(devOtp)}
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      border: '1px dashed #10B981',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      marginBottom: '14px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: '#34D399', fontWeight: '700' }}>💡 Demo/Testing Code: <strong>{devOtp}</strong></span>
+                    <span style={{ fontSize: '10px', color: '#6EE7B7', textDecoration: 'underline' }}>Auto-Fill</span>
+                  </div>
+                )}
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '6px', textTransform: 'uppercase', textAlign: 'center' }}>
+                    Enter 6-Digit Verification Code
+                  </label>
+                  <input
+                    required
+                    autoFocus
+                    type="text"
+                    maxLength={6}
+                    placeholder="• • • • • •"
+                    value={respOtp}
+                    onChange={(e) => setRespOtp(e.target.value.replace(/\D/g, ''))}
+                    style={{
+                      width: '100%',
+                      background: 'var(--bg-dark)',
+                      border: '2px solid #38BDF8',
+                      borderRadius: '10px',
+                      padding: '12px',
+                      fontSize: '24px',
+                      fontWeight: '900',
+                      letterSpacing: '10px',
+                      textAlign: 'center',
+                      color: '#FFF',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAddAgentStep(1)}
+                    style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                  >
+                    ← Change Phone
+                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={handleSendOtp}
+                      style={{ padding: '8px 12px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#94A3B8', borderRadius: '8px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                    >
+                      Resend OTP
+                    </button>
+                    <button
+                      disabled={isSavingResponder}
+                      type="submit"
+                      style={{
+                        padding: '9px 18px',
+                        background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                        border: 'none',
+                        color: '#FFF',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: '800',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      {isSavingResponder ? '⏳ Verifying...' : 'Verify & Dispatch 🚀'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* CREATED INVITE SUCCESS MODAL (SINGLE-USE UUID LINK DISPLAY) */}
+      {createdInviteInfo && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '480px', maxWidth: '94vw', background: 'var(--bg-surface)', border: '1px solid #10B981', borderRadius: '18px', padding: '24px', boxShadow: '0 25px 60px rgba(16,185,129,0.25)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+              <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.2)', border: '2px solid #10B981', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', marginBottom: '8px' }}>
+                ✅
               </div>
-            </form>
+              <h3 style={{ fontSize: '18px', fontWeight: '900', color: '#FFF' }}>Responder Phone Verified!</h3>
+              <p style={{ fontSize: '12px', color: '#94A3B8' }}>{createdInviteInfo.name} (+91 {createdInviteInfo.phone}) registered & 1-time invite created.</p>
+            </div>
+
+            <div style={{ background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: '700' }}>SECURITY PIN:</span>
+                <span style={{ fontSize: '13px', color: '#38BDF8', fontWeight: '900', letterSpacing: '2px' }}>{createdInviteInfo.pin}</span>
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: '700', display: 'block', marginBottom: '4px' }}>1-TIME ACTIVATION LINK (DEVICE LOCKED):</span>
+                <div style={{ fontSize: '11px', color: '#E2E8F0', background: 'rgba(0,0,0,0.4)', padding: '6px 10px', borderRadius: '6px', wordBreak: 'break-all', fontFamily: 'JetBrains Mono, monospace' }}>
+                  {createdInviteInfo.dutyUrl}
+                </div>
+              </div>
+              <div style={{ fontSize: '10.5px', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span>🔒</span> Link is locked to 1 device upon acceptance and cannot be shared.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              {createdInviteInfo.waMeUrl && (
+                <a
+                  href={createdInviteInfo.waMeUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    padding: '10px 16px',
+                    background: '#25D366',
+                    color: '#FFF',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '800',
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  💬 Open in WhatsApp
+                </a>
+              )}
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(createdInviteInfo.dutyUrl);
+                  alert('1-Time Invite Link copied to clipboard!');
+                }}
+                style={{ padding: '10px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#38BDF8', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+              >
+                📋 Copy Link
+              </button>
+              <button
+                onClick={() => setCreatedInviteInfo(null)}
+                style={{ padding: '10px 16px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
