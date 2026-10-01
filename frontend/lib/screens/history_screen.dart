@@ -290,7 +290,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
-                                                    '🚨 Helper is on the way: ${item['assignedAgent'] ?? 'Safety Responder'}',
+                                                    '🚨 Helper is on the way: ' + (item['assignedAgent'] ?? 'Safety Responder'),
                                                     style: const TextStyle(
                                                       fontSize: 12.5,
                                                       fontWeight: FontWeight.w700,

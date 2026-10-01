@@ -24,12 +24,9 @@ class LocationResult {
   });
 }
 
+class LocationService {
   static StreamSubscription<Position>? _positionStreamSub;
   static String? _activeTrackingAlertId;
-
-  /// Returns the current active emergency alert ID if live tracking is ongoing
-  static String? get activeAlertId => _activeTrackingAlertId;
-  static bool get isTracking => _activeTrackingAlertId != null;
 
   /// Checks permission and retrieves current GPS coordinates.
   /// Includes a strict timeout so SOS trigger is never blocked or delayed.

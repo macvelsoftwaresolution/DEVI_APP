@@ -555,7 +555,7 @@ class _GuestScreenState extends State<GuestScreen> {
                                   color: AppColors.primaryNavy,
                                   size: 22,
                                 ),
-                                if (LocationService.activeAlertId != null || _isEmergencyActive)
+                                if (_activeAlertId != null)
                                   Positioned(
                                     top: -1,
                                     right: -1,

@@ -665,7 +665,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                   color: AppColors.primaryNavy,
                                   size: 22,
                                 ),
-                                if (LocationService.activeAlertId != null || _isEmergencyActive)
+                                if (_activeAlertId != null)
                                   Positioned(
                                     top: -1,
                                     right: -1,
