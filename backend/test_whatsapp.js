@@ -15,7 +15,7 @@ if (!process.env.WHATSAPP_PHONE_NUMBER_ID || !process.env.WHATSAPP_ACCESS_TOKEN)
   process.exit(1);
 }
 
-const fakeTrackingUrl = 'https://school.macvelsoftware.com/track/test-alert-123';
+const fakeTrackingUrl = 'https://devi.macvelsoftware.com/track/test-alert-123';
 const testCoords = { latitude: 13.0827, longitude: 80.2707, location: 'Chennai Central, Tamil Nadu' };
 
 console.log('\nSending test emergency alert message with Google Maps Hyperlink...');
