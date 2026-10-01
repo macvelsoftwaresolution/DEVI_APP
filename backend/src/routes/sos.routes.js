@@ -35,11 +35,18 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       userPhone,
     });
 
-    const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
+    const getWebBaseUrl = () => {
+      if (process.env.WEB_BASE_URL) return process.env.WEB_BASE_URL;
+      if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL;
+      const host = req.get('host') || 'localhost:5005';
+      const cleanHost = host.replace(/^devi-api\./, 'devi.');
+      return `${req.protocol}://${cleanHost}`;
+    };
+
+    const baseUrl = getWebBaseUrl();
 
     if (existingSession) {
-      const trackingUrl = `${protocol}://${host}/track/${existingSession.id}`;
+      const trackingUrl = `${baseUrl}/track/${existingSession.id}`;
       console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${userPhone}, Key: ${finalIdempotencyKey || 'N/A'}. 🛑 Skipping duplicate SMS broadcast.`);
 
       return res.status(200).json({
@@ -64,7 +71,6 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       capturedAt: captured_at,
     });
 
-    const baseUrl = process.env.PUBLIC_BASE_URL || `${protocol}://${host}`;
     const trackingUrl = `${baseUrl}/track/${alert.id}`;
     console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
 
