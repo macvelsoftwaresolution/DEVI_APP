@@ -1309,13 +1309,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div style={{ marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                    <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', textTransform: 'uppercase' }}>4-Digit Security PIN</label>
-                    <button type="button" onClick={() => setRespPin(Math.floor(1000 + Math.random() * 9000).toString())} style={{ background: 'none', border: 'none', color: '#38BDF8', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>🎲 Auto-Generate</button>
-                  </div>
-                  <input required type="text" maxLength={6} value={respPin} onChange={(e) => setRespPin(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px', fontSize: '16px', letterSpacing: '4px', fontWeight: '800', textAlign: 'center', color: '#38BDF8', outline: 'none' }} />
-                </div>
+
 
                 <div style={{ marginBottom: '12px' }}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Patrol Area / Station</label>
