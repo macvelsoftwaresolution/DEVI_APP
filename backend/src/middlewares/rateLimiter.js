@@ -11,14 +11,14 @@ const rateLimitHandler = (message) => (req, res) => {
 
 /**
  * Global rate limiter: Applies to all /api routes
- * 300 requests per 15 minutes per IP
+ * 5000 requests per 15 minutes per IP (supports high-frequency dashboard/radar tracking)
  */
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 5000,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: rateLimitHandler('Too many requests from this IP. Please try again after 15 minutes.'),
+  handler: rateLimitHandler('Too many requests from this IP. Please try again after a few moments.'),
 });
 
 /**
