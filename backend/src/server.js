@@ -79,6 +79,12 @@ app.get('/favicon.ico', (req, res) => {
   res.send(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🛡️</text></svg>`);
 });
 
+// Redirect frontend portal routes to Web Domain (devi.macvelsoftware.com)
+const WEB_PORTAL_URL = process.env.WEB_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://devi.macvelsoftware.com';
+app.get(['/track/:alertId', '/duty', '/dashboard'], (req, res) => {
+  return res.redirect(302, `${WEB_PORTAL_URL}${req.originalUrl}`);
+});
+
 // Root route
 app.get('/', (req, res) => {
   res.json({

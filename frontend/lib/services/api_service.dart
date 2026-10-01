@@ -9,7 +9,7 @@ class ApiService {
   ApiService._internal();
 
   // Live Hostinger VPS Server Subdomain (DEVI Safe Network)
-  static const String liveServerUrl = 'https://devi.macvelsoftware.com/api';
+  static const String liveServerUrl = 'https://devi-api.macvelsoftware.com/api';
 
   // Local development backend URLs (Port 5005)
   static const String localWebUrl = 'http://localhost:5005/api';

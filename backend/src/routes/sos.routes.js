@@ -35,9 +35,15 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       userPhone,
     });
 
-    const host = req.get('host') || 'localhost:5000';
-    const protocol = req.protocol || 'http';
-    const baseUrl = process.env.PUBLIC_BASE_URL || `${protocol}://${host}`;
+    const getWebBaseUrl = () => {
+      if (process.env.WEB_BASE_URL) return process.env.WEB_BASE_URL;
+      if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL;
+      const host = req.get('host') || 'localhost:5005';
+      const cleanHost = host.replace(/^devi-api\./, 'devi.');
+      return `${req.protocol}://${cleanHost}`;
+    };
+
+    const baseUrl = getWebBaseUrl();
 
     if (existingSession) {
       const trackingUrl = `${baseUrl}/track/${existingSession.id}`;
@@ -74,7 +80,7 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       try {
         const u = await DataService.findUserByPhone(userPhone);
         if (u && u.name) victimName = u.name;
-      } catch (_) {}
+      } catch (_) { }
     }
     if (!victimName) victimName = userPhone || 'DEVI User';
 

@@ -107,8 +107,8 @@ router.post('/agents', async (req, res, next) => {
 
     const agent = await DataService.addResponder({ name, phone, pin, area, latitude, longitude, vehicle });
     
-    // Determine public duty portal URL
-    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    // Determine public duty portal URL on web domain
+    const baseUrl = process.env.WEB_BASE_URL || process.env.PUBLIC_BASE_URL || `${req.protocol}://${(req.get('host') || '').replace(/^devi-api\./, 'devi.')}`;
     const dutyUrl = `${baseUrl}/duty`;
 
     // Attempt sending via Meta Cloud WhatsApp API
@@ -243,7 +243,7 @@ router.post('/assign-agent', async (req, res, next) => {
     }
 
     const updated = await DataService.assignAgent(alertId, agentName, agentPhone);
-    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = process.env.WEB_BASE_URL || process.env.PUBLIC_BASE_URL || `${req.protocol}://${(req.get('host') || '').replace(/^devi-api\./, 'devi.')}`;
     const trackingUrl = `${baseUrl}/track/${alertId}`;
 
     // Get victim info from DB or session
