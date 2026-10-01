@@ -316,7 +316,13 @@ export default function DutyPage() {
         },
         (err) => {
           console.warn('GPS error:', err.message);
-          setGpsStatus('Searching...');
+          if (err.code === 1) {
+            setGpsStatus('⚠️ Permission Denied (Allow location in browser)');
+          } else if (err.code === 2) {
+            setGpsStatus('⚠️ GPS Disabled (Turn on GPS in phone settings)');
+          } else {
+            setGpsStatus('Searching GPS...');
+          }
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 4000 }
       );
