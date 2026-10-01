@@ -27,6 +27,7 @@ class _GuestScreenState extends State<GuestScreen> {
   bool _isSoundPlaying = false;
   bool _isSendingSos = false;
   String? _activeIdempotencyKey;
+  String? _activeAlertId;
   Timer? _guestCountdownTimer;
   int _guestCountdownSeconds = 2;
   bool _isGuestCountingDown = false;
@@ -144,6 +145,12 @@ class _GuestScreenState extends State<GuestScreen> {
           ? alertData['id'].toString()
           : DateTime.now().millisecondsSinceEpoch.toString();
       EmergencyMediaService.instance.setAlertId(alertId);
+
+      if (mounted) {
+        setState(() {
+          _activeAlertId = alertId;
+        });
+      }
 
       if (!mounted) return;
 

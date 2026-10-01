@@ -8,7 +8,7 @@ export const API_BASE_URL = isLocal
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 export const WS_URL = isLocal
   ? 'ws://localhost:5005/ws'
-  : `${wsProtocol}//${window.location.host}/ws`;
+  : 'wss://devi.macvelsoftware.com/ws';
 
 export function apiUrl(endpoint) {
   const clean = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;

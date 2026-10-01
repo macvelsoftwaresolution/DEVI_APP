@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { Shield, Radio, Volume2, VolumeX, RefreshCw, Plus, Link2, X, Phone, CheckCircle, Navigation, MapPin } from 'lucide-react';
 import { apiUrl, WS_URL } from '../config/api';
+import { createVictimDivIcon, createResponderDivIcon } from '../utils/mapMarkers';
 
 export default function DashboardPage() {
   const [incidents, setIncidents] = useState([]);
@@ -296,23 +297,21 @@ export default function DashboardPage() {
       const lng = parseFloat(inc.longitude);
       if (isNaN(lat) || isNaN(lng)) return;
 
-      const icon = L.divIcon({
-        className: 'custom-marker',
-        html: '<div class="pulse-dot"></div>',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-      });
+      const isSelected = inc.id === selectedIncidentId;
+      const icon = createVictimDivIcon(inc, isSelected);
 
       if (markersRef.current.has(inc.id)) {
-        markersRef.current.get(inc.id).setLatLng([lat, lng]);
+        const marker = markersRef.current.get(inc.id);
+        marker.setLatLng([lat, lng]);
+        marker.setIcon(icon);
       } else {
         const marker = L.marker([lat, lng], { icon }).addTo(map);
-        marker.bindTooltip(`<strong>${inc.user?.name || 'Victim'}</strong><br/>${inc.status}`, { direction: 'top' });
+        marker.bindTooltip(`<strong>${inc.user?.name || inc.userName || 'Victim'}</strong><br/>Status: <strong>${inc.status}</strong>`, { direction: 'top' });
         marker.on('click', () => setSelectedIncidentId(inc.id));
         markersRef.current.set(inc.id, marker);
       }
     });
-  }, [incidents]);
+  }, [incidents, selectedIncidentId]);
 
   // Update Responder Map Markers
   useEffect(() => {
@@ -338,15 +337,12 @@ export default function DashboardPage() {
       const lng = parseFloat(r.longitude);
       if (isNaN(lat) || isNaN(lng)) return;
 
-      const icon = L.divIcon({
-        className: 'custom-responder-marker',
-        html: '<div class="agent-pin">🛡️</div>',
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-      });
+      const icon = createResponderDivIcon(r, false);
 
       if (responderMarkersRef.current.has(r.id)) {
-        responderMarkersRef.current.get(r.id).setLatLng([lat, lng]);
+        const marker = responderMarkersRef.current.get(r.id);
+        marker.setLatLng([lat, lng]);
+        marker.setIcon(icon);
       } else {
         const marker = L.marker([lat, lng], { icon }).addTo(map);
         marker.bindTooltip(`<strong>${r.name}</strong><br/>📍 ${r.area || 'Sector'}<br/>📞 ${r.phone}`, { direction: 'top' });

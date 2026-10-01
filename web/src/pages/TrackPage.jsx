@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import L from 'leaflet';
 import { Shield, Navigation, Video, Phone } from 'lucide-react';
 import { apiUrl, WS_URL } from '../config/api';
+import { createVictimDivIcon, createGuardianDivIcon } from '../utils/mapMarkers';
 
 export default function TrackPage() {
   const { alertId: paramAlertId } = useParams();
@@ -52,12 +53,11 @@ export default function TrackPage() {
     L.control.layers({ '🛰️ Satellite': satellite, '🗺️ Streets': street }, null, { position: 'topright' }).addTo(map);
 
     // Victim Marker
-    const victimIcon = L.divIcon({
-      className: 'custom-victim-marker',
-      html: '<div class="victim-beacon"></div><div class="victim-pin"></div>',
-      iconSize: [44, 44],
-      iconAnchor: [22, 22],
-    });
+    const victimIcon = createVictimDivIcon({
+      id: alertId,
+      status: status,
+      userName: session?.userName || session?.user?.name || 'Emergency Victim',
+    }, true);
 
     const vMarker = L.marker([victimLocation.lat, victimLocation.lng], { icon: victimIcon }).addTo(map);
     victimMarkerRef.current = vMarker;
@@ -127,7 +127,14 @@ export default function TrackPage() {
     const lng = parseFloat(data.longitude);
     if (!isNaN(lat) && !isNaN(lng)) {
       setVictimLocation({ lat, lng });
-      if (victimMarkerRef.current) victimMarkerRef.current.setLatLng([lat, lng]);
+      if (victimMarkerRef.current) {
+        victimMarkerRef.current.setLatLng([lat, lng]);
+        victimMarkerRef.current.setIcon(createVictimDivIcon({
+          id: alertId,
+          status: data.status || status,
+          userName: data.userName || data.user?.name || 'Emergency Victim',
+        }, true));
+      }
       if (mapInstanceRef.current) mapInstanceRef.current.panTo([lat, lng]);
       if (data.breadcrumbs && data.breadcrumbs.length > 0 && trailRef.current) {
         trailRef.current.setLatLngs(data.breadcrumbs.map((b) => [b.latitude, b.longitude]));
@@ -189,12 +196,7 @@ export default function TrackPage() {
         if (!map) return;
 
         if (!guardianMarkerRef.current) {
-          const gIcon = L.divIcon({
-            className: 'custom-guardian-marker',
-            html: '<div class="guardian-pulse"></div><div class="guardian-dot"></div><div class="guardian-label">YOU</div>',
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
-          });
+          const gIcon = createGuardianDivIcon();
           guardianMarkerRef.current = L.marker([gLat, gLng], { icon: gIcon }).addTo(map);
         } else {
           guardianMarkerRef.current.setLatLng([gLat, gLng]);
