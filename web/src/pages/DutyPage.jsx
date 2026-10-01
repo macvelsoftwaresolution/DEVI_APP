@@ -685,26 +685,9 @@ export default function DutyPage() {
       </form>
     </div>
   ) : (
-        /* AUTHENTICATED PORTAL */
+        /* AUTHENTICATED ON-DUTY ACTIVE SCREEN (MINIMAL & RUNNING IN BACKGROUND) */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {/* RESPONDER PROFILE */}
-          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '46px', height: '46px', background: 'rgba(56, 189, 248, 0.2)', border: '1px solid rgba(56, 189, 248, 0.35)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>
-                👮
-              </div>
-              <div>
-                <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--blue)', textTransform: 'uppercase' }}>ASSIGNED FIELD RESPONDER</div>
-                <div style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>{currentAgent.name}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>📍 {currentAgent.area || 'Patrol Sector'} • 📞 {currentAgent.phone}</div>
-              </div>
-            </div>
-            <div style={{ fontSize: '10px', fontWeight: '800', color: '#34D399', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '6px 10px', borderRadius: '8px' }}>
-              VERIFIED
-            </div>
-          </div>
-
-          {/* ACTIVE SOS DISPATCH CARD */}
+          {/* ACTIVE SOS DISPATCH CARD (POPS UP IF EMERGENCY SOS OCCURS) */}
           {activeAlert && (
             <div style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.22) 0%, rgba(185, 28, 28, 0.18) 100%)', border: '2px solid var(--red)', borderRadius: '18px', padding: '18px 16px', animation: 'pulse 1.4s infinite ease-in-out' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(239, 68, 68, 0.3)', paddingBottom: '10px', marginBottom: '12px' }}>
@@ -788,82 +771,66 @@ export default function DutyPage() {
             </div>
           )}
 
-          {/* STANDBY RADAR CARD */}
+          {/* CLEAN ON-DUTY ACTIVE CONFIRMATION CARD (NO CLUTTERED DASHBOARD) */}
           {!activeAlert && (
-            <div style={{ background: 'var(--bg-surface)', border: '1px dashed var(--border)', borderRadius: '16px', padding: '18px 16px', textAlign: 'center' }}>
-              <div style={{ fontSize: '28px', marginBottom: '6px' }}>📡</div>
-              <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text)' }}>Sector Radar Active — No Live Emergencies</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>When a victim triggers SOS near you, emergency siren & Google Maps direction will pop up here instantly.</div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: '20px', padding: '32px 20px', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
+              <div style={{ width: '74px', height: '74px', margin: '0 auto 16px auto', borderRadius: '50%', background: 'radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, rgba(16, 185, 129, 0.05) 70%)', border: '2px solid #10B981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>
+                🟢
+              </div>
+
+              <div style={{ display: 'inline-block', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10B981', color: '#34D399', fontSize: '11px', fontWeight: '900', letterSpacing: '1px', textTransform: 'uppercase', padding: '4px 14px', borderRadius: '20px', marginBottom: '12px' }}>
+                DUTY APPROVED & ACTIVE
+              </div>
+
+              <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '22px', fontWeight: '900', color: '#FFF', marginBottom: '6px' }}>
+                {currentAgent.name}
+              </h2>
+              <p style={{ fontSize: '13px', color: '#94A3B8', marginBottom: '20px' }}>
+                Patrol Sector: <strong style={{ color: '#FFF' }}>{currentAgent.area || 'Active Zone'}</strong>
+              </p>
+
+              {/* Status info box */}
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '14px', padding: '14px', textAlign: 'left', marginBottom: '20px', fontSize: '12px', lineHeight: '1.7', color: '#CBD5E1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38BDF8', fontWeight: '800', marginBottom: '6px' }}>
+                  <span>📡</span> Background Live Location Streaming:
+                </div>
+                • Live GPS location is active and syncing in the background.<br/>
+                • When an emergency SOS occurs, <strong>you will receive an instant WhatsApp alert with Google Maps navigation!</strong><br/>
+                • You can minimize this browser tab and keep using your phone.
+              </div>
+
+              {/* GPS status pill */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: '12px', padding: '10px 14px', marginBottom: '22px', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text-dim)', fontWeight: '700' }}>GPS Status:</span>
+                <span style={{ color: '#34D399', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', animation: 'pulse 1.5s infinite' }}></span>
+                  {gpsStatus} {lastCoords ? `(${Math.round(lastCoords.acc)}m accuracy)` : ''}
+                </span>
+              </div>
+
+              {/* Exit Duty button */}
+              <button
+                onClick={handleLogout}
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#FCA5A5',
+                  borderRadius: '12px',
+                  fontSize: '13px',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                <LogOut size={15} /> 🛑 Stop Duty & Exit
+              </button>
             </div>
           )}
-
-          {/* BIG DUTY TOGGLE */}
-          <div style={{ textAlign: 'center', padding: '10px 0' }}>
-            <button
-              onClick={toggleDuty}
-              style={{
-                width: '100%',
-                minHeight: '115px',
-                borderRadius: '20px',
-                border: `2px solid ${isOnDuty ? 'rgba(16, 185, 129, 0.8)' : 'rgba(255, 255, 255, 0.12)'}`,
-                background: isOnDuty ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.35) 0%, rgba(5, 150, 105, 0.25) 100%)' : 'rgba(255, 255, 255, 0.04)',
-                color: '#FFF',
-                fontFamily: 'Outfit, sans-serif',
-                fontSize: '20px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                boxShadow: isOnDuty ? '0 0 35px rgba(16, 185, 129, 0.4)' : 'none',
-                transition: 'all 0.3s',
-              }}
-            >
-              <div style={{ fontSize: '26px' }}>{isOnDuty ? '🟢' : '⚪'}</div>
-              <div>{isOnDuty ? 'ON DUTY (ACTIVE)' : 'START ON-DUTY'}</div>
-              <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-muted)' }}>
-                {isOnDuty ? 'Streaming Live GPS to Command Center · Tap to Stop' : 'Tap to start sharing live GPS with Control Room'}
-              </div>
-            </button>
-          </div>
-
-          {/* GPS METRICS */}
-          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '14px 16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <span style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase' }}>LIVE GPS STREAM</span>
-              <span style={{ fontSize: '10px', fontWeight: '800', color: isOnDuty ? '#34D399' : 'var(--text-dim)' }}>{gpsStatus}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div style={{ background: 'var(--bg-darkest)', padding: '8px 10px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>LATITUDE</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: '700' }}>{lastCoords?.lat.toFixed(5) || '--'}</div>
-              </div>
-              <div style={{ background: 'var(--bg-darkest)', padding: '8px 10px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>LONGITUDE</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: '700' }}>{lastCoords?.lng.toFixed(5) || '--'}</div>
-              </div>
-              <div style={{ background: 'var(--bg-darkest)', padding: '8px 10px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>ACCURACY</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: '700' }}>{lastCoords ? `${Math.round(lastCoords.acc)} m` : '--'}</div>
-              </div>
-              <div style={{ background: 'var(--bg-darkest)', padding: '8px 10px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>LAST SYNC</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: '700' }}>{lastCoords?.time || '--'}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* SIMULATE TEST BUTTON */}
-          <div style={{ textAlign: 'center', marginTop: '10px' }}>
-            <button
-              onClick={simulateEmergency}
-              style={{ background: 'transparent', border: '1px dashed rgba(255,255,255,0.15)', color: 'var(--text-dim)', fontSize: '11px', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer' }}
-            >
-              🔔 Test Alert Popup & Audio Siren
-            </button>
-          </div>
         </div>
       )}
     </div>
