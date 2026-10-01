@@ -1700,6 +1700,35 @@ export default function DashboardPage() {
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          onClick={() => {
+                            setShowAgentsListModal(false);
+                            const lat = parseFloat(agent.latitude);
+                            const lng = parseFloat(agent.longitude);
+                            if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                              smoothFlyTo(lat, lng, 17);
+                              const marker = responderMarkersRef.current.get(agent.id);
+                              if (marker) marker.openTooltip();
+                            } else {
+                              alert(`📍 ${agent.name} is currently ON-DUTY.\nWaiting for GPS coordinates update from the device.`);
+                            }
+                          }}
+                          style={{
+                            padding: '6px 12px',
+                            background: 'rgba(56, 189, 248, 0.15)',
+                            border: '1px solid rgba(56, 189, 248, 0.4)',
+                            color: '#38BDF8',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <MapPin size={12} /> View on Map
+                        </button>
                         {isOnDuty ? (
                           <button
                             onClick={() => handleEndAgentDuty(agent.id, agent.name)}
