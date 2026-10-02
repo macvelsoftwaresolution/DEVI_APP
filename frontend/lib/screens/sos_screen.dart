@@ -25,6 +25,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
   bool _isEmergencyActive = false;
   bool _isSendingSos = false;
   String? _activeIdempotencyKey;
+  String? _activeAlertId;
   bool _isSoundPlaying = false;
   Timer? _holdTimer;
   double _holdProgress = 0.0;
@@ -92,6 +93,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       setState(() {
         _isEmergencyActive = false;
         _activeIdempotencyKey = null;
+        _activeAlertId = null;
       });
       LocationService.stopLiveTracking(resolveBackend: true);
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -283,6 +285,12 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
       // 4. Start real-time continuous GPS tracking stream in background
       LocationService.startLiveTracking(alertId: alertId);
+
+      if (mounted) {
+        setState(() {
+          _activeAlertId = alertId;
+        });
+      }
 
       // 5. Emergency Auto-Call to 1st Guardian (Normal SMS completely removed per requirement)
       if (!isDuplicate) {
@@ -657,10 +665,29 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                       Row(
                         children: [
                           IconButton(
-                            icon: const Icon(
-                              Icons.history,
-                              color: AppColors.primaryNavy,
-                              size: 22,
+                            icon: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                const Icon(
+                                  Icons.history,
+                                  color: AppColors.primaryNavy,
+                                  size: 22,
+                                ),
+                                if (_activeAlertId != null)
+                                  Positioned(
+                                    top: -1,
+                                    right: -1,
+                                    child: Container(
+                                      width: 9,
+                                      height: 9,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0284C7),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.white, width: 1.5),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                             onPressed: () {
                               Navigator.of(context).push(

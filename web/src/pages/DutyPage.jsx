@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, LogOut, Navigation, Phone, CheckCircle, Radio, Bell } from 'lucide-react';
+import { Shield, LogOut, Navigation, Phone, CheckCircle, Radio, Bell, Lock, XCircle, AlertTriangle, ArrowRight, Smartphone, MapPin, Download } from 'lucide-react';
 import { apiUrl, WS_URL } from '../config/api';
 
 export default function DutyPage() {
@@ -9,6 +9,19 @@ export default function DutyPage() {
   const [activeAlert, setActiveAlert] = useState(null);
   const [lastCoords, setLastCoords] = useState(null);
   const [gpsStatus, setGpsStatus] = useState('Standby');
+  const [isAcceptingMission, setIsAcceptingMission] = useState(false);
+  const [missionAccepted, setMissionAccepted] = useState(false);
+
+  // Invite Flow State (?invite=<uuid>)
+  const [inviteToken, setInviteToken] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('invite') || params.get('token') || '';
+  });
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteData, setInviteData] = useState(null);
+  const [inviteError, setInviteError] = useState(null);
+  const [inviteDeclined, setInviteDeclined] = useState(false);
+  const [isRespondingInvite, setIsRespondingInvite] = useState(false);
 
   // Login Form
   const [loginPhone, setLoginPhone] = useState('');
@@ -22,6 +35,7 @@ export default function DutyPage() {
   const audioCtxRef = useRef(null);
   const sirenIntervalRef = useRef(null);
   const wakeLockRef = useRef(null);
+  const audioKeepAliveRef = useRef(null);
 
   // Check Auth
   const checkAuth = async () => {
@@ -48,18 +62,79 @@ export default function DutyPage() {
           return;
         }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     localStorage.removeItem('devi_responder_token');
     setCurrentAgent(null);
   };
 
+  // Verify Invite Token on Mount
   useEffect(() => {
-    checkAuth();
+    if (inviteToken) {
+      const verifyInvite = async () => {
+        setInviteLoading(true);
+        setInviteError(null);
+        try {
+          const res = await fetch(apiUrl(`/api/dashboard/duty/invite/${inviteToken}`));
+          const data = await res.json();
+          if (data.success && data.invite) {
+            setInviteData(data.invite);
+          } else {
+            setInviteError(data.message || 'Invitation is invalid or has expired.');
+          }
+        } catch (err) {
+          setInviteError('Failed to connect to verification server. Please check internet.');
+        } finally {
+          setInviteLoading(false);
+        }
+      };
+      verifyInvite();
+    } else {
+      checkAuth();
+    }
     return () => {
       stopDuty();
     };
-  }, []);
+  }, [inviteToken]);
+
+  // Handle Respond to Invite (APPROVE or REJECT)
+  const handleRespondInvite = async (action) => {
+    if (!inviteToken) return;
+    setIsRespondingInvite(true);
+    try {
+      const deviceFingerprint = `${navigator.userAgent}_${screen.width}x${screen.height}`;
+      const res = await fetch(apiUrl('/api/dashboard/duty/invite/respond'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: inviteToken,
+          action,
+          deviceFingerprint,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (action === 'APPROVE') {
+          localStorage.setItem('devi_responder_token', data.token);
+          setAuthToken(data.token);
+          setCurrentAgent(data.agent);
+          setInviteData(null);
+          setInviteToken('');
+          window.history.replaceState({}, document.title, window.location.pathname);
+          startDuty(data.agent.id, data.token);
+        } else {
+          setInviteDeclined(true);
+          setInviteData(null);
+        }
+      } else {
+        alert(data.message || 'Could not process invitation');
+      }
+    } catch (err) {
+      alert('Network error: ' + err.message);
+    } finally {
+      setIsRespondingInvite(false);
+    }
+  };
 
   // Login Handler
   const handleLogin = async (e) => {
@@ -119,7 +194,7 @@ export default function DutyPage() {
         osc.start();
         osc.stop(audioCtxRef.current.currentTime + 0.4);
       }, 800);
-    } catch (_) {}
+    } catch (_) { }
   };
 
   const stopSiren = () => {
@@ -131,12 +206,43 @@ export default function DutyPage() {
 
   const showEmergency = (assignment) => {
     setActiveAlert(assignment);
-    startSiren();
+    if (assignment?.responderStatus === 'EN_ROUTE') {
+      setMissionAccepted(true);
+      stopSiren();
+    } else {
+      setMissionAccepted(false);
+      startSiren();
+    }
   };
 
   const hideEmergency = () => {
     setActiveAlert(null);
+    setMissionAccepted(false);
     stopSiren();
+  };
+
+  const handleAcceptMission = async () => {
+    if (!activeAlert?.id || !currentAgent?.id) return;
+    setIsAcceptingMission(true);
+    try {
+      const res = await fetch(apiUrl(`/api/dashboard/agents/${currentAgent.id}/accept-assignment`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ alertId: activeAlert.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMissionAccepted(true);
+        stopSiren();
+      }
+    } catch (err) {
+      console.warn('Accept mission error:', err);
+    } finally {
+      setIsAcceptingMission(false);
+    }
   };
 
   // Toggle Duty
@@ -165,13 +271,31 @@ export default function DutyPage() {
       }).catch((e) => console.warn('WakeLock error:', e));
     }
 
+    // Start silent audio keep-alive (keeps mobile browser process alive in pocket)
+    try {
+      if (!audioKeepAliveRef.current) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          gain.gain.value = 0.00001; // Silent inaudible carrier wave
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          audioKeepAliveRef.current = { ctx, osc };
+          console.log('📻 Background Audio Keep-Alive active.');
+        }
+      }
+    } catch (_) {}
+
     // Notify backend
     if (agentId) {
       fetch(apiUrl(`/api/dashboard/agents/${agentId}/duty`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ status: 'AVAILABLE' }),
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     // Watch position
@@ -192,7 +316,13 @@ export default function DutyPage() {
         },
         (err) => {
           console.warn('GPS error:', err.message);
-          setGpsStatus('Searching...');
+          if (err.code === 1) {
+            setGpsStatus('⚠️ Permission Denied (Allow location in browser)');
+          } else if (err.code === 2) {
+            setGpsStatus('⚠️ GPS Disabled (Turn on GPS in phone settings)');
+          } else {
+            setGpsStatus('Searching GPS...');
+          }
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 4000 }
       );
@@ -218,7 +348,7 @@ export default function DutyPage() {
           } else {
             hideEmergency();
           }
-        } catch (_) {}
+        } catch (_) { }
       }, 3000);
     }
   };
@@ -229,10 +359,18 @@ export default function DutyPage() {
     setGpsStatus('Standby');
     stopSiren();
 
+    if (audioKeepAliveRef.current) {
+      try {
+        audioKeepAliveRef.current.osc.stop();
+        audioKeepAliveRef.current.ctx.close();
+      } catch (_) {}
+      audioKeepAliveRef.current = null;
+    }
+
     if (wakeLockRef.current) {
       wakeLockRef.current.release().then(() => {
         wakeLockRef.current = null;
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     if (watchIdRef.current) {
@@ -253,7 +391,7 @@ export default function DutyPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'OFF_DUTY' }),
-      }).catch(() => {});
+      }).catch(() => { });
     }
   };
 
@@ -276,7 +414,7 @@ export default function DutyPage() {
           showEmergency(data.assignment);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   };
 
   const handleMarkSafe = () => {
@@ -368,8 +506,169 @@ export default function DutyPage() {
         </div>
       </header>
 
-      {/* LOGIN VIEW */}
-      {!currentAgent ? (
+      {/* 1. INVITE FLOW (ALWAYS DISPLAYED WHEN inviteToken IS PRESENT IN URL) */}
+      {inviteToken ? (
+        <>
+          {/* INVITE FLOW: LOADING STATE */}
+          {inviteLoading && (
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '36px 20px', textAlign: 'center', marginTop: '10px' }}>
+              <div style={{ width: '48px', height: '48px', margin: '0 auto 16px auto', border: '3px solid rgba(56, 189, 248, 0.2)', borderTop: '3px solid #38BDF8', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+              <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '18px', fontWeight: '800', marginBottom: '6px' }}>Verifying Security Credentials...</h2>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Validating your single-use UUID responder authorization token.</p>
+            </div>
+          )}
+
+          {/* INVITE FLOW: ERROR OR ALREADY CLAIMED */}
+          {!inviteLoading && inviteError && (
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '18px', padding: '28px 20px', textAlign: 'center', marginTop: '10px' }}>
+              <div style={{ width: '60px', height: '60px', margin: '0 auto 14px auto', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.35)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Lock size={30} color="#F87171" />
+              </div>
+              <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '20px', fontWeight: '800', color: '#FCA5A5', marginBottom: '8px' }}>Access Restricted / Link Expired</h2>
+              <p style={{ fontSize: '13px', color: '#CBD5E1', lineHeight: '1.6', marginBottom: '18px' }}>
+                {inviteError}
+              </p>
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: '10px', padding: '12px', fontSize: '11px', color: 'var(--text-dim)', textAlign: 'left', marginBottom: '20px' }}>
+                ⚠️ <strong>Security Notice:</strong> DEVI Emergency Responder links are strictly locked to 1 device upon registration and cannot be forwarded, reused, or shared.
+              </div>
+              <button
+                onClick={() => {
+                  setInviteToken('');
+                  setInviteError(null);
+                  window.history.replaceState({}, document.title, window.location.pathname);
+                }}
+                style={{ width: '100%', padding: '12px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#38BDF8', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
+              >
+                ← Sign In with Phone & PIN
+              </button>
+            </div>
+          )}
+
+          {/* INVITE FLOW: DECLINED SCREEN */}
+          {!inviteLoading && inviteDeclined && (
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '28px 20px', textAlign: 'center', marginTop: '10px' }}>
+              <div style={{ width: '60px', height: '60px', margin: '0 auto 14px auto', background: 'rgba(148, 163, 184, 0.15)', border: '1px solid rgba(148, 163, 184, 0.3)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <XCircle size={30} color="#94A3B8" />
+              </div>
+              <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '20px', fontWeight: '800', color: '#FFF', marginBottom: '8px' }}>Duty Assignment Declined</h2>
+              <p style={{ fontSize: '13px', color: '#94A3B8', lineHeight: '1.6', marginBottom: '20px' }}>
+                You have declined this emergency responder duty. The Control Room has been notified to re-route nearby calls to alternate personnel.
+              </p>
+              <button
+                onClick={() => {
+                  setInviteDeclined(false);
+                  setInviteToken('');
+                  window.history.replaceState({}, document.title, window.location.pathname);
+                }}
+                style={{ width: '100%', padding: '12px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '10px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}
+              >
+                Return to Sign In
+              </button>
+            </div>
+          )}
+
+          {/* INVITE FLOW: APPROVE OR REJECT CONSENT SCREEN */}
+          {!inviteLoading && !inviteError && !inviteDeclined && inviteData && (
+            <div style={{ background: 'var(--bg-surface)', border: '2px solid rgba(56, 189, 248, 0.4)', borderRadius: '20px', padding: '24px 20px', textAlign: 'center', marginTop: '10px', boxShadow: '0 15px 40px rgba(0,0,0,0.5)' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38BDF8', fontSize: '10px', fontWeight: '900', letterSpacing: '1px', textTransform: 'uppercase', padding: '5px 12px', borderRadius: '20px', marginBottom: '16px' }}>
+                <Shield size={12} /> OFFICIAL DISPATCH AUTHORIZATION
+              </div>
+
+              <div style={{ width: '64px', height: '64px', margin: '0 auto 12px auto', background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.25), rgba(3, 105, 161, 0.15))', border: '2px solid #0284C7', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '30px' }}>
+                👮
+              </div>
+
+              <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '22px', fontWeight: '900', color: '#FFF', marginBottom: '4px' }}>
+                {inviteData.name}
+              </h2>
+              <p style={{ fontSize: '13px', color: '#94A3B8', marginBottom: '18px' }}>
+                Emergency Safety Responder Invitation
+              </p>
+
+              {/* Details Card */}
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '14px', padding: '14px', textAlign: 'left', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: '700' }}>REGISTERED MOBILE</span>
+                  <span style={{ fontSize: '13px', color: '#38BDF8', fontWeight: '800', fontFamily: 'JetBrains Mono, monospace' }}>+91 {inviteData.phone}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: '700' }}>ASSIGNED PATROL SECTOR</span>
+                  <span style={{ fontSize: '13px', color: '#FFF', fontWeight: '700' }}>📍 {inviteData.area || 'City Safety Zone'}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: '700' }}>SECURITY STATUS</span>
+                  <span style={{ fontSize: '11px', color: '#34D399', fontWeight: '800', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '6px' }}>OTP VERIFIED</span>
+                </div>
+              </div>
+
+              {/* Protocols Notice */}
+              <div style={{ background: 'rgba(2, 132, 199, 0.08)', border: '1px solid rgba(2, 132, 199, 0.25)', borderRadius: '12px', padding: '12px', textAlign: 'left', marginBottom: '22px', fontSize: '11.5px', color: '#CBD5E1', lineHeight: '1.6' }}>
+                <div style={{ fontWeight: '800', color: '#38BDF8', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Lock size={13} /> Anti-Sharing & Security Protocol:
+                </div>
+                • Approving locks this duty access strictly to <strong>this phone/browser</strong>.<br />
+                • <strong>Cannot be forwarded:</strong> Once claimed, this link is permanently invalidated.<br />
+                • High-priority emergency alerts and turn-by-turn routing will activate immediately.
+              </div>
+
+              {/* Action Buttons: APPROVE vs REJECT */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button
+                  disabled={isRespondingInvite}
+                  onClick={() => handleRespondInvite('APPROVE')}
+                  style={{
+                    width: '100%',
+                    padding: '16px',
+                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                    color: '#FFF',
+                    border: 'none',
+                    borderRadius: '14px',
+                    fontFamily: 'Outfit, sans-serif',
+                    fontWeight: '900',
+                    fontSize: '16px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
+                  }}
+                >
+                  <CheckCircle size={20} /> {isRespondingInvite ? 'Activating Duty...' : '✅ APPROVE & START DUTY'}
+                </button>
+
+                <button
+                  disabled={isRespondingInvite}
+                  onClick={() => {
+                    if (confirm('Are you sure you want to decline this duty assignment? The Control Room will be informed.')) {
+                      handleRespondInvite('REJECT');
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: 'transparent',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#F87171',
+                    borderRadius: '12px',
+                    fontFamily: 'Outfit, sans-serif',
+                    fontWeight: '700',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <XCircle size={15} /> ❌ DECLINE / REJECT
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      ) : !currentAgent ? (
+        /* 2. FIELD RESPONDER SIGN IN FORM */
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '26px 20px', textAlign: 'center', marginTop: '10px' }}>
           <div style={{ width: '58px', height: '58px', margin: '0 auto 14px auto', background: 'rgba(2, 132, 199, 0.15)', border: '1px solid rgba(2, 132, 199, 0.3)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px' }}>
             👮
@@ -419,26 +718,9 @@ export default function DutyPage() {
           </form>
         </div>
       ) : (
-        /* AUTHENTICATED PORTAL */
+        /* AUTHENTICATED ON-DUTY ACTIVE SCREEN (MINIMAL & RUNNING IN BACKGROUND) */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {/* RESPONDER PROFILE */}
-          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: '46px', height: '46px', background: 'rgba(56, 189, 248, 0.2)', border: '1px solid rgba(56, 189, 248, 0.35)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>
-                👮
-              </div>
-              <div>
-                <div style={{ fontSize: '10px', fontWeight: '800', color: 'var(--blue)', textTransform: 'uppercase' }}>ASSIGNED FIELD RESPONDER</div>
-                <div style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>{currentAgent.name}</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>📍 {currentAgent.area || 'Patrol Sector'} • 📞 {currentAgent.phone}</div>
-              </div>
-            </div>
-            <div style={{ fontSize: '10px', fontWeight: '800', color: '#34D399', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '6px 10px', borderRadius: '8px' }}>
-              VERIFIED
-            </div>
-          </div>
-
-          {/* ACTIVE SOS DISPATCH CARD */}
+          {/* ACTIVE SOS DISPATCH CARD (POPS UP IF EMERGENCY SOS OCCURS) */}
           {activeAlert && (
             <div style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.22) 0%, rgba(185, 28, 28, 0.18) 100%)', border: '2px solid var(--red)', borderRadius: '18px', padding: '18px 16px', animation: 'pulse 1.4s infinite ease-in-out' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(239, 68, 68, 0.3)', paddingBottom: '10px', marginBottom: '12px' }}>
@@ -453,6 +735,54 @@ export default function DutyPage() {
                 <div><strong>Mobile:</strong> <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--blue)', fontWeight: '700' }}>{activeAlert.userPhone || activeAlert.phone}</span></div>
                 <div><strong>Location:</strong> <span>{activeAlert.location || activeAlert.address || 'GPS Location'}</span></div>
               </div>
+
+              {/* MISSION ACCEPTANCE BUTTON */}
+              {!missionAccepted ? (
+                <button
+                  disabled={isAcceptingMission}
+                  onClick={handleAcceptMission}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                    color: '#FFF',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontFamily: 'Outfit, sans-serif',
+                    fontWeight: '800',
+                    fontSize: '15px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+                    marginBottom: '10px',
+                  }}
+                >
+                  <CheckCircle size={18} /> {isAcceptingMission ? 'Confirming...' : '✅ OK, ACCEPT MISSION (I AM EN ROUTE)'}
+                </button>
+              ) : (
+                <div
+                  style={{
+                    width: '100%',
+                    padding: '11px',
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid #10B981',
+                    borderRadius: '12px',
+                    color: '#34D399',
+                    fontSize: '13px',
+                    fontWeight: '800',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginBottom: '10px',
+                  }}
+                >
+                  <span>✓</span> MISSION ACCEPTED — EN ROUTE TO SCENE
+                </div>
+              )}
 
               <a
                 href={`https://www.google.com/maps/dir/?api=1&destination=${activeAlert.latitude || 13.0827},${activeAlert.longitude || 80.2707}`}
@@ -474,82 +804,96 @@ export default function DutyPage() {
             </div>
           )}
 
-          {/* STANDBY RADAR CARD */}
+          {/* CLEAN ON-DUTY ACTIVE CONFIRMATION CARD (NO CLUTTERED DASHBOARD) */}
           {!activeAlert && (
-            <div style={{ background: 'var(--bg-surface)', border: '1px dashed var(--border)', borderRadius: '16px', padding: '18px 16px', textAlign: 'center' }}>
-              <div style={{ fontSize: '28px', marginBottom: '6px' }}>📡</div>
-              <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text)' }}>Sector Radar Active — No Live Emergencies</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>When a victim triggers SOS near you, emergency siren & Google Maps direction will pop up here instantly.</div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(16, 185, 129, 0.4)', borderRadius: '20px', padding: '32px 20px', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
+              <div style={{ width: '74px', height: '74px', margin: '0 auto 16px auto', borderRadius: '50%', background: 'radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, rgba(16, 185, 129, 0.05) 70%)', border: '2px solid #10B981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>
+                🟢
+              </div>
+
+              <div style={{ display: 'inline-block', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10B981', color: '#34D399', fontSize: '11px', fontWeight: '900', letterSpacing: '1px', textTransform: 'uppercase', padding: '4px 14px', borderRadius: '20px', marginBottom: '12px' }}>
+                DUTY APPROVED & ACTIVE
+              </div>
+
+              <h2 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '22px', fontWeight: '900', color: '#FFF', marginBottom: '6px' }}>
+                {currentAgent.name}
+              </h2>
+              <p style={{ fontSize: '13px', color: '#94A3B8', marginBottom: '20px' }}>
+                Patrol Sector: <strong style={{ color: '#FFF' }}>{currentAgent.area || 'Active Zone'}</strong>
+              </p>
+
+              {/* Status info box */}
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '14px', padding: '14px', textAlign: 'left', marginBottom: '20px', fontSize: '12px', lineHeight: '1.7', color: '#CBD5E1' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38BDF8', fontWeight: '800', marginBottom: '6px' }}>
+                  <span>📡</span> Background Live Location Streaming:
+                </div>
+                • Live GPS location is active and syncing in the background.<br />
+                • When an emergency SOS occurs, <strong>you will receive an instant WhatsApp alert with Google Maps navigation!</strong><br />
+                • You can minimize this browser tab and keep using your phone.
+              </div>
+
+              {/* GPS status pill */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: '12px', padding: '10px 14px', marginBottom: '22px', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text-dim)', fontWeight: '700' }}>GPS Status:</span>
+                <span style={{ color: '#34D399', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', animation: 'pulse 1.5s infinite' }}></span>
+                  {gpsStatus} {lastCoords ? `(${Math.round(lastCoords.acc)}m accuracy)` : ''}
+                </span>
+              </div>
+
+              {/* Download DEVI Responder Mobile APK */}
+              <div style={{ marginBottom: '16px' }}>
+                <a
+                  href="/downloads/devi-responder.apk"
+                  download="DEVI-Responder.apk"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '13px 14px',
+                    background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.22) 0%, rgba(3, 105, 161, 0.18) 100%)',
+                    border: '1px solid #38BDF8',
+                    color: '#38BDF8',
+                    borderRadius: '12px',
+                    fontSize: '13px',
+                    fontWeight: '800',
+                    textDecoration: 'none',
+                    textAlign: 'center',
+                    boxShadow: '0 4px 14px rgba(56, 189, 248, 0.12)',
+                  }}
+                >
+                  <Download size={16} /> 📥 Download DEVI Responder App (APK)
+                </a>
+                <p style={{ fontSize: '10.5px', color: '#94A3B8', marginTop: '6px', textAlign: 'center' }}>
+                  Install on Android for 24/7 locked-in-pocket tracking with persistent notification
+                </p>
+              </div>
+
+              {/* Exit Duty button */}
+              <button
+                onClick={handleLogout}
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#FCA5A5',
+                  borderRadius: '12px',
+                  fontSize: '13px',
+                  fontWeight: '800',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                <LogOut size={15} /> 🛑 Stop Duty & Exit
+              </button>
             </div>
           )}
-
-          {/* BIG DUTY TOGGLE */}
-          <div style={{ textAlign: 'center', padding: '10px 0' }}>
-            <button
-              onClick={toggleDuty}
-              style={{
-                width: '100%',
-                minHeight: '115px',
-                borderRadius: '20px',
-                border: `2px solid ${isOnDuty ? 'rgba(16, 185, 129, 0.8)' : 'rgba(255, 255, 255, 0.12)'}`,
-                background: isOnDuty ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.35) 0%, rgba(5, 150, 105, 0.25) 100%)' : 'rgba(255, 255, 255, 0.04)',
-                color: '#FFF',
-                fontFamily: 'Outfit, sans-serif',
-                fontSize: '20px',
-                fontWeight: '800',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                boxShadow: isOnDuty ? '0 0 35px rgba(16, 185, 129, 0.4)' : 'none',
-                transition: 'all 0.3s',
-              }}
-            >
-              <div style={{ fontSize: '26px' }}>{isOnDuty ? '🟢' : '⚪'}</div>
-              <div>{isOnDuty ? 'ON DUTY (ACTIVE)' : 'START ON-DUTY'}</div>
-              <div style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-muted)' }}>
-                {isOnDuty ? 'Streaming Live GPS to Command Center · Tap to Stop' : 'Tap to start sharing live GPS with Control Room'}
-              </div>
-            </button>
-          </div>
-
-          {/* GPS METRICS */}
-          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '14px 16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <span style={{ fontSize: '10px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase' }}>LIVE GPS STREAM</span>
-              <span style={{ fontSize: '10px', fontWeight: '800', color: isOnDuty ? '#34D399' : 'var(--text-dim)' }}>{gpsStatus}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div style={{ background: 'var(--bg-darkest)', padding: '8px 10px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>LATITUDE</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: '700' }}>{lastCoords?.lat.toFixed(5) || '--'}</div>
-              </div>
-              <div style={{ background: 'var(--bg-darkest)', padding: '8px 10px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>LONGITUDE</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: '700' }}>{lastCoords?.lng.toFixed(5) || '--'}</div>
-              </div>
-              <div style={{ background: 'var(--bg-darkest)', padding: '8px 10px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>ACCURACY</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: '700' }}>{lastCoords ? `${Math.round(lastCoords.acc)} m` : '--'}</div>
-              </div>
-              <div style={{ background: 'var(--bg-darkest)', padding: '8px 10px', borderRadius: '8px' }}>
-                <div style={{ fontSize: '9px', color: 'var(--text-dim)' }}>LAST SYNC</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', fontWeight: '700' }}>{lastCoords?.time || '--'}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* SIMULATE TEST BUTTON */}
-          <div style={{ textAlign: 'center', marginTop: '10px' }}>
-            <button
-              onClick={simulateEmergency}
-              style={{ background: 'transparent', border: '1px dashed rgba(255,255,255,0.15)', color: 'var(--text-dim)', fontSize: '11px', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer' }}
-            >
-              🔔 Test Alert Popup & Audio Siren
-            </button>
-          </div>
         </div>
       )}
     </div>

@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { supabase } from '../config/supabase.js';
 import { hashPin, verifyPin } from '../utils/pin.utils.js';
 
@@ -331,7 +333,7 @@ export const DataService = {
           }
         }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // Provider 2: BigDataCloud Free Client API (Fast Fallback)
     try {
@@ -350,7 +352,7 @@ export const DataService = {
           return result;
         }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     return null;
   },
@@ -495,15 +497,20 @@ export const DataService = {
         const formattedHour = hours % 12 || 12;
         const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
+        const key = alert.id.toString();
+        const liveSession = liveTrackSessions.get(key);
+
         return {
           id: alert.id,
           userId: alert.user_id,
           timestamp: alert.created_at,
           displayTime: `${dateStr}, ${formattedHour}:${minutes} ${ampm}`,
           location: alert.location_address || `GPS: ${alert.latitude}, ${alert.longitude}`,
-          latitude: alert.latitude,
-          longitude: alert.longitude,
-          status: alert.status || 'DISPATCHED',
+          latitude: liveSession?.latitude ?? alert.latitude,
+          longitude: liveSession?.longitude ?? alert.longitude,
+          status: liveSession?.status || alert.status || 'ACTIVE',
+          assignedAgent: liveSession?.assignedAgent || alert.assigned_agent || null,
+          responderStatus: liveSession?.responderStatus || alert.responder_status || (liveSession?.assignedAgent ? 'EN_ROUTE' : null),
           evidenceUrl: alert.evidence_url || alert.audio_url || null,
         };
       });
@@ -563,7 +570,7 @@ export const DataService = {
           status,
         })
         .eq('id', alertId)
-        .then(() => {})
+        .then(() => { })
         .catch((e) => console.error('Supabase live update error:', e));
     } catch (e) {
       // ignore
@@ -638,15 +645,15 @@ export const DataService = {
           .from('sos_history')
           .update({ audio_url: evidenceUrl })
           .eq('id', alertId)
-          .then(() => {})
-          .catch(() => {});
+          .then(() => { })
+          .catch(() => { });
 
         await supabase
           .from('sos_history')
           .update({ evidence_url: evidenceUrl })
           .eq('id', alertId)
-          .then(() => {})
-          .catch(() => {});
+          .then(() => { })
+          .catch(() => { });
       }
     } catch (e) {
       console.error('Error updating evidence/audio URL in Supabase:', e);
@@ -769,6 +776,7 @@ export const DataService = {
           status: liveSession?.status || alert.status || 'DISPATCHED',
           evidenceUrl: alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null,
           assignedAgent: alert.assigned_agent || liveSession?.assignedAgent || null,
+          responderStatus: liveSession?.responderStatus || (alert.assigned_agent ? 'ASSIGNED' : null),
           operatorNotes: alert.operator_notes || liveSession?.operatorNotes || '',
           user: {
             name: user?.full_name || (user?.is_guest ? 'Guest Victim' : 'DEVI User'),
@@ -800,47 +808,132 @@ export const DataService = {
 
     const displayName = agentPhone ? `${agentName} (${agentPhone})` : agentName;
 
-    if (session) {
+    if (!session) {
+      session = {
+        id: key,
+        assignedAgent: displayName,
+        status: 'DISPATCHED',
+        responderStatus: 'ASSIGNED',
+        lastUpdated: new Date().toISOString()
+      };
+    } else {
       session.assignedAgent = displayName;
-      session.status = 'ASSIGNED';
+      session.status = 'DISPATCHED';
+      session.responderStatus = 'ASSIGNED';
       session.lastUpdated = new Date().toISOString();
     }
+    liveTrackSessions.set(key, session);
 
     // Mark responder as ON_MISSION in memory
-    const matched = respondersList.find(r => r.name.toLowerCase().includes(agentName.toLowerCase()) || r.id === agentName);
+    const matched = respondersList.find(r => r.name.toLowerCase().includes(agentName.toLowerCase()) || r.id === agentName || (agentPhone && r.phone === agentPhone));
     if (matched) {
       matched.status = 'ON_MISSION';
+      matched.duty_status = 'DISPATCHED';
+    }
+
+    try {
+      const { error } = await supabase
+        .from('sos_history')
+        .update({
+          assigned_agent: displayName,
+          status: 'DISPATCHED',
+        })
+        .eq('id', alertId);
+
+      if (error && error.code === '42703') {
+        // Fallback if assigned_agent column does not exist yet
+        await supabase
+          .from('sos_history')
+          .update({
+            status: 'DISPATCHED',
+          })
+          .eq('id', alertId);
+      }
+    } catch (e) {
+      console.warn('Note updating assigned_agent in Supabase:', e.message);
+    }
+
+    return session;
+  },
+
+  // --- AGENT ACCEPTS DISPATCH MISSION (Step 8.5) ---
+  async acceptMission(alertId, agentId = null) {
+    if (!alertId) return null;
+    const key = alertId.toString();
+    let session = liveTrackSessions.get(key);
+
+    if (session) {
+      session.status = 'DISPATCHED';
+      session.responderStatus = 'EN_ROUTE';
+      session.lastUpdated = new Date().toISOString();
+    } else {
+      session = {
+        id: key,
+        status: 'DISPATCHED',
+        responderStatus: 'EN_ROUTE',
+        lastUpdated: new Date().toISOString()
+      };
+      liveTrackSessions.set(key, session);
+    }
+
+    if (agentId) {
+      await this.setAgentDutyStatus(agentId, 'DISPATCHED');
     }
 
     try {
       await supabase
         .from('sos_history')
-        .update({
-          assigned_agent: displayName,
-          status: 'ASSIGNED',
-        })
+        .update({ status: 'DISPATCHED' })
         .eq('id', alertId);
-    } catch (e) {
-      console.warn('Note updating assigned_agent in Supabase:', e.message);
-    }
+    } catch (_) { }
 
-    return session || { id: key, assignedAgent: displayName, status: 'ASSIGNED' };
+    return session;
   },
 
   // --- DASHBOARD: RESPONDERS / FIELD AGENTS MANAGEMENT ---
   async getResponders() {
+    const nowTime = Date.now();
     try {
       const { data, error } = await supabase.from('agents').select('*').order('created_at', { ascending: false });
       if (!error && Array.isArray(data)) {
-        return data.map(a => ({
-          ...a,
-          status: a.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (a.duty_status || 'OFF_DUTY')
-        }));
+        return data.map(a => {
+          let dutyStatus = a.duty_status || 'OFF_DUTY';
+          let isLive = a.is_live;
+          if (a.shift_expires_at && dutyStatus === 'ON_DUTY') {
+            const exp = new Date(a.shift_expires_at).getTime();
+            if (nowTime > exp) {
+              dutyStatus = 'COMPLETED';
+              isLive = false;
+            }
+          }
+          return {
+            ...a,
+            duty_status: dutyStatus,
+            is_live: isLive,
+            status: dutyStatus === 'ON_DUTY' ? 'AVAILABLE' : dutyStatus
+          };
+        });
       }
     } catch (e) {
       console.warn('Error reading agents from Supabase:', e.message);
     }
-    return respondersList;
+    return respondersList.map(a => {
+      let dutyStatus = a.duty_status || 'OFF_DUTY';
+      let isLive = a.is_live;
+      if (a.shift_expires_at && dutyStatus === 'ON_DUTY') {
+        const exp = new Date(a.shift_expires_at).getTime();
+        if (nowTime > exp) {
+          dutyStatus = 'COMPLETED';
+          isLive = false;
+        }
+      }
+      return {
+        ...a,
+        duty_status: dutyStatus,
+        is_live: isLive,
+        status: dutyStatus === 'ON_DUTY' ? 'AVAILABLE' : dutyStatus
+      };
+    });
   },
 
   // --- RESPONDER AUTHENTICATION ---
@@ -867,12 +960,12 @@ export const DataService = {
         if (!isMatch) {
           return { success: false, message: 'Invalid 4-digit Security PIN' };
         }
-        return { 
-          success: true, 
-          agent: { 
-            ...data, 
-            status: data.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (data.duty_status || 'OFF_DUTY') 
-          } 
+        return {
+          success: true,
+          agent: {
+            ...data,
+            status: data.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (data.duty_status || 'OFF_DUTY')
+          }
         };
       }
     } catch (e) {
@@ -887,12 +980,12 @@ export const DataService = {
       }
       const isMatch = dynamicAgent.pin_hash ? verifyPin(pin, dynamicAgent.pin_hash) : (dynamicAgent.pin === pin);
       if (isMatch) {
-        return { 
-          success: true, 
-          agent: { 
-            ...dynamicAgent, 
-            status: dynamicAgent.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (dynamicAgent.duty_status || 'OFF_DUTY') 
-          } 
+        return {
+          success: true,
+          agent: {
+            ...dynamicAgent,
+            status: dynamicAgent.duty_status === 'ON_DUTY' ? 'AVAILABLE' : (dynamicAgent.duty_status || 'OFF_DUTY')
+          }
         };
       }
       return { success: false, message: 'Invalid 4-digit Security PIN' };
@@ -920,7 +1013,7 @@ export const DataService = {
       heading: 0,
       speed: 0,
       vehicle: (vehicle || 'Patrol Unit').trim(),
-      duty_status: 'OFF_DUTY',
+      duty_status: 'PENDING_APPROVAL',
       is_live: false,
       is_active: true,
       created_at: new Date().toISOString()
@@ -952,7 +1045,7 @@ export const DataService = {
   async deleteResponder(agentId) {
     try {
       await supabase.from('agents').delete().eq('id', agentId);
-    } catch (_) {}
+    } catch (_) { }
     respondersList = respondersList.filter(a => a.id !== agentId);
     return true;
   },
@@ -972,6 +1065,185 @@ export const DataService = {
     }
     const list = await this.getResponders();
     return list.find(a => a.id === agentId || a.id.toString() === agentId.toString());
+  },
+
+  // --- Admin Configurable Duty Shift & GPS Settings ---
+  getDutySettings() {
+    try {
+      const filePath = path.resolve(process.cwd(), 'duty_settings.json');
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf8');
+        return JSON.parse(raw);
+      }
+    } catch (_) { }
+    return {
+      shiftDurationHours: 8,
+      gpsIntervalSeconds: 10,
+      autoEndDuty: true,
+    };
+  },
+
+  updateDutySettings(settings) {
+    try {
+      const current = this.getDutySettings();
+      const updated = {
+        ...current,
+        shiftDurationHours: settings.shiftDurationHours ? Number(settings.shiftDurationHours) : current.shiftDurationHours,
+        gpsIntervalSeconds: settings.gpsIntervalSeconds ? Number(settings.gpsIntervalSeconds) : current.gpsIntervalSeconds,
+        autoEndDuty: settings.autoEndDuty !== undefined ? Boolean(settings.autoEndDuty) : current.autoEndDuty,
+        updatedAt: new Date().toISOString(),
+      };
+      const filePath = path.resolve(process.cwd(), 'duty_settings.json');
+      fs.writeFileSync(filePath, JSON.stringify(updated, null, 2), 'utf8');
+      console.log(`⚙️ [DUTY SETTINGS UPDATED] Shift: ${updated.shiftDurationHours}h, GPS: ${updated.gpsIntervalSeconds}s`);
+      return updated;
+    } catch (e) {
+      console.error('Error updating duty settings:', e);
+      return this.getDutySettings();
+    }
+  },
+
+  _ensureInvitesMap() {
+    if (!global._deviAgentInvites) {
+      global._deviAgentInvites = new Map();
+      try {
+        const filePath = path.resolve(process.cwd(), 'agent_invites.json');
+        if (fs.existsSync(filePath)) {
+          const raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+          for (const [k, v] of Object.entries(raw)) {
+            global._deviAgentInvites.set(k, v);
+          }
+        }
+      } catch (_) { }
+    }
+    return global._deviAgentInvites;
+  },
+
+  _persistInvites() {
+    try {
+      const map = this._ensureInvitesMap();
+      const obj = {};
+      for (const [k, v] of map.entries()) {
+        obj[k] = v;
+      }
+      const filePath = path.resolve(process.cwd(), 'agent_invites.json');
+      fs.writeFileSync(filePath, JSON.stringify(obj, null, 2), 'utf8');
+    } catch (_) { }
+  },
+
+  // --- Unique 1-Time Device-Locked Agent Invitations ---
+  createAgentInvite({ agentId, token, phone, name, area, pin }) {
+    const map = this._ensureInvitesMap();
+    const invite = {
+      agentId,
+      token,
+      phone,
+      name,
+      area,
+      pin,
+      claimed: false,
+      claimedAt: null,
+      deviceFingerprint: null,
+      status: 'PENDING',
+      createdAt: new Date().toISOString(),
+    };
+    map.set(token, invite);
+    this._persistInvites();
+    console.log(`🎫 [AGENT 1-TIME INVITE CREATED] Token: ${token}, Agent: ${name} (${phone})`);
+    return invite;
+  },
+
+  getAgentInvite(token) {
+    if (!token) return null;
+    const map = this._ensureInvitesMap();
+    return map.get(token) || null;
+  },
+
+  async respondToAgentInvite(token, action, deviceFingerprint = null) {
+    if (!token) {
+      return { success: false, reason: 'NOT_FOUND', message: 'Invite token not found or expired.' };
+    }
+    const map = this._ensureInvitesMap();
+    const invite = map.get(token);
+    if (!invite) {
+      return { success: false, reason: 'NOT_FOUND', message: 'Invite token not found or expired.' };
+    }
+    if (invite.claimed) {
+      return { success: false, reason: 'ALREADY_CLAIMED', message: 'This invitation has already been claimed on another device. For security, links cannot be shared or reused.' };
+    }
+    if (invite.status === 'REJECTED') {
+      return { success: false, reason: 'REJECTED', message: 'This duty assignment was previously declined.' };
+    }
+
+    if (action === 'APPROVE') {
+      const settings = this.getDutySettings();
+      const shiftHours = Number(settings.shiftDurationHours || 8);
+      const dutyStartedAt = new Date().toISOString();
+      const shiftExpiresAt = new Date(Date.now() + shiftHours * 3600 * 1000).toISOString();
+
+      invite.claimed = true;
+      invite.claimedAt = dutyStartedAt;
+      invite.deviceFingerprint = deviceFingerprint;
+      invite.status = 'ACCEPTED';
+      invite.shiftDurationHours = shiftHours;
+      invite.shiftExpiresAt = shiftExpiresAt;
+      this._persistInvites();
+
+      try {
+        await supabase.from('agents').update({
+          duty_status: 'ON_DUTY',
+          is_live: true,
+          is_active: true,
+          duty_started_at: dutyStartedAt,
+          shift_expires_at: shiftExpiresAt,
+        }).eq('id', invite.agentId);
+      } catch (_) { }
+
+      const agent = respondersList.find(a => a.id === invite.agentId);
+      if (agent) {
+        agent.duty_status = 'ON_DUTY';
+        agent.status = 'ON_DUTY';
+        agent.is_live = true;
+        agent.duty_started_at = dutyStartedAt;
+        agent.shift_expires_at = shiftExpiresAt;
+        agent.shift_duration_hours = shiftHours;
+      }
+
+      console.log(`✅ [AGENT INVITE ACCEPTED & SHIFT STARTED] Agent: ${invite.name}, Shift: ${shiftHours}h, Expires: ${shiftExpiresAt}`);
+      return {
+        success: true,
+        invite,
+        shift_expires_at: shiftExpiresAt,
+        shift_duration_hours: shiftHours,
+        gps_interval_seconds: settings.gpsIntervalSeconds || 10,
+        agent: agent || {
+          id: invite.agentId,
+          name: invite.name,
+          phone: invite.phone,
+          area: invite.area,
+          duty_status: 'ON_DUTY',
+          is_live: true,
+          shift_expires_at: shiftExpiresAt,
+          shift_duration_hours: shiftHours,
+        }
+      };
+    } else {
+      invite.status = 'REJECTED';
+      this._persistInvites();
+      try {
+        await supabase.from('agents').update({ duty_status: 'REJECTED', is_active: false }).eq('id', invite.agentId);
+      } catch (_) { }
+
+      const agent = respondersList.find(a => a.id === invite.agentId);
+      if (agent) {
+        agent.duty_status = 'REJECTED';
+        agent.status = 'REJECTED';
+        agent.is_active = false;
+      }
+
+      console.log(`❌ [AGENT INVITE REJECTED] Agent: ${invite.name}, Token: ${token}`);
+      return { success: true, invite, rejected: true };
+    }
   },
 
   async updateAgentLiveLocation(agentId, { latitude, longitude, heading = null, speed = null }) {
@@ -1020,13 +1292,20 @@ export const DataService = {
       agent.status = status;
       agent.is_live = isLive;
       agent.last_seen = nowIso;
+      if (!isLive) {
+        agent.shift_expires_at = null;
+      }
     }
     try {
-      await supabase.from('agents').update({ 
+      const updateData = {
         duty_status: status,
         is_live: isLive,
-        last_seen: nowIso
-      }).eq('id', agentId);
+        last_seen: nowIso,
+      };
+      if (!isLive) {
+        updateData.shift_expires_at = null;
+      }
+      await supabase.from('agents').update(updateData).eq('id', agentId);
     } catch (e) {
       console.error('Error updating duty status in Supabase:', e.message);
     }
@@ -1038,7 +1317,16 @@ export const DataService = {
     if (!agent) return null;
 
     const incidents = await this.getAllIncidentsForDashboard();
-    return incidents.find(i => (i.status === 'ASSIGNED' || i.status === 'ACTIVE') && i.assignedAgent && i.assignedAgent.toLowerCase().includes(agent.name.toLowerCase()));
+    const cleanPhone10 = agent.phone ? agent.phone.toString().replace(/\D/g, '').slice(-10) : '';
+
+    return incidents.find(i => {
+      const isOngoing = i.status === 'ASSIGNED' || i.status === 'ACTIVE' || i.status === 'DISPATCHED';
+      if (!isOngoing || !i.assignedAgent) return false;
+      const assignedLower = i.assignedAgent.toLowerCase();
+      const matchName = agent.name && assignedLower.includes(agent.name.toLowerCase());
+      const matchPhone = cleanPhone10 && assignedLower.includes(cleanPhone10);
+      return matchName || matchPhone;
+    });
   },
 
   // --- DASHBOARD: ADD OPERATOR LOG NOTE (Step 9) ---

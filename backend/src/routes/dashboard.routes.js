@@ -1,9 +1,12 @@
+
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import { DataService } from '../services/data.service.js';
 import { socketService } from '../services/socket.service.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { verifyResponderAuth } from '../middlewares/auth.middleware.js';
+import { supabase } from '../config/supabase.js';
 
 const router = Router();
 
@@ -96,19 +99,92 @@ router.get('/agents', async (req, res, next) => {
   }
 });
 
-// POST add a new field responder/agent (Supports secure PIN & WhatsApp Auto-Dispatch)
-router.post('/agents', async (req, res, next) => {
+// In-memory OTP store for new agent phone verification
+const agentOtpStore = new Map();
+
+// POST /api/dashboard/agents/send-otp - Dispatch 6-digit phone verification OTP
+router.post('/agents/send-otp', async (req, res, next) => {
   try {
-    const { name, phone, pin, area, latitude, longitude, vehicle } = req.body;
+    const { phone, name } = req.body;
+    if (!phone) {
+      return res.status(400).json({ success: false, message: 'Phone number is required' });
+    }
+
+    const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit mobile number' });
+    }
+
+    // Generate 6-digit verification code
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    agentOtpStore.set(cleanPhone, {
+      otp,
+      name: (name || 'Responder').trim(),
+      expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+    });
+
+    console.log(`📱 [AGENT PHONE VERIFICATION OTP] Sent to +91 ${cleanPhone} — Code: ${otp}`);
+
+    // Send OTP via WhatsApp
+    const waResult = await WhatsAppService.sendVerificationOtp(cleanPhone, otp, name);
+
+    res.json({
+      success: true,
+      message: `Verification OTP dispatched to +91 ${cleanPhone}`,
+      phone: cleanPhone,
+      devOtp: otp, // Available for instant testing & demo ease
+      waDispatched: waResult?.success || false,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST add a new field responder/agent (Supports OTP verification, secure PIN & UUID single-use activation)
+router.post(['/agents', '/agents/verify-and-create'], async (req, res, next) => {
+  try {
+    const { name, phone, pin, area, latitude, longitude, vehicle, otp } = req.body;
     if (!name || !phone) {
       return res.status(400).json({ success: false, message: 'Name and phone are required' });
     }
 
-    const agent = await DataService.addResponder({ name, phone, pin, area, latitude, longitude, vehicle });
-    
-    // Determine public duty portal URL
-    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get('host')}`;
-    const dutyUrl = `${baseUrl}/duty`;
+    const cleanPhone = phone.toString().replace(/\D/g, '').slice(-10);
+    if (cleanPhone.length !== 10) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit mobile number' });
+    }
+
+    // Strict Requirement: OTP must be provided and valid
+    if (!otp) {
+      return res.status(400).json({ success: false, message: 'Verification OTP is strictly required to register an agent.' });
+    }
+
+    const stored = agentOtpStore.get(cleanPhone);
+    if (!stored) {
+      return res.status(400).json({ success: false, message: 'OTP has expired or was not requested. Please tap Send OTP.' });
+    }
+    if (stored.otp !== otp.toString().trim()) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP code. Please enter the correct 6-digit code received on WhatsApp.' });
+    }
+    // OTP verified successfully!
+    agentOtpStore.delete(cleanPhone);
+    console.log(`✅ [PHONE NUMBER VERIFIED BY OTP] +91 ${cleanPhone}`);
+
+    const agent = await DataService.addResponder({ name, phone: cleanPhone, pin, area, latitude, longitude, vehicle });
+
+    // Generate Unique 1-Time UUID Token for Device Lock & Single-Use Access
+    const inviteToken = randomUUID();
+    DataService.createAgentInvite({
+      agentId: agent.id,
+      token: inviteToken,
+      phone: agent.phone,
+      name: agent.name,
+      area: agent.area,
+      pin: agent.plainPin,
+    });
+
+    // Determine public duty portal URL on web domain
+    const baseUrl = process.env.WEB_BASE_URL || process.env.PUBLIC_BASE_URL || `${req.protocol}://${(req.get('host') || '').replace(/^devi-api\./, 'devi.')}`;
+    const dutyUrl = `${baseUrl}/duty?invite=${inviteToken}`;
 
     // Attempt sending via Meta Cloud WhatsApp API
     const waResult = await WhatsAppService.sendResponderCredentials(agent.phone, {
@@ -119,28 +195,122 @@ router.post('/agents', async (req, res, next) => {
     });
 
     // Also craft wa.me click-to-chat URL for instant 1-click dispatch from Dashboard
-    let cleanPhone = agent.phone.toString().replace(/\D/g, '');
-    if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
-
+    let fullPhone = '91' + cleanPhone;
     const waText = `🛡️ *DEVI SAFETY NETWORK — RESPONDER ACCESS* 🛡️\n\n` +
       `Hello *${agent.name}*, you have been registered as an Emergency Safety Responder for *${agent.area}*.\n\n` +
-      `📲 *Your Duty Login Portal:*\n${dutyUrl}\n\n` +
+      `📲 *Your 1-Time Secure Duty Portal:*\n${dutyUrl}\n\n` +
       `🔑 *Login Credentials:*\n` +
-      `• Mobile: *${cleanPhone.slice(-10)}*\n` +
+      `• Mobile: *${cleanPhone}*\n` +
       `• 4-Digit Security PIN: *${agent.plainPin}*\n\n` +
-      `Please open the duty link above, sign in, and tap *"START ON-DUTY"* to connect to the live dispatch network.`;
+      `⚠️ *Security Notice:* This activation link is locked to your device and cannot be shared. Open the link to review and accept emergency duty.`;
 
-    const waMeUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(waText)}`;
+    const waMeUrl = `https://wa.me/${fullPhone}?text=${encodeURIComponent(waText)}`;
+
+    // Broadcast new agent to Dashboard via WebSocket
+    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
 
     res.json({
       success: true,
-      message: 'Responder registered successfully with encrypted PIN',
+      message: 'Responder phone verified & registered successfully with 1-time invite token',
       agent,
       plainPin: agent.plainPin,
+      inviteToken,
       dutyUrl,
       waMeUrl,
       waDispatched: waResult?.success || false,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/dashboard/duty/invite/:token - Inspect invite token validity before rendering consent screen
+router.get('/duty/invite/:token', async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const invite = DataService.getAgentInvite(token);
+    if (!invite) {
+      return res.status(404).json({ success: false, reason: 'NOT_FOUND', message: 'Invitation link is invalid or expired.' });
+    }
+    if (invite.claimed) {
+      return res.status(403).json({
+        success: false,
+        reason: 'ALREADY_CLAIMED',
+        message: 'This invitation has already been claimed on another device. For security, responder links cannot be shared or reused.',
+      });
+    }
+    if (invite.status === 'REJECTED') {
+      return res.status(400).json({
+        success: false,
+        reason: 'REJECTED',
+        message: 'This emergency duty assignment was previously declined.',
+      });
+    }
+
+    res.json({
+      success: true,
+      invite: {
+        agentId: invite.agentId,
+        name: invite.name,
+        phone: invite.phone,
+        area: invite.area,
+        createdAt: invite.createdAt,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/dashboard/duty/invite/respond - Agent clicks APPROVE or REJECT on invite screen
+router.post('/duty/invite/respond', async (req, res, next) => {
+  try {
+    const { token, action, deviceFingerprint } = req.body;
+    if (!token || !action) {
+      return res.status(400).json({ success: false, message: 'Token and action are required' });
+    }
+
+    const result = await DataService.respondToAgentInvite(token, action, deviceFingerprint);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    // Broadcast updated agent status to Admin Dashboard live radar
+    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
+
+    if (action === 'APPROVE') {
+      const agent = result.agent;
+      const authToken = jwt.sign(
+        { id: agent.id, role: 'responder', phone: agent.phone, name: agent.name },
+        process.env.JWT_SECRET || 'devi_secret_key_change_in_production',
+        { expiresIn: '30d' }
+      );
+
+      return res.json({
+        success: true,
+        message: 'Duty invitation accepted! You are now ON-DUTY.',
+        token: authToken,
+        shift_expires_at: result.shift_expires_at,
+        shift_duration_hours: result.shift_duration_hours,
+        gps_interval_seconds: result.gps_interval_seconds,
+        agent: {
+          id: agent.id,
+          name: agent.name,
+          phone: agent.phone,
+          area: agent.area,
+          vehicle: agent.vehicle,
+          duty_status: 'ON_DUTY',
+          shift_expires_at: result.shift_expires_at,
+          shift_duration_hours: result.shift_duration_hours,
+        },
+      });
+    } else {
+      return res.json({
+        success: true,
+        rejected: true,
+        message: 'Duty invitation declined. Control Room has been notified.',
+      });
+    }
   } catch (err) {
     next(err);
   }
@@ -170,7 +340,7 @@ router.post('/agents/:id/location', async (req, res, next) => {
     }
 
     const updated = await DataService.updateAgentLiveLocation(id, { latitude, longitude, heading, speed });
-    
+
     // Broadcast agent location to dashboard WebSocket
     socketService.broadcastAgentLocation(id, {
       id,
@@ -196,12 +366,46 @@ router.post('/agents/:id/location', async (req, res, next) => {
   }
 });
 
+// GET duty settings (shift duration, GPS frequency)
+router.get('/settings/duty', async (req, res, next) => {
+  try {
+    const settings = DataService.getDutySettings();
+    res.json({ success: true, settings });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST update duty settings
+router.post('/settings/duty', async (req, res, next) => {
+  try {
+    const { shiftDurationHours, gpsIntervalSeconds, autoEndDuty } = req.body;
+    const updated = DataService.updateDutySettings({ shiftDurationHours, gpsIntervalSeconds, autoEndDuty });
+    res.json({ success: true, settings: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST force end agent duty manually by Admin
+router.post('/agents/:id/end-duty', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const updated = await DataService.setAgentDutyStatus(id, 'OFF_DUTY');
+    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
+    res.json({ success: true, agent: updated, message: 'Agent duty ended successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST toggle agent duty status (ON_DUTY / OFF_DUTY)
 router.post('/agents/:id/duty', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
     const updated = await DataService.setAgentDutyStatus(id, status || 'ON_DUTY');
+    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
     res.json({
       success: true,
       agent: updated,
@@ -242,14 +446,91 @@ router.post('/assign-agent', async (req, res, next) => {
     }
 
     const updated = await DataService.assignAgent(alertId, agentName, agentPhone);
-    const trackingUrl = `${req.protocol}://${req.get('host')}/track/${alertId}`;
+    const baseUrl = process.env.WEB_BASE_URL || process.env.PUBLIC_BASE_URL || `${req.protocol}://${(req.get('host') || '').replace(/^devi-api\./, 'devi.')}`;
+    const trackingUrl = `${baseUrl}/track/${alertId}`;
+
+    // Get victim info from DB or session
+    let victimName = 'DEVI Victim';
+    let lat = null;
+    let lng = null;
+    let locStr = null;
+
+    if (updated?.user?.name || updated?.userName) {
+      victimName = updated.user?.name || updated.userName;
+      lat = updated.latitude;
+      lng = updated.longitude;
+      locStr = updated.location;
+    } else {
+      try {
+        const { data: sosRow } = await supabase.from('sos_history').select('*').eq('id', alertId).maybeSingle();
+        if (sosRow) {
+          victimName = sosRow.victim_name || sosRow.user_name || 'DEVI User';
+          lat = sosRow.latitude;
+          lng = sosRow.longitude;
+          locStr = sosRow.address || sosRow.location;
+        }
+      } catch (_) { }
+    }
+
+    // DISPATCH OFFICIAL META WHATSAPP ALERT (devi_safety) TO THE ASSIGNED AGENT!
+    let waDispatched = false;
+    if (agentPhone) {
+      const waRes = await WhatsAppService.sendEmergencyAlert(
+        agentPhone,
+        trackingUrl,
+        victimName,
+        { latitude: lat, longitude: lng, location: locStr }
+      );
+      waDispatched = waRes?.success || false;
+      console.log(`🚨 [OFFICIAL META SOS DISPATCHED TO AGENT: ${agentName}] Phone: ${agentPhone}, Status: ${waDispatched}`);
+    }
+
+    // Broadcast incident assigned to dashboard WebSocket for instant UI update
+    socketService.broadcastToRoom('dashboard', {
+      type: 'incident:assigned',
+      alertId,
+      assignedAgent: updated?.assignedAgent || (agentPhone ? `${agentName} (${agentPhone})` : agentName),
+      status: 'DISPATCHED',
+      responderStatus: 'ASSIGNED',
+    });
 
     res.json({
       success: true,
-      message: `Responder ${agentName} assigned to incident #${alertId}`,
+      message: `Emergency Alert dispatched via official Meta WhatsApp (+91 90806 85175) to ${agentName}`,
       session: updated,
       trackingUrl,
+      waDispatched,
       dispatchText: `🚨 DEVI EMERGENCY ALERT: Assistance needed! Live Tracking: ${trackingUrl}`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST field responder accepts mission (Step 8.5 - En Route confirmation)
+router.post(['/agents/:id/accept-assignment', '/agents/accept-assignment'], async (req, res, next) => {
+  try {
+    const targetAgentId = req.params.id || req.body.agentId;
+    const targetAlertId = req.body.alertId || req.params.alertId;
+    if (!targetAlertId) {
+      return res.status(400).json({ success: false, message: 'alertId is required' });
+    }
+
+    const session = await DataService.acceptMission(targetAlertId, targetAgentId);
+
+    // Broadcast instant update to Command Dashboard
+    socketService.broadcastToRoom('dashboard', {
+      type: 'incident:en_route',
+      alertId: targetAlertId,
+      agentId: targetAgentId,
+      status: 'DISPATCHED',
+      responderStatus: 'EN_ROUTE',
+    });
+
+    res.json({
+      success: true,
+      message: 'Mission accepted. You are marked as EN ROUTE.',
+      session,
     });
   } catch (err) {
     next(err);

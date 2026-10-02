@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'api_service.dart';
 import 'socket_service.dart';
 
@@ -205,5 +207,159 @@ class LocationService {
     }
 
     _activeTrackingAlertId = null;
+  }
+
+  // =========================================================================
+  // FIELD RESPONDER DUTY: 24/7 FOREGROUND SERVICE WITH PERSISTENT NOTIFICATION
+  // "🛡️ DEVI Responder: Live Duty Active" (STAYS ALIVE WHEN PHONE IS LOCKED)
+  // =========================================================================
+  static StreamSubscription<Position>? _responderDutyStreamSub;
+  static Timer? _responderShiftTimer;
+  static bool get isResponderDutyActive => _responderDutyStreamSub != null;
+
+  /// Starts continuous, high-priority foreground GPS tracking for DEVI Responders.
+  /// Android Foreground Service with ongoing notification keeps GPS streaming
+  /// even when the phone is locked, asleep, or in the responder's pocket for 10+ hours.
+  static Future<bool> startResponderDuty({
+    required String agentId,
+    required String agentName,
+    int shiftHours = 8,
+    int intervalSeconds = 10,
+    Function(Position position)? onUpdate,
+    Function()? onShiftExpired,
+  }) async {
+    // 1. Cancel any active duty tracking
+    await stopResponderDuty(agentId: agentId, notifyBackend: false);
+
+    debugPrint('🛡️ [STARTING RESPONDER DUTY] Agent: $agentName ($agentId), Shift: ${shiftHours}h, Interval: ${intervalSeconds}s');
+
+    // 2. Request fine location & background permissions if needed
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        debugPrint('⚠️ Location permission denied for Responder Duty.');
+        return false;
+      }
+    }
+    if (permission == LocationPermission.deniedForever) {
+      debugPrint('⚠️ Location permission denied forever.');
+      return false;
+    }
+
+    // 3. Configure Android Foreground Service with Persistent Notification
+    late LocationSettings locationSettings;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      locationSettings = AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5, // Update on 5 meters movement
+        forceLocationManager: true,
+        intervalDuration: Duration(seconds: intervalSeconds),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: "🛡️ DEVI Responder: Live Duty Active",
+          notificationText: "Live GPS is streaming to Control Room. Duty shift is active.",
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      );
+    } else if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS)) {
+      locationSettings = AppleSettings(
+        accuracy: LocationAccuracy.high,
+        activityType: ActivityType.fitness,
+        distanceFilter: 5,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      );
+    }
+
+    // 4. Start Position Stream
+    try {
+      _responderDutyStreamSub = Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen((Position position) {
+        debugPrint('🛰️ [DUTY GPS PUSH] Lat: ${position.latitude}, Lng: ${position.longitude}, Acc: ${position.accuracy}m');
+        onUpdate?.call(position);
+
+        // Push location update to backend API
+        _pushResponderLocation(
+          agentId: agentId,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          heading: position.heading,
+          speed: position.speed,
+        );
+      }, onError: (e) {
+        debugPrint('⚠️ Error in Responder Duty GPS Stream: $e');
+      });
+
+      // 5. Shift Duration Auto-Expire Timer
+      if (shiftHours > 0) {
+        _responderShiftTimer?.cancel();
+        _responderShiftTimer = Timer(Duration(hours: shiftHours), () {
+          debugPrint('⏰ [SHIFT EXPIRED] Auto-stopping responder duty after ${shiftHours}h');
+          stopResponderDuty(agentId: agentId);
+          onShiftExpired?.call();
+        });
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('⚠️ Failed to initiate Responder Duty GPS Stream: $e');
+      return false;
+    }
+  }
+
+  /// Sends location update to backend server
+  static Future<void> _pushResponderLocation({
+    required String agentId,
+    required double latitude,
+    required double longitude,
+    double heading = 0.0,
+    double speed = 0.0,
+  }) async {
+    try {
+      final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$agentId/location');
+      await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'latitude': latitude,
+          'longitude': longitude,
+          'heading': heading,
+          'speed': speed,
+        }),
+      ).timeout(const Duration(seconds: 4));
+    } catch (_) {}
+  }
+
+  /// Stops the responder duty stream and dismisses the ongoing notification
+  static Future<void> stopResponderDuty({
+    required String agentId,
+    bool notifyBackend = true,
+  }) async {
+    _responderShiftTimer?.cancel();
+    _responderShiftTimer = null;
+
+    if (_responderDutyStreamSub != null) {
+      debugPrint('🛑 [STOPPING RESPONDER DUTY] Dismissing notification & canceling stream');
+      await _responderDutyStreamSub?.cancel();
+      _responderDutyStreamSub = null;
+    }
+
+    if (notifyBackend && agentId.isNotEmpty) {
+      try {
+        final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$agentId/duty');
+        await http.post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'status': 'OFF_DUTY'}),
+        ).timeout(const Duration(seconds: 4));
+      } catch (_) {}
+    }
   }
 }

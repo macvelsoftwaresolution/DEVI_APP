@@ -250,12 +250,48 @@ export const WhatsAppService = {
         } else {
           console.warn(`ℹ️ [WELCOME TEMPLATE PENDING/NOTE]:`, welcomeData?.error?.message || welcomeData);
         }
+        return { success: welcomeSuccess, messageText, welcomeData };
       } catch (wErr) {
         console.warn(`⚠️ [WELCOME TEMPLATE ERROR]:`, wErr.message);
+        return { success: false, error: wErr.message, messageText };
       }
+    } catch (e) {
+      console.warn('⚠️ [WHATSAPP CREDENTIALS DISPATCH ERROR]:', e.message);
+      return { success: false, error: e.message, messageText };
+    }
+  },
 
-      // 2. Second Dispatch: devi_agent_pin (Official Meta Authentication Template with Copy-Code Button)
-      const pinPayload = {
+  /**
+   * Sends 6-digit phone verification OTP for new agent registration
+   */
+  async sendVerificationOtp(toNumber, otp, name) {
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+
+    if (!toNumber) return { success: false, reason: 'PHONE_EMPTY' };
+
+    let clean = toNumber.toString().replace(/\D/g, '');
+    if (clean.length === 10) clean = '91' + clean;
+
+    const messageText = `🛡️ *DEVI SAFETY NETWORK — PHONE VERIFICATION* 🛡️\n\n` +
+      `Hello *${name || 'Responder'}*,\n\n` +
+      `Your 6-digit verification code for DEVI Emergency Responder registration is:\n\n` +
+      `👉 *${otp}*\n\n` +
+      `⏱️ Valid for 10 minutes.\n` +
+      `Please provide this code to the Control Room Operator to verify your mobile number.`;
+
+    console.log(`🔑 [VERIFICATION OTP GENERATED] Phone: +${clean}, Code: ${otp}`);
+
+    if (!phoneNumberId || !accessToken) {
+      console.log(`ℹ️ [WHATSAPP OTP READY (Meta API Skipped)]: +${clean}, OTP: ${otp}`);
+      return { success: true, messageText, simulated: true };
+    }
+
+    try {
+      const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+
+      // Use Official Approved Meta Authentication Template: devi_agent_pin
+      const templatePayload = {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: clean,
@@ -267,7 +303,7 @@ export const WhatsAppService = {
             {
               type: 'body',
               parameters: [
-                { type: 'text', text: String(pin) },
+                { type: 'text', text: String(otp) },
               ],
             },
             {
@@ -275,33 +311,50 @@ export const WhatsAppService = {
               sub_type: 'url',
               index: '0',
               parameters: [
-                { type: 'text', text: String(pin) },
+                { type: 'text', text: String(otp) },
               ],
             },
           ],
         },
       };
 
-      const pinRes = await fetch(url, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(pinPayload),
+        body: JSON.stringify(templatePayload),
       });
 
-      const pinData = await pinRes.json();
-      if (pinRes.ok) {
-        console.log(`✅ [ACTIVE AUTHENTICATION PIN DISPATCHED: devi_agent_pin] ID: ${pinData.messages?.[0]?.id} to +${clean}`);
-        return { success: true, messageText, pinData, welcomeSuccess };
+      const data = await res.json();
+      if (res.ok) {
+        console.log(`✅ [OFFICIAL META OTP TEMPLATE DISPATCHED: devi_agent_pin] ID: ${data.messages?.[0]?.id} to +${clean}`);
+        return { success: true, messageId: data.messages?.[0]?.id };
       } else {
-        console.warn(`⚠️ [PIN DISPATCH RESPONSE]:`, JSON.stringify(pinData));
-        return { success: false, error: pinData.error, messageText };
+        console.warn(`ℹ️ [WHATSAPP OTP TEMPLATE NOTE/FALLBACK]:`, data?.error?.message || data);
+
+        // Fallback to text if template has issue
+        const textRes = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: clean,
+            type: 'text',
+            text: { preview_url: false, body: messageText },
+          }),
+        });
+        const textData = await textRes.json();
+        return { success: textRes.ok, messageId: textData.messages?.[0]?.id, messageText };
       }
-    } catch (e) {
-      console.warn('⚠️ [WHATSAPP CREDENTIALS DISPATCH ERROR]:', e.message);
-      return { success: false, error: e.message, messageText };
+    } catch (err) {
+      console.warn(`⚠️ [WHATSAPP OTP NETWORK ERROR]:`, err.message);
+      return { success: false, error: err.message, messageText };
     }
   },
 };

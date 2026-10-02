@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import L from 'leaflet';
-import { Shield, Radio, Volume2, VolumeX, RefreshCw, Plus, Link2, X, Phone, CheckCircle, Navigation, MapPin } from 'lucide-react';
+import { Shield, Radio, Volume2, VolumeX, RefreshCw, Plus, Link2, X, Phone, CheckCircle, Navigation, MapPin, Settings, Clock, UserCheck, Power } from 'lucide-react';
 import { apiUrl, WS_URL } from '../config/api';
+import { createVictimDivIcon, createResponderDivIcon } from '../utils/mapMarkers';
 
 export default function DashboardPage() {
   const [incidents, setIncidents] = useState([]);
@@ -13,15 +14,26 @@ export default function DashboardPage() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [liveTime, setLiveTime] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showShiftSettingsModal, setShowShiftSettingsModal] = useState(false);
+  const [showAgentsListModal, setShowAgentsListModal] = useState(false);
+  const [shiftHours, setShiftHours] = useState(8);
+  const [gpsInterval, setGpsInterval] = useState(10);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [emergencyAlertModal, setEmergencyAlertModal] = useState(null); // { id, name, phone, location, lat, lng }
   const [operatorNote, setOperatorNote] = useState('');
   const [isSavingResponder, setIsSavingResponder] = useState(false);
 
-  // Responder Form
+  // Responder Form & OTP Verification
   const [respName, setRespName] = useState('');
   const [respPhone, setRespPhone] = useState('');
   const [respPin, setRespPin] = useState('7421');
   const [respArea, setRespArea] = useState('');
+  const [respVehicle, setRespVehicle] = useState('Patrol Bike');
+  const [addAgentStep, setAddAgentStep] = useState(1); // 1 = Details, 2 = OTP Verification
+  const [respOtp, setRespOtp] = useState('');
+  const [devOtp, setDevOtp] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [createdInviteInfo, setCreatedInviteInfo] = useState(null);
 
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -224,6 +236,57 @@ export default function DashboardPage() {
     } catch (e) {}
   };
 
+  // Fetch System Duty Settings
+  const fetchDutySettings = async () => {
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/settings/duty'));
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success && data.settings) {
+        setShiftHours(data.settings.shiftDurationHours || 8);
+        setGpsInterval(data.settings.gpsIntervalSeconds || 10);
+      }
+    } catch (_) {}
+  };
+
+  // Save Duty Settings
+  const handleSaveDutySettings = async (e) => {
+    if (e) e.preventDefault();
+    setIsSavingSettings(true);
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/settings/duty'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftDurationHours: Number(shiftHours), gpsIntervalSeconds: Number(gpsInterval) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowShiftSettingsModal(false);
+        alert(`✅ Duty Shift Configuration Updated!\n• Shift Duration: ${shiftHours} Hours\n• GPS Update Frequency: Every ${gpsInterval}s`);
+      } else {
+        alert(data.message || 'Failed to update settings');
+      }
+    } catch (err) {
+      alert('Network error: ' + err.message);
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  // End Agent Duty Manually
+  const handleEndAgentDuty = async (agentId, agentName) => {
+    if (!window.confirm(`Are you sure you want to end ${agentName}'s duty shift now?`)) return;
+    try {
+      const res = await fetch(apiUrl(`/api/dashboard/agents/${agentId}/end-duty`), {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchResponders();
+      }
+    } catch (_) {}
+  };
+
   // WebSocket Connection
   useEffect(() => {
     let ws = null;
@@ -242,10 +305,10 @@ export default function DashboardPage() {
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
-            if (msg.type === 'sos:new') {
+            if (msg.type === 'sos:new' || msg.type === 'incident:assigned' || msg.type === 'incident:en_route') {
               fetchIncidents(false);
               fetchResponders();
-            } else if (msg.type === 'loc' || msg.type === 'status' || msg.type === 'agent_loc') {
+            } else if (msg.type === 'loc' || msg.type === 'status' || msg.type === 'agent_loc' || msg.type === 'agent_update') {
               fetchIncidents(false);
               fetchResponders();
             }
@@ -265,6 +328,7 @@ export default function DashboardPage() {
     connectWs();
     fetchIncidents(true);
     fetchResponders();
+    fetchDutySettings();
 
     const pollInterval = setInterval(() => {
       fetchIncidents(false);
@@ -296,23 +360,21 @@ export default function DashboardPage() {
       const lng = parseFloat(inc.longitude);
       if (isNaN(lat) || isNaN(lng)) return;
 
-      const icon = L.divIcon({
-        className: 'custom-marker',
-        html: '<div class="pulse-dot"></div>',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-      });
+      const isSelected = inc.id === selectedIncidentId;
+      const icon = createVictimDivIcon(inc, isSelected);
 
       if (markersRef.current.has(inc.id)) {
-        markersRef.current.get(inc.id).setLatLng([lat, lng]);
+        const marker = markersRef.current.get(inc.id);
+        marker.setLatLng([lat, lng]);
+        marker.setIcon(icon);
       } else {
         const marker = L.marker([lat, lng], { icon }).addTo(map);
-        marker.bindTooltip(`<strong>${inc.user?.name || 'Victim'}</strong><br/>${inc.status}`, { direction: 'top' });
+        marker.bindTooltip(`<strong>${inc.user?.name || inc.userName || 'Victim'}</strong><br/>Status: <strong>${inc.status}</strong>`, { direction: 'top' });
         marker.on('click', () => setSelectedIncidentId(inc.id));
         markersRef.current.set(inc.id, marker);
       }
     });
-  }, [incidents]);
+  }, [incidents, selectedIncidentId]);
 
   // Update Responder Map Markers
   useEffect(() => {
@@ -338,15 +400,12 @@ export default function DashboardPage() {
       const lng = parseFloat(r.longitude);
       if (isNaN(lat) || isNaN(lng)) return;
 
-      const icon = L.divIcon({
-        className: 'custom-responder-marker',
-        html: '<div class="agent-pin">🛡️</div>',
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-      });
+      const icon = createResponderDivIcon(r, false);
 
       if (responderMarkersRef.current.has(r.id)) {
-        responderMarkersRef.current.get(r.id).setLatLng([lat, lng]);
+        const marker = responderMarkersRef.current.get(r.id);
+        marker.setLatLng([lat, lng]);
+        marker.setIcon(icon);
       } else {
         const marker = L.marker([lat, lng], { icon }).addTo(map);
         marker.bindTooltip(`<strong>${r.name}</strong><br/>📍 ${r.area || 'Sector'}<br/>📞 ${r.phone}`, { direction: 'top' });
@@ -359,14 +418,62 @@ export default function DashboardPage() {
   const selectedIncident = incidents.find((i) => i.id === selectedIncidentId);
 
   useEffect(() => {
-    if (!selectedIncident || !mapInstanceRef.current) return;
-    const lat = parseFloat(selectedIncident.latitude);
-    const lng = parseFloat(selectedIncident.longitude);
-    if (!isNaN(lat) && !isNaN(lng) && !isFlyingRef.current) {
-      smoothFlyTo(lat, lng, 17);
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (dispatchLineRef.current) {
+      map.removeLayer(dispatchLineRef.current);
+      dispatchLineRef.current = null;
+    }
+
+    if (!selectedIncident) return;
+    const vLat = parseFloat(selectedIncident.latitude);
+    const vLng = parseFloat(selectedIncident.longitude);
+
+    if (selectedIncident.assignedAgent) {
+      const assignedResp = responders.find((r) =>
+        selectedIncident.assignedAgent.toLowerCase().includes(r.name.toLowerCase()) ||
+        (r.phone && selectedIncident.assignedAgent.includes(r.phone.slice(-10)))
+      );
+
+      if (assignedResp) {
+        const rLat = parseFloat(assignedResp.latitude);
+        const rLng = parseFloat(assignedResp.longitude);
+        if (!isNaN(vLat) && !isNaN(vLng) && !isNaN(rLat) && !isNaN(rLng)) {
+          const polyline = L.polyline(
+            [
+              [rLat, rLng],
+              [vLat, vLng],
+            ],
+            {
+              color: '#38BDF8',
+              weight: 4,
+              opacity: 0.9,
+              dashArray: '8, 8',
+              lineCap: 'round',
+            }
+          ).addTo(map);
+
+          dispatchLineRef.current = polyline;
+
+          map.fitBounds(
+            [
+              [rLat, rLng],
+              [vLat, vLng],
+            ],
+            { padding: [70, 70], maxZoom: 16 }
+          );
+          setOperatorNote(selectedIncident.operatorNotes || '');
+          return;
+        }
+      }
+    }
+
+    if (!isNaN(vLat) && !isNaN(vLng) && !isFlyingRef.current) {
+      smoothFlyTo(vLat, vLng, 17);
     }
     setOperatorNote(selectedIncident.operatorNotes || '');
-  }, [selectedIncidentId]);
+  }, [selectedIncidentId, selectedIncident?.assignedAgent, responders]);
 
   // Distance Calculator
   const calcDistKm = (lat1, lon1, lat2, lon2) => {
@@ -411,12 +518,7 @@ export default function DashboardPage() {
       if (data.success) {
         fetchIncidents(true);
         fetchResponders();
-        const waMsg = `🚨 DEVI EMERGENCY ALERT!\nVictim: ${selectedIncident.user?.name}\nPhone: ${selectedIncident.user?.phone}\nLocation: ${selectedIncident.location}\n\n🔴 LIVE GPS TRACKING:\n${window.location.origin}/track/${selectedIncident.id}\n\nPlease reach immediately!`;
-        const phoneClean = (responder.phone || '').replace(/[^0-9]/g, '');
-        const waUrl = `https://wa.me/91${phoneClean.slice(-10)}?text=${encodeURIComponent(waMsg)}`;
-        if (confirm(`✓ ${responder.name} assigned!\n\nOpen WhatsApp to send live tracking link to ${responder.name}?`)) {
-          window.open(waUrl, '_blank');
-        }
+        alert(`🚨 Emergency Alert Dispatched to ${responder.name}!\n\nOfficial Meta WhatsApp alert (+91 90806 85175) sent directly to ${responder.phone} with Victim Details & Live GPS Tracking link.`);
       }
     } catch (e) {
       alert('Error assigning agent');
@@ -447,26 +549,80 @@ export default function DashboardPage() {
     } catch (_) {}
   };
 
-  // Save Responder Modal
-  const handleSaveNewResponder = async (e) => {
-    e.preventDefault();
-    setIsSavingResponder(true);
+  // Send Verification OTP to Agent's Phone
+  const handleSendOtp = async (e) => {
+    if (e) e.preventDefault();
+    const clean = respPhone.replace(/\D/g, '').slice(-10);
+    if (!clean || clean.length !== 10) {
+      alert('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    if (!respName.trim()) {
+      alert('Please enter the agent name');
+      return;
+    }
+    setIsSendingOtp(true);
     try {
-      const res = await fetch(apiUrl('/api/dashboard/agents'), {
+      const res = await fetch(apiUrl('/api/dashboard/agents/send-otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: respName, phone: respPhone, pin: respPin, area: respArea }),
+        body: JSON.stringify({ phone: clean, name: respName.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDevOtp(data.devOtp || '');
+        setAddAgentStep(2);
+      } else {
+        alert(data.message || 'Failed to dispatch verification OTP');
+      }
+    } catch (err) {
+      alert('Network connection error: ' + err.message);
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  // Verify OTP & Save Responder with Single-Use Invite Token
+  const handleVerifyAndSaveResponder = async (e) => {
+    if (e) e.preventDefault();
+    if (!respOtp || respOtp.trim().length !== 6) {
+      alert('Please enter the 6-digit verification code');
+      return;
+    }
+    setIsSavingResponder(true);
+    try {
+      const res = await fetch(apiUrl('/api/dashboard/agents/verify-and-create'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: respName.trim(),
+          phone: respPhone.trim(),
+          pin: respPin.trim(),
+          area: respArea.trim(),
+          vehicle: respVehicle,
+          otp: respOtp.trim(),
+        }),
       });
       const data = await res.json();
       if (data.success) {
         setShowAddModal(false);
+        setAddAgentStep(1);
+        setRespOtp('');
+        setDevOtp('');
         fetchResponders();
+        setCreatedInviteInfo({
+          name: data.agent?.name || respName,
+          phone: data.agent?.phone || respPhone,
+          pin: data.plainPin || respPin,
+          dutyUrl: data.dutyUrl,
+          waMeUrl: data.waMeUrl,
+          inviteToken: data.inviteToken,
+        });
         setRespName('');
         setRespPhone('');
         setRespArea('');
-        alert(`✅ Responder ${respName} Registered!\nSecurity PIN: ${respPin}\nCredentials dispatched via WhatsApp.`);
       } else {
-        alert('Failed: ' + (data.message || 'Error'));
+        alert('Verification failed: ' + (data.message || 'Invalid OTP code'));
       }
     } catch (err) {
       alert('Network error: ' + err.message);
@@ -647,7 +803,26 @@ export default function DashboardPage() {
             <Link2 size={14} /> Duty Link
           </button>
           <button
-            onClick={() => setShowResponders(!showResponders)}
+            onClick={() => setShowShiftSettingsModal(true)}
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              color: '#38BDF8',
+              height: '34px',
+              padding: '0 12px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '700',
+            }}
+          >
+            <Settings size={14} /> Shift: {shiftHours}h
+          </button>
+          <button
+            onClick={() => setShowAgentsListModal(true)}
             style={{
               background: 'var(--bg-surface)',
               border: '1px solid var(--border)',
@@ -927,54 +1102,137 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* NEARBY AGENTS */}
+              {/* NEARBY AGENTS & DISPATCH */}
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
                 <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
                   <span>Nearby Responders</span>
                   <span style={{ color: '#06B6D4' }}>{rankedResponders.length} Available</span>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {rankedResponders.slice(0, 4).map((r, idx) => (
-                    <div
-                      key={r.id}
-                      style={{
-                        background: 'var(--bg-elevated)',
-                        border: `1px solid ${idx === 0 ? 'rgba(6, 182, 212, 0.6)' : 'var(--border)'}`,
-                        borderRadius: '8px',
-                        padding: '8px 10px',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#FFF' }}>{r.name}</span>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: '700', color: '#67E8F9' }}>
-                          {r.distKm < 900 ? `${r.distKm.toFixed(1)} km (~${r.estMins}m)` : 'Standby'}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between', margin: '4px 0' }}>
-                        <span>📍 {r.area || 'Patrol Sector'}</span>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>📞 {r.phone}</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                        <button
-                          onClick={() => handleAssignResponder(r)}
-                          style={{
-                            flex: 1,
-                            padding: '6px',
-                            background: 'var(--cyan)',
-                            color: '#000',
-                            border: 'none',
-                            borderRadius: '5px',
-                            fontSize: '11px',
-                            fontWeight: '700',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Assign & Alert
-                        </button>
-                      </div>
+                {/* CURRENTLY ASSIGNED RESPONDER BANNER */}
+                {selectedIncident.assignedAgent && (
+                  <div style={{
+                    background: selectedIncident.responderStatus === 'EN_ROUTE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(56, 189, 248, 0.12)',
+                    border: `1px solid ${selectedIncident.responderStatus === 'EN_ROUTE' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(56, 189, 248, 0.4)'}`,
+                    borderRadius: '8px',
+                    padding: '10px 12px',
+                    marginBottom: '10px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: '800', color: selectedIncident.responderStatus === 'EN_ROUTE' ? '#34D399' : '#38BDF8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        ✓ ASSIGNED SAFETY RESPONDER
+                      </span>
+                      <span style={{
+                        fontSize: '9px',
+                        fontWeight: '800',
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        background: selectedIncident.responderStatus === 'EN_ROUTE' ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+                        color: selectedIncident.responderStatus === 'EN_ROUTE' ? '#34D399' : '#FBBF24',
+                        border: `1px solid ${selectedIncident.responderStatus === 'EN_ROUTE' ? '#10B981' : '#F59E0B'}`,
+                      }}>
+                        {selectedIncident.responderStatus === 'EN_ROUTE' ? '🚀 EN ROUTE (CONFIRMED OK)' : '⏳ ALERT DISPATCHED'}
+                      </span>
                     </div>
-                  ))}
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: '#FFF' }}>
+                      👮 {selectedIncident.assignedAgent}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {rankedResponders.slice(0, 4).map((r, idx) => {
+                    const cleanPhone10 = r.phone ? r.phone.toString().replace(/\D/g, '').slice(-10) : '';
+                    const isThisAssigned = selectedIncident?.assignedAgent && (
+                      selectedIncident.assignedAgent.toLowerCase().includes(r.name.toLowerCase()) ||
+                      (cleanPhone10 && selectedIncident.assignedAgent.includes(cleanPhone10))
+                    );
+
+                    return (
+                      <div
+                        key={r.id}
+                        style={{
+                          background: isThisAssigned ? 'rgba(56, 189, 248, 0.08)' : 'var(--bg-elevated)',
+                          border: `1px solid ${isThisAssigned ? '#38BDF8' : idx === 0 ? 'rgba(6, 182, 212, 0.6)' : 'var(--border)'}`,
+                          borderRadius: '8px',
+                          padding: '8px 10px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '700', color: '#FFF' }}>{r.name}</span>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', fontWeight: '700', color: '#67E8F9' }}>
+                            {r.distKm < 900 ? `${r.distKm.toFixed(1)} km (~${r.estMins}m)` : 'Standby'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-dim)', display: 'flex', justifyContent: 'space-between', margin: '4px 0' }}>
+                          <span>📍 {r.area || 'Patrol Sector'}</span>
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>📞 {r.phone}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+                          {isThisAssigned ? (
+                            selectedIncident.responderStatus === 'EN_ROUTE' ? (
+                              <div
+                                style={{
+                                  flex: 1,
+                                  padding: '7px',
+                                  background: 'rgba(16, 185, 129, 0.22)',
+                                  border: '1px solid #10B981',
+                                  color: '#34D399',
+                                  borderRadius: '5px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                <span>🚀</span> En Route to Scene (Confirmed OK)
+                              </div>
+                            ) : (
+                              <div
+                                style={{
+                                  flex: 1,
+                                  padding: '7px',
+                                  background: 'rgba(56, 189, 248, 0.22)',
+                                  border: '1px solid #38BDF8',
+                                  color: '#38BDF8',
+                                  borderRadius: '5px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  textAlign: 'center',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                }}
+                              >
+                                <span>✓</span> Assigned & Alerted (Awaiting Acceptance)
+                              </div>
+                            )
+                          ) : (
+                            <button
+                              onClick={() => handleAssignResponder(r)}
+                              style={{
+                                flex: 1,
+                                padding: '6px',
+                                background: selectedIncident.assignedAgent ? 'rgba(255, 255, 255, 0.08)' : 'var(--cyan)',
+                                color: selectedIncident.assignedAgent ? '#E2E8F0' : '#000',
+                                border: selectedIncident.assignedAgent ? '1px solid var(--border)' : 'none',
+                                borderRadius: '5px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {selectedIncident.assignedAgent ? 'Re-assign & Alert' : 'Assign & Alert'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1014,49 +1272,547 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ADD AGENT MODAL */}
+      {/* ADD AGENT MODAL WITH TWO-STEP OTP VERIFICATION */}
       {showAddModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: '400px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', fontSize: '15px', fontWeight: '700' }}>
-              <span>+ Add Response Agent</span>
-              <button onClick={() => setShowAddModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '440px', maxWidth: '94vw', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.6)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.2)', border: '1px solid #38BDF8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>
+                  🛡️
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>
+                    {addAgentStep === 1 ? 'Add & Verify Responder' : 'Confirm Phone OTP'}
+                  </h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                    {addAgentStep === 1 ? 'Step 1 of 2: Responder Details' : 'Step 2 of 2: Authentic Mobile Number Check'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => { setShowAddModal(false); setAddAgentStep(1); setRespOtp(''); }} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
             </div>
 
-            <form onSubmit={handleSaveNewResponder}>
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Agent Name</label>
-                <input required type="text" placeholder="e.g. Karthi" value={respName} onChange={(e) => setRespName(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', color: '#FFF', outline: 'none' }} />
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Mobile Number</label>
-                <input required type="tel" placeholder="e.g. 9876543210" value={respPhone} onChange={(e) => setRespPhone(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', color: '#FFF', outline: 'none' }} />
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <label style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', textTransform: 'uppercase' }}>4-Digit Security PIN</label>
-                  <button type="button" onClick={() => setRespPin(Math.floor(1000 + Math.random() * 9000).toString())} style={{ background: 'none', border: 'none', color: '#38BDF8', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>🎲 Auto-Generate</button>
+            {addAgentStep === 1 ? (
+              /* STEP 1: Details & Send OTP */
+              <form onSubmit={handleSendOtp}>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Responder Name</label>
+                  <input required type="text" placeholder="e.g. Karthik" value={respName} onChange={(e) => setRespName(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '9px 12px', fontSize: '13px', color: '#FFF', outline: 'none' }} />
                 </div>
-                <input required type="text" maxLength={6} value={respPin} onChange={(e) => setRespPin(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '16px', letterSpacing: '4px', fontWeight: '700', textAlign: 'center', color: '#38BDF8', outline: 'none' }} />
+
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Mobile Number (10 Digits)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <span style={{ padding: '0 10px', fontSize: '13px', fontWeight: '700', color: '#38BDF8', background: 'rgba(56, 189, 248, 0.1)', borderRight: '1px solid var(--border)' }}>+91</span>
+                    <input required type="tel" maxLength={10} placeholder="e.g. 9876543210" value={respPhone} onChange={(e) => setRespPhone(e.target.value)} style={{ width: '100%', background: 'transparent', border: 'none', padding: '9px 12px', fontSize: '14px', fontWeight: '700', color: '#FFF', outline: 'none' }} />
+                  </div>
+                </div>
+
+
+
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Patrol Area / Station</label>
+                  <input required type="text" placeholder="e.g. Central Sector / Sivakasi" value={respArea} onChange={(e) => setRespArea(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '9px 12px', fontSize: '13px', color: '#FFF', outline: 'none' }} />
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Patrol Unit Vehicle</label>
+                  <select value={respVehicle} onChange={(e) => setRespVehicle(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '9px 12px', fontSize: '13px', color: '#FFF', outline: 'none' }}>
+                    <option value="Patrol Bike">🏍️ Rapid Response Patrol Bike</option>
+                    <option value="Patrol Car">🚓 Emergency Safety Patrol Car</option>
+                    <option value="Quick Response Team">🛡️ Tactical Response Unit</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '9px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
+                  <button disabled={isSendingOtp} type="submit" style={{ padding: '9px 18px', background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', border: 'none', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {isSendingOtp ? '⏳ Sending OTP...' : 'Send Verification OTP 📲'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* STEP 2: Confirm OTP & Issue 1-Time UUID Invite */
+              <form onSubmit={handleVerifyAndSaveResponder}>
+                <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px', padding: '10px 14px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '20px' }}>📲</span>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: '800', color: '#FFF' }}>Verification Code Sent!</div>
+                    <div style={{ fontSize: '11px', color: '#94A3B8' }}>Sent to <strong style={{ color: '#38BDF8' }}>+91 {respPhone}</strong>. Ask responder for the 6-digit code.</div>
+                  </div>
+                </div>
+
+                {devOtp && (
+                  <div
+                    onClick={() => setRespOtp(devOtp)}
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      border: '1px dashed #10B981',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      marginBottom: '14px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: '#34D399', fontWeight: '700' }}>💡 Demo/Testing Code: <strong>{devOtp}</strong></span>
+                    <span style={{ fontSize: '10px', color: '#6EE7B7', textDecoration: 'underline' }}>Auto-Fill</span>
+                  </div>
+                )}
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '6px', textTransform: 'uppercase', textAlign: 'center' }}>
+                    Enter 6-Digit Verification Code
+                  </label>
+                  <input
+                    required
+                    autoFocus
+                    type="text"
+                    maxLength={6}
+                    placeholder="• • • • • •"
+                    value={respOtp}
+                    onChange={(e) => setRespOtp(e.target.value.replace(/\D/g, ''))}
+                    style={{
+                      width: '100%',
+                      background: 'var(--bg-dark)',
+                      border: '2px solid #38BDF8',
+                      borderRadius: '10px',
+                      padding: '12px',
+                      fontSize: '24px',
+                      fontWeight: '900',
+                      letterSpacing: '10px',
+                      textAlign: 'center',
+                      color: '#FFF',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAddAgentStep(1)}
+                    style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                  >
+                    ← Change Phone
+                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={handleSendOtp}
+                      style={{ padding: '8px 12px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#94A3B8', borderRadius: '8px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}
+                    >
+                      Resend OTP
+                    </button>
+                    <button
+                      disabled={isSavingResponder}
+                      type="submit"
+                      style={{
+                        padding: '9px 18px',
+                        background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                        border: 'none',
+                        color: '#FFF',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: '800',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      {isSavingResponder ? '⏳ Verifying...' : 'Verify & Dispatch 🚀'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* CREATED INVITE SUCCESS MODAL (SINGLE-USE UUID LINK DISPLAY) */}
+      {createdInviteInfo && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '480px', maxWidth: '94vw', background: 'var(--bg-surface)', border: '1px solid #10B981', borderRadius: '18px', padding: '24px', boxShadow: '0 25px 60px rgba(16,185,129,0.25)' }}>
+            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+              <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.2)', border: '2px solid #10B981', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', marginBottom: '8px' }}>
+                ✅
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: '900', color: '#FFF' }}>Responder Phone Verified!</h3>
+              <p style={{ fontSize: '12px', color: '#94A3B8' }}>{createdInviteInfo.name} (+91 {createdInviteInfo.phone}) registered & 1-time invite created.</p>
+            </div>
+
+            <div style={{ background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: '700' }}>SECURITY PIN:</span>
+                <span style={{ fontSize: '13px', color: '#38BDF8', fontWeight: '900', letterSpacing: '2px' }}>{createdInviteInfo.pin}</span>
+              </div>
+              <div style={{ marginBottom: '8px' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: '700', display: 'block', marginBottom: '4px' }}>1-TIME ACTIVATION LINK (DEVICE LOCKED):</span>
+                <div style={{ fontSize: '11px', color: '#E2E8F0', background: 'rgba(0,0,0,0.4)', padding: '6px 10px', borderRadius: '6px', wordBreak: 'break-all', fontFamily: 'JetBrains Mono, monospace' }}>
+                  {createdInviteInfo.dutyUrl}
+                </div>
+              </div>
+              <div style={{ fontSize: '10.5px', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span>🔒</span> Link is locked to 1 device upon acceptance and cannot be shared.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              {createdInviteInfo.waMeUrl && (
+                <a
+                  href={createdInviteInfo.waMeUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    padding: '10px 16px',
+                    background: '#25D366',
+                    color: '#FFF',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: '800',
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  💬 Open in WhatsApp
+                </a>
+              )}
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(createdInviteInfo.dutyUrl);
+                  alert('1-Time Invite Link copied to clipboard!');
+                }}
+                style={{ padding: '10px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#38BDF8', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+              >
+                📋 Copy Link
+              </button>
+              <button
+                onClick={() => setCreatedInviteInfo(null)}
+                style={{ padding: '10px 16px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SHIFT & GPS SETTINGS MODAL */}
+      {showShiftSettingsModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '450px', maxWidth: '94vw', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '24px', boxShadow: '0 25px 60px rgba(0,0,0,0.7)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.15)', border: '1px solid #38BDF8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>
+                  ⚙️
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>Shift & GPS Tracking Settings</h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Control responder duty duration & battery sync rate</p>
+                </div>
+              </div>
+              <button onClick={() => setShowShiftSettingsModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleSaveDutySettings}>
+              {/* Shift Duration Selection */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                  Default Shift Duration
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '10px' }}>
+                  {[4, 8, 10, 12].map((hrs) => (
+                    <button
+                      type="button"
+                      key={hrs}
+                      onClick={() => setShiftHours(hrs)}
+                      style={{
+                        padding: '10px 0',
+                        borderRadius: '8px',
+                        border: `1px solid ${shiftHours === hrs ? '#38BDF8' : 'var(--border)'}`,
+                        background: shiftHours === hrs ? 'rgba(56, 189, 248, 0.2)' : 'var(--bg-dark)',
+                        color: shiftHours === hrs ? '#38BDF8' : '#FFF',
+                        fontWeight: '800',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {hrs} Hours
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Custom Shift Hours:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={shiftHours}
+                    onChange={(e) => setShiftHours(parseInt(e.target.value) || 8)}
+                    style={{ width: '60px', background: 'transparent', border: 'none', color: '#38BDF8', fontWeight: '800', fontSize: '14px', outline: 'none' }}
+                  />
+                  <span style={{ fontSize: '11px', color: '#94A3B8' }}>hrs (Auto-ends duty afterwards)</span>
+                </div>
               </div>
 
-              <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase' }}>Patrol Area / Station</label>
-                <input required type="text" placeholder="e.g. Central Bus Stand" value={respArea} onChange={(e) => setRespArea(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '6px', padding: '7px 10px', fontSize: '12px', color: '#FFF', outline: 'none' }} />
+              {/* GPS Update Rate */}
+              <div style={{ marginBottom: '22px' }}>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                  GPS Telemetry Sync Frequency
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {[
+                    { sec: 5, label: '5s (Ultra Live)' },
+                    { sec: 10, label: '10s (Standard)' },
+                    { sec: 30, label: '30s (Eco Saver)' },
+                  ].map((item) => (
+                    <button
+                      type="button"
+                      key={item.sec}
+                      onClick={() => setGpsInterval(item.sec)}
+                      style={{
+                        padding: '10px 0',
+                        borderRadius: '8px',
+                        border: `1px solid ${gpsInterval === item.sec ? '#10B981' : 'var(--border)'}`,
+                        background: gpsInterval === item.sec ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-dark)',
+                        color: gpsInterval === item.sec ? '#34D399' : '#FFF',
+                        fontWeight: '800',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', marginTop: '14px' }}>
-                <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '8px 14px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>Cancel</button>
-                <button disabled={isSavingResponder} type="submit" style={{ padding: '8px 14px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '6px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
-                  {isSavingResponder ? '⏳ Saving...' : 'Save & Dispatch'}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowShiftSettingsModal(false)}
+                  style={{ padding: '10px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={isSavingSettings}
+                  type="submit"
+                  style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #0284C7, #0369A1)', border: 'none', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}
+                >
+                  {isSavingSettings ? 'Saving...' : '💾 Save Settings'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* AGENTS & ON-DUTY MANAGEMENT MODAL */}
+      {showAgentsListModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: '640px', maxWidth: '94vw', maxHeight: '85vh', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 60px rgba(0,0,0,0.7)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10B981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>
+                  🛡️
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>Field Responders ({responders.length})</h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Manage live shift statuses & emergency patrol units</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAgentsListModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '4px' }}>
+              {responders.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-dim)' }}>
+                  No agents registered yet. Click "+ Add Agent" to onboard with OTP.
+                </div>
+              ) : (
+                responders.map((agent) => {
+                  const isOnDuty = agent.duty_status === 'ON_DUTY' || agent.duty_status === 'AVAILABLE';
+                  const isPending = agent.duty_status === 'PENDING_APPROVAL';
+
+                  // Calculate remaining shift time if on duty
+                  let remainingStr = '';
+                  if (isOnDuty && agent.shift_expires_at) {
+                    const diffMs = new Date(agent.shift_expires_at).getTime() - Date.now();
+                    if (diffMs > 0) {
+                      const hrs = Math.floor(diffMs / (3600 * 1000));
+                      const mins = Math.floor((diffMs % (3600 * 1000)) / (60 * 1000));
+                      remainingStr = `⏳ ${hrs}h ${mins}m left`;
+                    } else {
+                      remainingStr = '⏰ Shift Expired';
+                    }
+                  }
+
+                  return (
+                    <div
+                      key={agent.id}
+                      style={{
+                        background: 'var(--bg-dark)',
+                        border: `1px solid ${isOnDuty ? 'rgba(16, 185, 129, 0.4)' : isPending ? 'rgba(245, 158, 11, 0.4)' : 'var(--border)'}`,
+                        borderRadius: '12px',
+                        padding: '12px 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '800', color: '#FFF' }}>{agent.name}</span>
+                          <span
+                            style={{
+                              fontSize: '9.5px',
+                              fontWeight: '800',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              background: isOnDuty ? 'rgba(16, 185, 129, 0.15)' : isPending ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+                              color: isOnDuty ? '#34D399' : isPending ? '#FBBF24' : '#94A3B8',
+                              border: `1px solid ${isOnDuty ? '#10B981' : isPending ? '#F59E0B' : 'transparent'}`,
+                            }}
+                          >
+                            {isOnDuty ? '🟢 ON DUTY' : isPending ? '🟡 PENDING APPROVAL' : '⚪ OFF DUTY'}
+                          </span>
+                          {remainingStr && (
+                            <span style={{ fontSize: '10px', color: '#FBBF24', fontWeight: '700' }}>
+                              {remainingStr}
+                            </span>
+                          )}
+                          {isOnDuty && (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: (!isNaN(parseFloat(agent.latitude)) && parseFloat(agent.latitude) !== 0) ? 'rgba(56, 189, 248, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: (!isNaN(parseFloat(agent.latitude)) && parseFloat(agent.latitude) !== 0) ? '#38BDF8' : '#F87171',
+                                border: `1px solid ${(!isNaN(parseFloat(agent.latitude)) && parseFloat(agent.latitude) !== 0) ? 'rgba(56, 189, 248, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                                fontWeight: '600'
+                              }}
+                            >
+                              {(!isNaN(parseFloat(agent.latitude)) && parseFloat(agent.latitude) !== 0) ? '📡 GPS Streaming' : '⚠️ No GPS Lock Yet'}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'flex', gap: '12px' }}>
+                          <span>📞 +91 {agent.phone}</span>
+                          <span>📍 {agent.area || 'All Sectors'}</span>
+                          <span>{agent.vehicle || 'Patrol Unit'}</span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {(() => {
+                          const hasCoords = !isNaN(parseFloat(agent.latitude)) && !isNaN(parseFloat(agent.longitude)) && parseFloat(agent.latitude) !== 0 && parseFloat(agent.longitude) !== 0;
+                          return (
+                            <button
+                              onClick={() => {
+                                setShowAgentsListModal(false);
+                                if (hasCoords) {
+                                  smoothFlyTo(parseFloat(agent.latitude), parseFloat(agent.longitude), 17);
+                                  const marker = responderMarkersRef.current.get(agent.id);
+                                  if (marker) marker.openTooltip();
+                                } else {
+                                  alert(`📍 ${agent.name} is currently ON-DUTY, but GPS coordinates have not reached the server yet.\n\nPlease check on Agent's phone:\n1. Open the DEVI Duty link/app on mobile.\n2. Tap "ALLOW" when browser/app asks for Location permission.\n3. Make sure GPS / Location is turned ON in Phone Quick Settings.`);
+                                }
+                              }}
+                              style={{
+                                padding: '6px 12px',
+                                background: hasCoords ? 'rgba(56, 189, 248, 0.2)' : 'rgba(100, 116, 139, 0.15)',
+                                border: `1px solid ${hasCoords ? 'rgba(56, 189, 248, 0.5)' : 'rgba(100, 116, 139, 0.3)'}`,
+                                color: hasCoords ? '#38BDF8' : '#94A3B8',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                              title={hasCoords ? 'View live location on map' : 'Waiting for GPS from agent phone'}
+                            >
+                              <MapPin size={12} /> {hasCoords ? 'View on Map' : 'Waiting GPS...'}
+                            </button>
+                          );
+                        })()}
+                        {isOnDuty ? (
+                          <button
+                            onClick={() => handleEndAgentDuty(agent.id, agent.name)}
+                            style={{
+                              padding: '6px 12px',
+                              background: 'rgba(239, 68, 68, 0.15)',
+                              border: '1px solid rgba(239, 68, 68, 0.4)',
+                              color: '#F87171',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <Power size={12} /> End Duty
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              const dutyUrl = `${window.location.origin}/duty`;
+                              navigator.clipboard.writeText(dutyUrl);
+                              alert(`Duty portal link copied for ${agent.name}:\n${dutyUrl}`);
+                            }}
+                            style={{
+                              padding: '6px 12px',
+                              background: 'rgba(56, 189, 248, 0.1)',
+                              border: '1px solid rgba(56, 189, 248, 0.3)',
+                              color: '#38BDF8',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Copy Link
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+              <button
+                onClick={() => { setShowAgentsListModal(false); setShowAddModal(true); }}
+                style={{ padding: '8px 14px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Plus size={14} /> Add New Agent
+              </button>
+              <button
+                onClick={() => setShowAgentsListModal(false)}
+                style={{ padding: '8px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FLOATING TACTICAL EMERGENCY SOS HUD (Non-blocking, live map zoom visible) */}
       {emergencyAlertModal && (
         <div
