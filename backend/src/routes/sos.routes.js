@@ -84,29 +84,38 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
     }
     if (!victimName) victimName = userPhone || 'DEVI User';
 
-    // STEP 3: Emergency Dispatch (Fast2SMS paused; WhatsApp active with Google Maps Hyperlink)
+    // STEP 3: Emergency Dispatch (WhatsApp active with Google Maps Hyperlink & Live Tracking)
     const contactsToSend = req.body.emergencyContacts || req.body.contactsAlerted;
+    let dispatchedAnyWhatsApp = false;
+
     if (contactsToSend && Array.isArray(contactsToSend) && contactsToSend.length > 0) {
       contactsToSend.forEach(contact => {
         let contactPhone = typeof contact === 'object' ? (contact.phone || contact.number) : String(contact);
         const match = contactPhone.match(/(?:\+?91|0)?[6-9]\d{9}/);
         if (match) {
           contactPhone = match[0];
+          dispatchedAnyWhatsApp = true;
+          // Dispatch WhatsApp SOS message with Google Maps Hyperlink & live tracking link
+          WhatsAppService.sendEmergencyAlert(
+            contactPhone,
+            trackingUrl,
+            victimName,
+            { latitude, longitude, location }
+          );
         }
-
-        // Dispatch WhatsApp SOS message with Google Maps Hyperlink & live tracking link
-        WhatsAppService.sendEmergencyAlert(
-          contactPhone,
-          trackingUrl,
-          victimName,
-          { latitude, longitude, location }
-        );
-
-        // Fast2SMS (Paused to preserve wallet balance per user request)
-        // SmsService.sendEmergencySMS(contactPhone, trackingUrl);
       });
-    } else {
-      console.log('ℹ️ No emergency contacts provided to alert.');
+    }
+
+    // If Instant SOS / Guest user without personal guardians, dispatch WhatsApp to Emergency Control / Admin
+    if (!dispatchedAnyWhatsApp) {
+      const emergencyControlPhone = process.env.ADMIN_WHATSAPP || '916381592501';
+      console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${emergencyControlPhone}) with Google Maps & Live Tracking Link...`);
+      WhatsAppService.sendEmergencyAlert(
+        emergencyControlPhone,
+        trackingUrl,
+        `${victimName} (Instant SOS)`,
+        { latitude, longitude, location: location || 'Live GPS Coordinates' }
+      );
     }
 
     // STEP 3.5: Instant WhatsApp Emergency Dispatch to Active Approved On-Duty Agents (Nearest First)
