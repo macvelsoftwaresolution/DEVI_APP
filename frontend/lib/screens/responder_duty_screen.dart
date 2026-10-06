@@ -286,6 +286,14 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
 
     if (_agentId != null) {
       await LocationService.stopResponderDuty(agentId: _agentId!);
+      try {
+        final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$_agentId/duty');
+        await http.post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'status': 'OFF_DUTY'}),
+        ).timeout(const Duration(seconds: 4));
+      } catch (_) {}
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -297,6 +305,13 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
         _shiftEndTime = null;
         _activeAlert = null;
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🛑 Duty Shift Ended. You are now OFF-LINE.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
     }
   }
 

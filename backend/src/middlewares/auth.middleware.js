@@ -55,10 +55,11 @@ export const optionalToken = (req, res, next) => {
 export const verifyAdminKey = (req, res, next) => {
   // Public Duty Portal, Agent Invite acceptance, Agent Location Streaming, & Duty Settings do NOT require admin secret
   if (
-    req.path.startsWith('/duty') ||
+    req.path.includes('/duty') ||
     req.path.includes('/location') ||
     req.path.includes('/accept-assignment') ||
     req.path.includes('/status') ||
+    req.path.includes('/end-duty') ||
     req.path.startsWith('/settings/duty')
   ) {
     return next();

@@ -291,6 +291,13 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
+        setResponders((prev) =>
+          prev.map((r) =>
+            String(r.id) === String(agentId)
+              ? { ...r, duty_status: 'OFF_DUTY', status: 'OFF_DUTY', is_live: false }
+              : r
+          )
+        );
         fetchResponders();
       }
     } catch (_) {}
