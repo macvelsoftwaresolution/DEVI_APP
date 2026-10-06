@@ -259,6 +259,25 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
   }
 });
 
+// GET /api/sos/geocode?lat=...&lng=... - Server-side secure reverse geocoding (Google Maps API + Cache)
+router.get('/geocode', async (req, res, next) => {
+  try {
+    const { lat, lng } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, message: 'lat and lng query parameters are required' });
+    }
+    const address = await DataService.reverseGeocode(lat, lng);
+    res.json({
+      success: true,
+      address: address || 'Live Emergency Location',
+      latitude: parseFloat(lat),
+      longitude: parseFloat(lng),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/sos/live-update - Updates live GPS coordinates stream from mobile app
 router.post('/live-update', async (req, res, next) => {
   try {
