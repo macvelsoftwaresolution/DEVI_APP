@@ -167,7 +167,7 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
       agentId: _agentId!,
       agentName: _agentName ?? 'DEVI Responder',
       shiftHours: _shiftHours,
-      intervalSeconds: 10,
+      intervalSeconds: 2,
       onUpdate: (Position pos) {
         if (mounted) {
           setState(() {

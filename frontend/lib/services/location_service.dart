@@ -139,10 +139,10 @@ class LocationService {
     late LocationSettings locationSettings;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 8, // Low-bandwidth optimization: send update every 8 meters
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 2, // High-precision live tracking: updates every 2 meters
         forceLocationManager: true,
-        intervalDuration: const Duration(seconds: 4),
+        intervalDuration: const Duration(seconds: 2),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: "🚨 DEVI Emergency SOS Active",
           notificationText: "Live GPS is continuously streaming to your emergency guardians.",
@@ -152,16 +152,16 @@ class LocationService {
       );
     } else if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS)) {
       locationSettings = AppleSettings(
-        accuracy: LocationAccuracy.high,
+        accuracy: LocationAccuracy.bestForNavigation,
         activityType: ActivityType.fitness,
-        distanceFilter: 8,
+        distanceFilter: 2,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
       );
     } else {
       locationSettings = const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 8,
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 2,
       );
     }
 
@@ -252,10 +252,10 @@ class LocationService {
     late LocationSettings locationSettings;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5, // Update on 5 meters movement
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 2, // Ultra-responsive: updates every 2 meters
         forceLocationManager: true,
-        intervalDuration: Duration(seconds: intervalSeconds),
+        intervalDuration: Duration(seconds: intervalSeconds <= 2 ? intervalSeconds : 2),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: "🛡️ DEVI Responder: Live Duty Active",
           notificationText: "Live GPS is streaming to Control Room. Duty shift is active.",
@@ -265,16 +265,16 @@ class LocationService {
       );
     } else if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS)) {
       locationSettings = AppleSettings(
-        accuracy: LocationAccuracy.high,
+        accuracy: LocationAccuracy.bestForNavigation,
         activityType: ActivityType.fitness,
-        distanceFilter: 5,
+        distanceFilter: 2,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
       );
     } else {
       locationSettings = const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 2,
       );
     }
 
