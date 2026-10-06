@@ -60,10 +60,14 @@ class DeviPrimaryButton extends StatelessWidget {
 
 class GuestUserButton extends StatelessWidget {
   final VoidCallback onPressed;
+  final String title;
+  final String subtitle;
 
   const GuestUserButton({
     super.key,
     required this.onPressed,
+    this.title = 'Instant SOS',
+    this.subtitle = 'Direct Emergency Mode • Zero Setup',
   });
 
   @override
@@ -74,63 +78,106 @@ class GuestUserButton extends StatelessWidget {
         onTap: onPressed,
         borderRadius: BorderRadius.circular(32),
         child: Container(
-          height: 60,
+          height: 64,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(32),
             border: Border.all(
-              color: AppColors.borderCard,
-              width: 1.2,
+              color: const Color(0xFFFECDD3),
+              width: 1.4,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 10,
+                color: const Color(0xFFE11D48).withValues(alpha: 0.08),
+                blurRadius: 14,
                 offset: const Offset(0, 4),
               ),
             ],
           ),
           child: Row(
             children: [
-              // Shield icon in soft pink badge
+              // Flash/Shield icon in soft red badge
               Container(
-                width: 38,
-                height: 38,
-                decoration: const BoxDecoration(
-                  color: AppColors.guestShieldBg,
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFFECEF), Color(0xFFFFD5DC)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFFDA4AF), width: 1),
                 ),
                 child: const Center(
                   child: Icon(
-                    Icons.shield_outlined,
-                    color: AppColors.guestShieldRed,
-                    size: 20,
+                    Icons.bolt_rounded,
+                    color: Color(0xFFE11D48),
+                    size: 24,
                   ),
                 ),
               ),
               const SizedBox(width: 14),
-              const Expanded(
-                child: Text(
-                  'Guest User',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primaryNavy,
-                  ),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFBE123C),
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF1F2),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFFECDD3)),
+                          ),
+                          child: const Text(
+                            'FAST',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFE11D48),
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: AppColors.inputFill,
+                width: 30,
+                height: 30,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFF1F2),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
-                  Icons.chevron_right,
-                  color: AppColors.textMuted,
-                  size: 18,
+                  Icons.arrow_forward_rounded,
+                  color: Color(0xFFE11D48),
+                  size: 16,
                 ),
               ),
             ],

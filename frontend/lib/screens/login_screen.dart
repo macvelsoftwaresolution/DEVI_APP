@@ -332,8 +332,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 20),
 
-                  // Guest User Pill Button
+                  // Instant SOS Pill Button (Zero Setup)
                   GuestUserButton(
+                    title: '⚡ Instant SOS',
+                    subtitle: 'Direct Emergency Mode • Zero Setup',
                     onPressed: _continueAsGuest,
                   ),
 

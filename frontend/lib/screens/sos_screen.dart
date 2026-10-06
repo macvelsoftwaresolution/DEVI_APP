@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
@@ -251,19 +252,28 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       final initialId = 'SOS_${DateTime.now().millisecondsSinceEpoch}';
       EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
 
-      final guardiansList = _appState.guardians;
+      final isGuestMode = _appState.isGuest;
+      final guardiansList = isGuestMode ? <GuardianModel>[] : _appState.guardians;
       final primaryGuardian = guardiansList.isNotEmpty ? guardiansList.first : null;
-      final primaryPhone = primaryGuardian?.phone ?? '';
+      final primaryPhone = isGuestMode ? '' : (primaryGuardian?.phone ?? '');
 
       // 2. Fetch current GPS location honestly with accuracy & timestamp
       final locResult = await LocationService.getCurrentLocation();
-      final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
-      final guardianPhones = guardiansList.map((g) => g.phone).toList();
+      final contactStrings = isGuestMode || guardiansList.isEmpty
+          ? ['112 National Police Emergency Helpline (Instant SOS)']
+          : guardiansList.map((g) => '${g.name} (${g.phone})').toList();
+      final guardianPhones = isGuestMode || guardiansList.isEmpty
+          ? ['112']
+          : guardiansList.map((g) => g.phone).toList();
+
+      final defaultUserName = isGuestMode
+          ? 'Instant SOS User'
+          : 'DEVI User';
 
       // 3. Register SOS alert in Backend with Idempotency Key & Trigger WhatsApp Dispatch
       final alertData = await ApiService.instance.triggerEmergencyAlert(
-        userPhone: _appState.phone.isNotEmpty ? _appState.phone : '9500238347',
-        userName: _appState.name.isNotEmpty ? _appState.name : 'DEVI User',
+        userPhone: _appState.phone.isNotEmpty ? _appState.phone : 'INSTANT_SOS',
+        userName: _appState.name.isNotEmpty ? _appState.name : defaultUserName,
         location: locResult.mapsUrl ?? locResult.displayText,
         latitude: locResult.latitude,
         longitude: locResult.longitude,
@@ -292,10 +302,12 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
         });
       }
 
-      // 5. Emergency Auto-Call to 1st Guardian (Normal SMS completely removed per requirement)
+      // 5. Emergency Auto-Call: 112 is on HOLD per test request; routes directly to Web & WhatsApp!
       if (!isDuplicate) {
-        // Immediately initiate direct phone call to the 1st Guardian
-        if (primaryPhone.isNotEmpty) {
+        if (isGuestMode || primaryPhone.isEmpty) {
+          // Direct 112 police call is put on HOLD for testing per user request!
+          debugPrint('⏸️ [112 POLICE CALL ON HOLD] Real 112 call paused. Dispatched to Web Dashboard & WhatsApp.');
+        } else {
           await SmsService.makePhoneCall(primaryPhone);
         }
       } else {
@@ -319,8 +331,10 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
               Expanded(
                 child: Text(
                   isDuplicate
-                      ? '🚨 Active SOS Resumed (Idempotent: No duplicate SMS)'
-                      : '🛡️ SOS Incident & 2-Min Evidence Stored in Database (Ready for Verification)',
+                      ? '🚨 Active SOS Resumed'
+                      : (primaryPhone.isNotEmpty
+                          ? '🛡️ SOS Incident & Evidence Recorded • Calling $primaryPhone'
+                          : '🛡️ Emergency SOS Activated • Live Tracking Active'),
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
               ),
@@ -621,6 +635,165 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     );
   }
 
+  void _showAddGuardianDialog() {
+    final nameController = TextEditingController();
+    final phoneController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Row(
+          children: [
+            Icon(Icons.person_add_alt_1, color: AppColors.emergencyRed, size: 22),
+            SizedBox(width: 8),
+            Text(
+              'Add Guardian',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primaryNavy,
+              ),
+            ),
+          ],
+        ),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Guardian Name',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: nameController,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  hintText: 'Enter guardian name',
+                  hintStyle: TextStyle(
+                    color: AppColors.textMuted.withValues(alpha: 0.6),
+                    fontSize: 14,
+                  ),
+                  floatingLabelBehavior: FloatingLabelBehavior.never,
+                  filled: true,
+                  fillColor: AppColors.inputFill,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.person_outline, size: 20, color: AppColors.textMuted),
+                ),
+                validator: (val) {
+                  final text = val?.trim() ?? '';
+                  if (text.isEmpty) return 'Please enter guardian name';
+                  if (text.length < 2) return 'Name must be at least 2 characters';
+                  if (!RegExp(r"^[a-zA-Z\s\.]+$").hasMatch(text)) {
+                    return 'Name should only contain letters';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Mobile Number',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: phoneController,
+                keyboardType: TextInputType.phone,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
+                decoration: InputDecoration(
+                  hintText: '9042024830',
+                  hintStyle: TextStyle(
+                    color: AppColors.textMuted.withValues(alpha: 0.6),
+                    fontSize: 14,
+                  ),
+                  floatingLabelBehavior: FloatingLabelBehavior.never,
+                  prefixText: '+91 ',
+                  prefixStyle: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: AppColors.textDark,
+                  ),
+                  filled: true,
+                  fillColor: AppColors.inputFill,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  prefixIcon: const Icon(Icons.phone_outlined, size: 20, color: AppColors.textMuted),
+                ),
+                validator: (val) {
+                  final phone = val?.trim() ?? '';
+                  if (phone.isEmpty) return 'Please enter mobile number';
+                  if (phone.length != 10) return 'Enter exactly 10 digits';
+                  if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
+                    return 'Starts with 6, 7, 8, or 9';
+                  }
+                  if (phone == _appState.phone) {
+                    return 'Cannot be your own mobile number';
+                  }
+                  if (_appState.rawGuardians.any((g) => g.phone == phone)) {
+                    return 'Guardian is already added';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                _appState.addGuardian(
+                  nameController.text.trim(),
+                  phoneController.text.trim(),
+                );
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${nameController.text.trim()} added as guardian'),
+                    backgroundColor: AppColors.primaryNavy,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.emergencyRed,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            child: const Text('Add', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -739,6 +912,8 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                       ),
                     ),
                   ),
+
+
 
                   SizedBox(height: isShortScreen ? 8 : 14),
 
