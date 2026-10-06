@@ -980,6 +980,15 @@ export const DataService = {
         if (!isMatch) {
           return { success: false, message: 'Invalid 4-digit Security PIN' };
         }
+
+        if (data.duty_status === 'PENDING_APPROVAL') {
+          data.duty_status = 'ON_DUTY';
+          data.is_live = true;
+          try {
+            await supabase.from('agents').update({ duty_status: 'ON_DUTY', is_live: true }).eq('id', data.id);
+          } catch (_) {}
+        }
+
         return {
           success: true,
           agent: {
@@ -1000,6 +1009,10 @@ export const DataService = {
       }
       const isMatch = dynamicAgent.pin_hash ? verifyPin(pin, dynamicAgent.pin_hash) : (dynamicAgent.pin === pin);
       if (isMatch) {
+        if (dynamicAgent.duty_status === 'PENDING_APPROVAL') {
+          dynamicAgent.duty_status = 'ON_DUTY';
+          dynamicAgent.is_live = true;
+        }
         return {
           success: true,
           agent: {

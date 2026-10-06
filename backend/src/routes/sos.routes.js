@@ -158,50 +158,70 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
             return a.distKm - b.distKm;
           });
 
-        const NEARBY_THRESHOLD_KM = 0.5; // 500 meters proximity zone
+        // Progressive Proximity Tiers (Check 500m -> 1.0km -> 1.5km -> Active Patrol Sector)
+        const tier500m = rankedResponders.filter(a => a.distKm <= 0.5 && a.phone);
+        const tier1km = rankedResponders.filter(a => a.distKm <= 1.0 && a.phone);
+        const tier15km = rankedResponders.filter(a => a.distKm <= 1.5 && a.phone);
 
-        // Single Primary Pick: Exactly 1st Nearest Person gets officially assigned
-        if (rankedResponders.length > 0) {
+        let targetHelpersToAlert = [];
+        let proximityTierLabel = '';
+
+        if (tier500m.length > 0) {
+          targetHelpersToAlert = tier500m;
+          proximityTierLabel = '500m Immediate Zone';
+        } else if (tier1km.length > 0) {
+          targetHelpersToAlert = tier1km;
+          proximityTierLabel = '1.0 km Sector Zone';
+        } else if (tier15km.length > 0) {
+          targetHelpersToAlert = tier15km;
+          proximityTierLabel = '1.5 km Extended Zone';
+        } else {
+          targetHelpersToAlert = rankedResponders.filter(a => a.isOnDuty && a.phone && a.distKm < 10);
+          proximityTierLabel = 'Active Patrol Sector';
+        }
+
+        console.log(`🚨 [PROGRESSIVE PROXIMITY DISPATCH] Found ${targetHelpersToAlert.length} helper(s) within ${proximityTierLabel}. Alerting ALL of them!`);
+
+        // Designate the 1st Nearest Person as Primary Assignee
+        if (targetHelpersToAlert.length > 0) {
+          autoAssignedAgent = targetHelpersToAlert[0];
+        } else if (rankedResponders.length > 0) {
           autoAssignedAgent = rankedResponders[0];
-          const distStr = autoAssignedAgent.distKm < 900 ? `~${autoAssignedAgent.distKm} km` : 'Standby Sector';
-          console.log(`🤖 [AUTO-ASSIGN NEAREST RESPONDER] Auto-assigning 1st Agent in Dashboard: ${autoAssignedAgent.name} (Phone: ${autoAssignedAgent.phone || 'N/A'}, Dist: ${distStr})`);
+        }
 
+        if (autoAssignedAgent) {
+          const distStr = autoAssignedAgent.distKm < 900 ? `~${autoAssignedAgent.distKm} km` : 'Standby Sector';
+          console.log(`🤖 [AUTO-ASSIGN NEAREST RESPONDER] Auto-assigning 1st Agent: ${autoAssignedAgent.name} (Phone: ${autoAssignedAgent.phone || 'N/A'}, Dist: ${distStr})`);
           await DataService.assignAgent(alert.id, autoAssignedAgent.name, autoAssignedAgent.phone);
         }
 
-        // WhatsApp emergency alerts dispatch:
-        // Identify all agents within 500 meters (or nearby on-duty agents within patrol zone)
-        const agentsWithin500m = rankedResponders.filter(a => a.distKm <= NEARBY_THRESHOLD_KM && a.phone);
-        const nearbyAgentsToAlert = agentsWithin500m.length > 0
-          ? rankedResponders.filter(a => a.distKm <= NEARBY_THRESHOLD_KM)
-          : rankedResponders.filter(a => a.isOnDuty && a.distKm < 10); // fallback within 10 km patrol zone
-
-        // 1. Dispatch official primary mission to 1st Auto-Assigned Agent
+        // WhatsApp emergency alerts dispatch to ALL matched helpers in this proximity tier
+        // 1. Dispatch official mission to 1st Primary Helper
         if (autoAssignedAgent && autoAssignedAgent.phone) {
           const metersAway = autoAssignedAgent.distKm < 900 ? Math.round(autoAssignedAgent.distKm * 1000) : null;
           const proxStr = metersAway != null ? (metersAway < 1000 ? `[~${metersAway}m Away] ` : `[~${autoAssignedAgent.distKm} KM Away] `) : '';
-          console.log(`📲 [WHATSAPP DISPATCH] Alerting Auto-Assigned Primary Agent ${autoAssignedAgent.name} (+91 ${autoAssignedAgent.phone}) ${proxStr}`);
+          console.log(`📲 [WHATSAPP DISPATCH] Alerting Primary Helper ${autoAssignedAgent.name} (+91 ${autoAssignedAgent.phone}) ${proxStr}`);
           WhatsAppService.sendEmergencyAlert(
             autoAssignedAgent.phone,
             trackingUrl,
             victimName,
-            { latitude, longitude, location: `🚨 [PRIMARY MISSION ASSIGNED TO YOU] ${proxStr}${location || 'Live GPS Coordinates'}` }
+            { latitude, longitude, location: `🚨 [PRIMARY MISSION ASSIGNED TO YOU - ${proximityTierLabel}] ${proxStr}${location || 'Live GPS Coordinates'}` }
           );
         }
 
-        // 2. Alert ALL other nearby agents within 500m (or nearby zone) so everyone in proximity is alerted!
-        const secondaryNearbyAgents = nearbyAgentsToAlert.filter(a => a.id !== autoAssignedAgent?.id);
-        console.log(`📢 [MULTI-AGENT RADIUS DISPATCH] Found ${secondaryNearbyAgents.length} additional nearby agent(s) within proximity zone to alert.`);
-        for (const agent of secondaryNearbyAgents) {
-          if (agent.phone) {
-            const metersAway = agent.distKm < 900 ? Math.round(agent.distKm * 1000) : null;
-            const proxStr = metersAway != null ? (metersAway < 1000 ? `[~${metersAway}m Away] ` : `[~${agent.distKm} KM Away] `) : '';
-            console.log(`📲 [WHATSAPP DISPATCH] Alerting Nearby Backup Agent ${agent.name} (+91 ${agent.phone}) ${proxStr}`);
+        // 2. Alert EVERY OTHER helper within this zone (500m / 1km / 1.5km) so none is left out!
+        const additionalHelpers = targetHelpersToAlert.filter(a => a.id !== autoAssignedAgent?.id);
+        console.log(`📢 [MULTI-HELPER BROADCAST] Alerting ${additionalHelpers.length} additional helper(s) within ${proximityTierLabel}.`);
+        for (const helper of additionalHelpers) {
+          if (helper.phone) {
+            const metersAway = helper.distKm < 900 ? Math.round(helper.distKm * 1000) : null;
+            const proxStr = metersAway != null ? (metersAway < 1000 ? `[~${metersAway}m Away] ` : `[~${helper.distKm} KM Away] `) : '';
+            console.log(`📲 [WHATSAPP DISPATCH] Alerting Nearby Helper ${helper.name} (+91 ${helper.phone}) ${proxStr}`);
             WhatsAppService.sendEmergencyAlert(
-              agent.phone,
+              helper.phone,
               trackingUrl,
               victimName,
-              { latitude, longitude, location: `⚠️ [NEARBY EMERGENCY - BACKUP ASSIST] ${proxStr}${location || 'Live GPS Coordinates'}` }
+              { latitude, longitude, location: `⚠️ [NEARBY EMERGENCY ALERT - ${proximityTierLabel}] ${proxStr}${location || 'Live GPS Coordinates'}` }
             );
           }
         }

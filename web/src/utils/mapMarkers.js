@@ -81,9 +81,32 @@ export function createResponderDivIcon(agent = {}, isSelected = false) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
   
-  const isOnDuty = agent.is_on_duty === true || agent.status === 'ON-DUTY' || agent.status === 'ACTIVE';
-  const statusText = isOnDuty ? 'ON-DUTY' : 'STANDBY';
-  const statusClass = isOnDuty ? 'on-duty' : 'off-duty';
+  const rawStatus = String(agent.duty_status || agent.status || '').toUpperCase();
+  const isOnDuty = agent.is_on_duty === true || rawStatus === 'ON_DUTY' || rawStatus === 'ON-DUTY' || rawStatus === 'ACTIVE' || rawStatus === 'AVAILABLE';
+  const isPending = rawStatus === 'PENDING_APPROVAL' || rawStatus === 'PENDING';
+  const isEnRoute = rawStatus === 'EN_ROUTE' || rawStatus === 'DISPATCHED';
+
+  let statusText = 'OFF-DUTY';
+  let statusClass = 'off-duty';
+  let gradTop = '#64748B';
+  let gradBottom = '#334155';
+
+  if (isEnRoute) {
+    statusText = 'EN-ROUTE';
+    statusClass = 'en-route';
+    gradTop = '#10B981';
+    gradBottom = '#047857';
+  } else if (isOnDuty) {
+    statusText = 'ON-DUTY';
+    statusClass = 'on-duty';
+    gradTop = '#0EA5E9';
+    gradBottom = '#0369A1';
+  } else if (isPending) {
+    statusText = 'PENDING';
+    statusClass = 'pending';
+    gradTop = '#F59E0B';
+    gradBottom = '#B45309';
+  }
   
   let emblemIcon = '🛡️';
   if (agent.vehicle) {
@@ -109,8 +132,8 @@ export function createResponderDivIcon(agent = {}, isSelected = false) {
         <svg class="devi-shield-svg" viewBox="0 0 42 46" fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <linearGradient id="${gradId}" x1="21" y1="1" x2="21" y2="45" gradientUnits="userSpaceOnUse">
-              <stop stop-color="${isOnDuty ? '#0EA5E9' : '#64748B'}"/>
-              <stop offset="1" stop-color="${isOnDuty ? '#0369A1' : '#334155'}"/>
+              <stop stop-color="${gradTop}"/>
+              <stop offset="1" stop-color="${gradBottom}"/>
             </linearGradient>
           </defs>
           <path d="M21 45C21 45 39 36 39 21V7L21 1L3 7V21C3 36 21 45 21 45Z" fill="url(#${gradId})" stroke="#FFFFFF" stroke-width="2.5"/>

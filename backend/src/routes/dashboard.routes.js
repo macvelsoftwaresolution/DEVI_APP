@@ -543,35 +543,25 @@ router.post(['/agents/:id/accept-assignment', '/agents/accept-assignment'], asyn
     const baseUrl = process.env.WEB_BASE_URL || process.env.PUBLIC_BASE_URL || `${req.protocol}://${(req.get('host') || '').replace(/^devi-api\./, 'devi.')}`;
     const trackingUrl = `${baseUrl}/dashboard?incident=${targetAlertId}`;
 
-    // DISPATCH OFFICIAL WHATSAPP ALERT TO ADMIN / CONTROL ROOM
-    const emergencyControlPhone = process.env.ADMIN_WHATSAPP || '916381592501';
-    console.log(`📲 [ADMIN ALERT] Agent ${agentName} accepted mission. Alerting Admin (+${emergencyControlPhone})...`);
-    WhatsAppService.notifyAdminAgentAccepted(
-      emergencyControlPhone,
-      agentName,
-      agentPhone,
-      victimName,
-      trackingUrl,
-      { location: locationStr, latitude: lat, longitude: lng }
-    );
-
-    // Broadcast instant update to Command Dashboard
+    // Broadcast instant mission takeover update directly to Command Dashboard
     socketService.broadcastToRoom('dashboard', {
       type: 'incident:en_route',
       alertId: targetAlertId,
       agentId: targetAgentId,
       agentName,
       agentPhone,
+      victimName,
+      location: locationStr,
       status: 'DISPATCHED',
       responderStatus: 'EN_ROUTE',
+      acceptedAt: new Date().toISOString(),
     });
     socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
 
     res.json({
       success: true,
-      message: `Mission accepted. Agent ${agentName} is EN ROUTE. Control Room has been notified via WhatsApp.`,
+      message: `Mission accepted. Agent ${agentName} is EN ROUTE. Control Room Dashboard updated.`,
       session,
-      adminNotified: true,
     });
   } catch (err) {
     next(err);

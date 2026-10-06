@@ -20,6 +20,7 @@ export default function DashboardPage() {
   const [gpsInterval, setGpsInterval] = useState(10);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [emergencyAlertModal, setEmergencyAlertModal] = useState(null); // { id, name, phone, location, lat, lng }
+  const [acceptedAlertBanner, setAcceptedAlertBanner] = useState(null); // { alertId, agentName, agentPhone, victimName, location, time }
   const [operatorNote, setOperatorNote] = useState('');
   const [isSavingResponder, setIsSavingResponder] = useState(false);
 
@@ -40,6 +41,7 @@ export default function DashboardPage() {
   const markersRef = useRef(new Map());
   const responderMarkersRef = useRef(new Map());
   const dispatchLineRef = useRef(null);
+  const victimTrailRef = useRef(null);
   const audioCtxRef = useRef(null);
   const prevActiveIdsRef = useRef(new Set());
   const wsRef = useRef(null);
@@ -331,21 +333,46 @@ export default function DashboardPage() {
               const vLng = parseFloat(msg.longitude);
               if (!isNaN(vLat) && !isNaN(vLng)) {
                 setIncidents((prev) =>
-                  prev.map((inc) =>
-                    String(inc.id) === String(msg.alertId)
-                      ? { ...inc, latitude: vLat, longitude: vLng, location: msg.address || inc.location }
-                      : inc
-                  )
+                  prev.map((inc) => {
+                    if (String(inc.id) === String(msg.alertId)) {
+                      const updatedBreadcrumbs = [
+                        ...(inc.breadcrumbs || [{ latitude: inc.latitude, longitude: inc.longitude }]),
+                        { latitude: vLat, longitude: vLng, timestamp: new Date().toISOString() },
+                      ];
+                      return {
+                        ...inc,
+                        latitude: vLat,
+                        longitude: vLng,
+                        location: msg.address || inc.location,
+                        breadcrumbs: updatedBreadcrumbs,
+                      };
+                    }
+                    return inc;
+                  })
                 );
               }
             } else if (msg.type === 'incident:en_route' && msg.alertId) {
               setIncidents((prev) =>
                 prev.map((inc) =>
                   String(inc.id) === String(msg.alertId)
-                    ? { ...inc, responderStatus: 'EN_ROUTE', status: 'DISPATCHED' }
+                    ? {
+                        ...inc,
+                        responderStatus: 'EN_ROUTE',
+                        status: 'DISPATCHED',
+                        assignedAgent: msg.agentPhone ? `${msg.agentName} (${msg.agentPhone})` : msg.agentName || inc.assignedAgent,
+                      }
                     : inc
                 )
               );
+              setAcceptedAlertBanner({
+                alertId: msg.alertId,
+                agentName: msg.agentName || 'Safety Responder',
+                agentPhone: msg.agentPhone || '',
+                victimName: msg.victimName || 'Emergency Victim',
+                location: msg.location || '',
+                time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              });
+              setSelectedIncidentId(msg.alertId);
               try {
                 const name = msg.agentName || 'Safety Responder';
                 const utterance = new SpeechSynthesisUtterance(`Update! Agent ${name} has accepted the mission and is now En Route.`);
@@ -475,9 +502,32 @@ export default function DashboardPage() {
       dispatchLineRef.current = null;
     }
 
+    if (victimTrailRef.current) {
+      map.removeLayer(victimTrailRef.current);
+      victimTrailRef.current = null;
+    }
+
     if (!selectedIncident) return;
     const vLat = parseFloat(selectedIncident.latitude);
     const vLng = parseFloat(selectedIncident.longitude);
+
+    // Draw Victim's Red Movement Trail (Breadcrumb Path as they move)
+    if (selectedIncident.breadcrumbs && selectedIncident.breadcrumbs.length > 1) {
+      const trailPoints = selectedIncident.breadcrumbs
+        .map((b) => [parseFloat(b.latitude), parseFloat(b.longitude)])
+        .filter(([lat, lng]) => !isNaN(lat) && !isNaN(lng));
+
+      if (trailPoints.length > 1) {
+        const trail = L.polyline(trailPoints, {
+          color: '#EF4444',
+          weight: 4,
+          opacity: 0.9,
+          dashArray: '6, 6',
+          lineCap: 'round',
+        }).addTo(map);
+        victimTrailRef.current = trail;
+      }
+    }
 
     if (selectedIncident.assignedAgent) {
       const assignedResp = responders.find((r) =>
@@ -546,6 +596,7 @@ export default function DashboardPage() {
     selectedIncident?.longitude,
     selectedIncident?.assignedAgent,
     selectedIncident?.responderStatus,
+    selectedIncident?.breadcrumbs,
     responders,
   ]);
 
@@ -2021,6 +2072,158 @@ export default function DashboardPage() {
               <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--text-dim)', flexShrink: 0, marginLeft: '8px' }}>
                 {emergencyAlertModal.lat?.toFixed(5)}, {emergencyAlertModal.lng?.toFixed(5)}
               </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING TACTICAL MISSION ACCEPTED BANNER (Shown directly on Dashboard without WhatsApp spam) */}
+      {acceptedAlertBanner && (
+        <div
+          style={{
+            position: 'absolute',
+            top: emergencyAlertModal ? '240px' : '75px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '560px',
+            maxWidth: '92vw',
+            background: 'linear-gradient(180deg, rgba(6, 35, 25, 0.96) 0%, rgba(3, 20, 15, 0.96) 100%)',
+            border: '2px solid #10B981',
+            boxShadow: '0 8px 32px rgba(16, 185, 129, 0.4), 0 0 24px rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(12px)',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            zIndex: 1001,
+            display: 'flex',
+            flexDirection: 'column',
+            animation: 'slideDown 0.3s ease-out',
+            transition: 'top 0.3s ease',
+          }}
+        >
+          {/* BANNER HEADER */}
+          <div
+            style={{
+              background: 'linear-gradient(90deg, #059669 0%, #047857 100%)',
+              padding: '10px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              color: '#FFF',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '20px' }}>🚀</span>
+              <div>
+                <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: '14px', fontWeight: '900', letterSpacing: '0.5px' }}>
+                  HELPER ACCEPTED MISSION • EN ROUTE
+                </div>
+                <div style={{ fontSize: '10px', opacity: 0.9 }}>
+                  Incident #{acceptedAlertBanner.alertId?.substring(0, 6).toUpperCase()} • Live Connection Active
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setAcceptedAlertBanner(null)}
+              style={{
+                background: 'rgba(0, 0, 0, 0.25)',
+                border: 'none',
+                color: '#FFF',
+                borderRadius: '50%',
+                width: '26px',
+                height: '26px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* BANNER BODY */}
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {/* HELPER CARD */}
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  borderRadius: '10px',
+                  padding: '10px',
+                }}
+              >
+                <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#6EE7B7', fontWeight: '800', marginBottom: '4px' }}>
+                  🛡️ Field Helper
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#FFF' }}>
+                  {acceptedAlertBanner.agentName}
+                </div>
+                {acceptedAlertBanner.agentPhone && (
+                  <div style={{ fontSize: '11px', fontFamily: 'JetBrains Mono, monospace', color: '#A7F3D0', marginTop: '2px' }}>
+                    📞 {acceptedAlertBanner.agentPhone}
+                  </div>
+                )}
+              </div>
+
+              {/* VICTIM CARD */}
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  borderRadius: '10px',
+                  padding: '10px',
+                }}
+              >
+                <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#FCA5A5', fontWeight: '800', marginBottom: '4px' }}>
+                  🆘 Emergency Victim
+                </div>
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#FFF' }}>
+                  {acceptedAlertBanner.victimName}
+                </div>
+                <div style={{ fontSize: '11px', color: '#FECACA', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  📍 {acceptedAlertBanner.location || 'Active SOS Scene'}
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingTop: '4px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#A7F3D0' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', display: 'inline-block', boxShadow: '0 0 8px #10B981' }}></span>
+                <span>En Route to victim scene at {acceptedAlertBanner.time}</span>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedIncidentId(acceptedAlertBanner.alertId);
+                  const inc = incidents.find((i) => String(i.id) === String(acceptedAlertBanner.alertId));
+                  if (inc && inc.latitude && inc.longitude) {
+                    smoothFlyTo(parseFloat(inc.latitude), parseFloat(inc.longitude), 17);
+                  }
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #10B981, #059669)',
+                  border: 'none',
+                  color: '#FFF',
+                  borderRadius: '6px',
+                  padding: '6px 12px',
+                  fontWeight: '700',
+                  fontSize: '11px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                <Navigation size={13} /> View Live Scene
+              </button>
             </div>
           </div>
         </div>

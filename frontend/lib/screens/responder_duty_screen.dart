@@ -194,6 +194,16 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     if (success) {
       setState(() => _isOnDuty = true);
 
+      // Notify backend that agent is actively ON_DUTY
+      try {
+        final dUrl = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$_agentId/duty');
+        await http.post(
+          dUrl,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'status': 'ON_DUTY'}),
+        ).timeout(const Duration(seconds: 4));
+      } catch (_) {}
+
       // Start countdown ticker
       _countdownTimer?.cancel();
       _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
