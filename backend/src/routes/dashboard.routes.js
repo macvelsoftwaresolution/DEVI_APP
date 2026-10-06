@@ -518,19 +518,60 @@ router.post(['/agents/:id/accept-assignment', '/agents/accept-assignment'], asyn
 
     const session = await DataService.acceptMission(targetAlertId, targetAgentId);
 
+    // Retrieve Agent and Victim details
+    const agent = targetAgentId ? await DataService.getAgentById(targetAgentId) : null;
+    const agentName = agent?.name || session?.assignedAgent || 'Safety Responder';
+    const agentPhone = agent?.phone || null;
+
+    let victimName = session?.user?.name || session?.userName || 'DEVI Victim';
+    let locationStr = session?.location || null;
+    let lat = session?.latitude || null;
+    let lng = session?.longitude || null;
+
+    if (!locationStr || victimName === 'DEVI Victim') {
+      try {
+        const { data: sosRow } = await supabase.from('sos_history').select('*').eq('id', targetAlertId).maybeSingle();
+        if (sosRow) {
+          victimName = sosRow.victim_name || sosRow.user_name || victimName;
+          locationStr = sosRow.address || sosRow.location || locationStr;
+          lat = sosRow.latitude || lat;
+          lng = sosRow.longitude || lng;
+        }
+      } catch (_) {}
+    }
+
+    const baseUrl = process.env.WEB_BASE_URL || process.env.PUBLIC_BASE_URL || `${req.protocol}://${(req.get('host') || '').replace(/^devi-api\./, 'devi.')}`;
+    const trackingUrl = `${baseUrl}/dashboard?incident=${targetAlertId}`;
+
+    // DISPATCH OFFICIAL WHATSAPP ALERT TO ADMIN / CONTROL ROOM
+    const emergencyControlPhone = process.env.ADMIN_WHATSAPP || '916381592501';
+    console.log(`📲 [ADMIN ALERT] Agent ${agentName} accepted mission. Alerting Admin (+${emergencyControlPhone})...`);
+    WhatsAppService.notifyAdminAgentAccepted(
+      emergencyControlPhone,
+      agentName,
+      agentPhone,
+      victimName,
+      trackingUrl,
+      { location: locationStr, latitude: lat, longitude: lng }
+    );
+
     // Broadcast instant update to Command Dashboard
     socketService.broadcastToRoom('dashboard', {
       type: 'incident:en_route',
       alertId: targetAlertId,
       agentId: targetAgentId,
+      agentName,
+      agentPhone,
       status: 'DISPATCHED',
       responderStatus: 'EN_ROUTE',
     });
+    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
 
     res.json({
       success: true,
-      message: 'Mission accepted. You are marked as EN ROUTE.',
+      message: `Mission accepted. Agent ${agentName} is EN ROUTE. Control Room has been notified via WhatsApp.`,
       session,
+      adminNotified: true,
     });
   } catch (err) {
     next(err);

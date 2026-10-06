@@ -357,4 +357,103 @@ export const WhatsAppService = {
       return { success: false, error: err.message, messageText };
     }
   },
+
+  /**
+   * Notifies Admin / Control Room via WhatsApp when an assigned agent takes over and accepts the mission
+   */
+  async notifyAdminAgentAccepted(adminPhone, agentName, agentPhone, victimName, trackingUrl, locationData = {}) {
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+
+    if (!adminPhone) return { success: false, reason: 'ADMIN_PHONE_EMPTY' };
+    let clean = adminPhone.toString().replace(/\D/g, '');
+    if (clean.length === 10) clean = '91' + clean;
+
+    const { location, latitude, longitude } = locationData || {};
+    const alertTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    let googleMapsUrl = '';
+    if (latitude && longitude) {
+      googleMapsUrl = `https://maps.google.com/?q=${latitude},${longitude}`;
+    }
+
+    const messageText = `🚨 *DEVI CONTROL ROOM — MISSION ACCEPTED* 🚨\n\n` +
+      `👮 *Agent Takeover Confirmed!*\n` +
+      `Agent *${agentName || 'Safety Responder'}* (+91 ${agentPhone || 'N/A'}) has ACCEPTED the mission and is now *EN ROUTE* to the scene!\n\n` +
+      `👤 *Victim:* ${victimName || 'Emergency Victim'}\n` +
+      `📌 *Location:* ${location || 'Live GPS Coordinates'}\n` +
+      `⏱️ *Time:* ${alertTime}\n` +
+      (trackingUrl ? `🔴 *Live Control Room Radar:* ${trackingUrl}\n` : '') +
+      (googleMapsUrl ? `📍 *Google Maps Route:* ${googleMapsUrl}\n\n` : '\n') +
+      `✅ Responder connection active. Live movement streaming to Admin Dashboard.`;
+
+    console.log(`📲 [NOTIFY ADMIN AGENT ACCEPTED] Dispatched to Admin (+${clean}) for Agent: ${agentName}`);
+
+    if (!phoneNumberId || !accessToken) {
+      console.log(`ℹ️ [SIMULATED ADMIN NOTIFICATION]: +${clean}\n${messageText}`);
+      return { success: true, messageText, simulated: true };
+    }
+
+    try {
+      const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
+
+      // 1. Send via approved Meta template devi_safety with customized agent header
+      const templatePayload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: clean,
+        type: 'template',
+        template: {
+          name: 'devi_safety',
+          language: { code: 'en_US' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', parameter_name: 'name', text: `👮 ${agentName} (En Route to ${victimName})` },
+                { type: 'text', parameter_name: 'location_link', text: trackingUrl || googleMapsUrl || 'https://devi.macvelsoftware.com/dashboard' },
+                { type: 'text', parameter_name: 'alert_time', text: alertTime },
+              ],
+            },
+          ],
+        },
+      };
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(templatePayload),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        console.log(`✅ [ADMIN NOTIFICATION SENT VIA TEMPLATE: devi_safety] to +${clean}`);
+        return { success: true, messageId: data.messages?.[0]?.id };
+      }
+
+      // Fallback to text message
+      const textRes = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: clean,
+          type: 'text',
+          text: { preview_url: true, body: messageText },
+        }),
+      });
+      const textData = await textRes.json();
+      return { success: textRes.ok, messageId: textData.messages?.[0]?.id, messageText };
+    } catch (e) {
+      console.warn('⚠️ [NOTIFY ADMIN ERROR]:', e.message);
+      return { success: false, error: e.message, messageText };
+    }
+  },
 };

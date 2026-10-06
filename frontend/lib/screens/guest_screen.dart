@@ -9,6 +9,7 @@ import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/emergency_recording_banner.dart';
+import '../widgets/emergency_sound_card.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
 
@@ -24,7 +25,7 @@ class GuestScreen extends StatefulWidget {
 
 class _GuestScreenState extends State<GuestScreen> {
   final AppState _appState = AppState.instance;
-  bool _isSoundPlaying = false;
+  bool get _isSoundPlaying => SoundService.instance.isPlaying;
   bool _isSendingSos = false;
   String? _activeIdempotencyKey;
   String? _activeAlertId;
@@ -233,16 +234,6 @@ class _GuestScreenState extends State<GuestScreen> {
     );
   }
 
-  void _toggleEmergencySound() async {
-    final playing = await SoundService.instance.toggleSiren();
-    if (!mounted) return;
-    setState(() {
-      _isSoundPlaying = playing;
-    });
-
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-  }
-
   void _showDemoModeSheet() {
     showModalBottomSheet(
       context: context,
@@ -371,11 +362,9 @@ class _GuestScreenState extends State<GuestScreen> {
                 // Option 2: Emergency Sound Card (Interactive Toggle Inside Sheet)
                 InkWell(
                   onTap: () async {
-                    final playing = await SoundService.instance.toggleSiren();
+                    await SoundService.instance.toggleSiren();
                     if (mounted) {
-                      setState(() {
-                        _isSoundPlaying = playing;
-                      });
+                      setState(() {});
                       setSheetState(() {});
                     }
                   },
@@ -860,166 +849,8 @@ class _GuestScreenState extends State<GuestScreen> {
 
                   SizedBox(height: isShortScreen ? 8 : 14),
 
-                  // Bottom Emergency Sound Card (Interactive Toggle Highlight)
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _toggleEmergencySound,
-                      borderRadius: BorderRadius.circular(24),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                        width: double.infinity,
-                        padding: EdgeInsets.all(isSmallScreen ? 11.0 : 14.0),
-                        decoration: BoxDecoration(
-                          gradient: _isSoundPlaying
-                              ? const LinearGradient(
-                                  colors: [Color(0xFFDC2626), Color(0xFF991B1B)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )
-                              : null,
-                          color: _isSoundPlaying ? null : const Color(0xFF222B38),
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: _isSoundPlaying
-                                ? const Color(0xFFFCA5A5)
-                                : const Color(0xFF334155),
-                            width: _isSoundPlaying ? 2.0 : 1.0,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _isSoundPlaying
-                                  ? const Color(0xFFDC2626).withValues(alpha: 0.45)
-                                  : Colors.black.withValues(alpha: 0.12),
-                              blurRadius: _isSoundPlaying ? 18 : 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 250),
-                              width: isSmallScreen ? 48 : 56,
-                              height: isSmallScreen ? 48 : 56,
-                              decoration: BoxDecoration(
-                                color: _isSoundPlaying
-                                    ? Colors.white
-                                    : const Color(0xFFFF521D),
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: (_isSoundPlaying
-                                            ? Colors.white
-                                            : const Color(0xFFFF521D))
-                                        .withValues(alpha: 0.35),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                _isSoundPlaying ? Icons.volume_up : Icons.volume_up_rounded,
-                                color: _isSoundPlaying
-                                    ? const Color(0xFFDC2626)
-                                    : Colors.white,
-                                size: isSmallScreen ? 24 : 28,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        _isSoundPlaying
-                                            ? 'Siren Playing...'
-                                            : 'Emergency Sound',
-                                        style: TextStyle(
-                                          fontSize: isSmallScreen ? 14 : 15,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                          letterSpacing: -0.2,
-                                        ),
-                                      ),
-                                      if (_isSoundPlaying) ...[
-                                        const SizedBox(width: 6),
-                                        Container(
-                                          width: 8,
-                                          height: 8,
-                                          decoration: const BoxDecoration(
-                                            color: Colors.yellowAccent,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    _isSoundPlaying
-                                        ? 'Tap card to stop siren'
-                                        : 'Tap to sound loud siren',
-                                    style: TextStyle(
-                                      fontSize: isSmallScreen ? 11 : 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: _isSoundPlaying
-                                          ? Colors.white.withValues(alpha: 0.9)
-                                          : Colors.white.withValues(alpha: 0.65),
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: _isSoundPlaying
-                                    ? Colors.white
-                                    : Colors.white.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: _isSoundPlaying
-                                      ? Colors.white
-                                      : Colors.white.withValues(alpha: 0.2),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    _isSoundPlaying
-                                        ? Icons.stop_circle
-                                        : Icons.play_arrow_rounded,
-                                    size: 16,
-                                    color: _isSoundPlaying
-                                        ? const Color(0xFFDC2626)
-                                        : Colors.white,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    _isSoundPlaying ? 'STOP' : 'PLAY',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800,
-                                      color: _isSoundPlaying
-                                          ? const Color(0xFFDC2626)
-                                          : Colors.white,
-                                      letterSpacing: 0.4,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                  // Bottom Emergency Sound Card (Independent Reusable Widget)
+                  const EmergencySoundCard(),
 
                   SizedBox(height: isShortScreen ? 2 : 6),
                 ],

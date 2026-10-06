@@ -244,6 +244,32 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     } catch (_) {}
   }
 
+  Future<void> _acceptMission() async {
+    if (_activeAlert == null || _agentId == null) return;
+    final alertId = _activeAlert!['id'];
+    try {
+      final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$_agentId/accept-assignment');
+      final res = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'alertId': alertId}),
+      );
+      if (res.statusCode == 200) {
+        if (mounted) {
+          setState(() {
+            _activeAlert!['responderStatus'] = 'EN_ROUTE';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🚀 Mission Accepted! Control Room notified. You are now EN ROUTE.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<void> _stopDutyMode() async {
     _countdownTimer?.cancel();
     _assignmentPollTimer?.cancel();
@@ -497,6 +523,39 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
                 const SizedBox(height: 14),
+                if (_activeAlert!['responderStatus'] == 'EN_ROUTE') ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.25),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF10B981)),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('🚀', style: TextStyle(fontSize: 16)),
+                        SizedBox(width: 8),
+                        Text(
+                          'YOU ARE EN ROUTE (CONTROL ROOM CONNECTED)',
+                          style: TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ] else ...[
+                  ElevatedButton.icon(
+                    onPressed: _acceptMission,
+                    icon: const Icon(Icons.check_circle_outline, color: Colors.black),
+                    label: const Text('ACCEPT MISSION & START EN ROUTE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF38BDF8),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 ElevatedButton.icon(
                   onPressed: () {
                     final lat = _activeAlert!['latitude'];

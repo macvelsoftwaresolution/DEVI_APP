@@ -54,5 +54,18 @@
     "createdAt": "2026-10-01T13:03:30.228Z",
     "shiftDurationHours": 10,
     "shiftExpiresAt": "2026-10-01T23:03:31.002Z"
+  },
+  "02c4e8dc-03e3-4869-a99c-a32e252ceca7": {
+    "agentId": "agent-1791265611977",
+    "token": "02c4e8dc-03e3-4869-a99c-a32e252ceca7",
+    "phone": "9042024830",
+    "name": "Arjune",
+    "area": "State Bank Colony, Ragland Nursery And Primary School, Satchiyapuram,Sivakasi, Tamil Nadu 626124",
+    "pin": "7421",
+    "claimed": false,
+    "claimedAt": null,
+    "deviceFingerprint": null,
+    "status": "PENDING",
+    "createdAt": "2026-10-06T05:46:52.177Z"
   }
 }

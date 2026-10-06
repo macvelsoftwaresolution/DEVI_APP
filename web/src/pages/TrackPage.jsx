@@ -84,8 +84,25 @@ export default function TrackPage() {
     };
   }, []);
 
-  // 2. Geocoding
+  // 2. Geocoding (Google Maps Priority with OSM Fallback)
   const reverseGeocode = async (lat, lng) => {
+    const googleKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (googleKey) {
+      try {
+        const gRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleKey}`);
+        if (gRes.ok) {
+          const gData = await gRes.json();
+          if (gData.status === 'OK' && gData.results && gData.results.length > 0) {
+            const formatted = gData.results[0].formatted_address;
+            const parts = formatted.split(',');
+            setAreaTitle(parts.slice(0, 2).join(',').trim());
+            setAreaSub(parts.slice(2, 5).join(',').trim());
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
       if (res.ok) {

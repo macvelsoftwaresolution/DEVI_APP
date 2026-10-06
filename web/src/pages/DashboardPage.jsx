@@ -218,6 +218,13 @@ export default function DashboardPage() {
           }
         });
         prevActiveIdsRef.current = currentActive;
+
+        if (!selectedIncidentId && data.incidents.length > 0) {
+          const activeOrAssigned = data.incidents.find((i) => i.status === 'DISPATCHED' || i.status === 'ACTIVE');
+          if (activeOrAssigned) {
+            setSelectedIncidentId(activeOrAssigned.id);
+          }
+        }
       }
     } catch (e) {
       console.warn('Fetch incidents error:', e);
@@ -305,10 +312,52 @@ export default function DashboardPage() {
         ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data);
-            if (msg.type === 'sos:new' || msg.type === 'incident:assigned' || msg.type === 'incident:en_route') {
+
+            // Immediate live coordinate updates for zero-latency movement on map & line
+            if (msg.type === 'agent_loc' && msg.agentId) {
+              const aLat = parseFloat(msg.latitude);
+              const aLng = parseFloat(msg.longitude);
+              if (!isNaN(aLat) && !isNaN(aLng)) {
+                setResponders((prev) =>
+                  prev.map((r) =>
+                    String(r.id) === String(msg.agentId)
+                      ? { ...r, latitude: aLat, longitude: aLng }
+                      : r
+                  )
+                );
+              }
+            } else if (msg.type === 'loc' && msg.alertId) {
+              const vLat = parseFloat(msg.latitude);
+              const vLng = parseFloat(msg.longitude);
+              if (!isNaN(vLat) && !isNaN(vLng)) {
+                setIncidents((prev) =>
+                  prev.map((inc) =>
+                    String(inc.id) === String(msg.alertId)
+                      ? { ...inc, latitude: vLat, longitude: vLng, location: msg.address || inc.location }
+                      : inc
+                  )
+                );
+              }
+            } else if (msg.type === 'incident:en_route' && msg.alertId) {
+              setIncidents((prev) =>
+                prev.map((inc) =>
+                  String(inc.id) === String(msg.alertId)
+                    ? { ...inc, responderStatus: 'EN_ROUTE', status: 'DISPATCHED' }
+                    : inc
+                )
+              );
+              try {
+                const name = msg.agentName || 'Safety Responder';
+                const utterance = new SpeechSynthesisUtterance(`Update! Agent ${name} has accepted the mission and is now En Route.`);
+                utterance.rate = 0.95;
+                window.speechSynthesis.speak(utterance);
+              } catch (_) {}
               fetchIncidents(false);
               fetchResponders();
-            } else if (msg.type === 'loc' || msg.type === 'status' || msg.type === 'agent_loc' || msg.type === 'agent_update') {
+            } else if (msg.type === 'sos:new' || msg.type === 'incident:assigned') {
+              fetchIncidents(false);
+              fetchResponders();
+            } else if (msg.type === 'status' || msg.type === 'agent_update') {
               fetchIncidents(false);
               fetchResponders();
             }
@@ -440,19 +489,37 @@ export default function DashboardPage() {
         const rLat = parseFloat(assignedResp.latitude);
         const rLng = parseFloat(assignedResp.longitude);
         if (!isNaN(vLat) && !isNaN(vLng) && !isNaN(rLat) && !isNaN(rLng)) {
+          const isEnRoute = selectedIncident.responderStatus === 'EN_ROUTE';
+          const distKm = calcDistKm(rLat, rLng, vLat, vLng);
+          const estMins = Math.max(1, Math.round(distKm * 2.5));
+
           const polyline = L.polyline(
             [
               [rLat, rLng],
               [vLat, vLng],
             ],
             {
-              color: '#38BDF8',
-              weight: 4,
-              opacity: 0.9,
-              dashArray: '8, 8',
+              color: isEnRoute ? '#10B981' : '#38BDF8',
+              weight: 5,
+              opacity: 0.95,
+              dashArray: isEnRoute ? '12, 10' : '8, 8',
               lineCap: 'round',
+              className: `devi-dispatch-live-route ${isEnRoute ? 'en-route' : ''}`,
             }
           ).addTo(map);
+
+          polyline.bindTooltip(
+            `<div style="text-align: center; font-family: Outfit, sans-serif;">
+              <span style="font-size: 11px; font-weight: 800; color: ${isEnRoute ? '#34D399' : '#38BDF8'};">
+                ${isEnRoute ? '🚀 EN ROUTE TO SCENE' : '⚡ ASSIGNED RESPONDER'}
+              </span><br/>
+              <span style="font-size: 10px; color: #E2E8F0;">${assignedResp.name} ➔ ${selectedIncident.user?.name || 'Victim'}</span><br/>
+              <span style="font-family: JetBrains Mono, monospace; font-size: 11px; font-weight: bold; color: #FFF;">
+                ~${distKm < 1 ? `${Math.round(distKm * 1000)} m` : `${distKm.toFixed(2)} km`} (~${estMins}m away)
+              </span>
+            </div>`,
+            { permanent: true, direction: 'center', className: 'devi-route-tooltip' }
+          );
 
           dispatchLineRef.current = polyline;
 
@@ -461,7 +528,7 @@ export default function DashboardPage() {
               [rLat, rLng],
               [vLat, vLng],
             ],
-            { padding: [70, 70], maxZoom: 16 }
+            { padding: [80, 80], maxZoom: 16 }
           );
           setOperatorNote(selectedIncident.operatorNotes || '');
           return;
@@ -473,7 +540,14 @@ export default function DashboardPage() {
       smoothFlyTo(vLat, vLng, 17);
     }
     setOperatorNote(selectedIncident.operatorNotes || '');
-  }, [selectedIncidentId, selectedIncident?.assignedAgent, responders]);
+  }, [
+    selectedIncidentId,
+    selectedIncident?.latitude,
+    selectedIncident?.longitude,
+    selectedIncident?.assignedAgent,
+    selectedIncident?.responderStatus,
+    responders,
+  ]);
 
   // Distance Calculator
   const calcDistKm = (lat1, lon1, lat2, lon2) => {
@@ -635,7 +709,7 @@ export default function DashboardPage() {
   const filteredIncidents = incidents
     .filter((inc) => {
       if (filter === 'ACTIVE') return inc.status === 'DISPATCHED' || inc.status === 'ACTIVE';
-      if (filter === 'ASSIGNED') return inc.status === 'ASSIGNED';
+      if (filter === 'ASSIGNED') return inc.status === 'ASSIGNED' || !!inc.assignedAgent;
       if (filter === 'RESOLVED') return inc.status === 'RESOLVED';
       return true;
     })
@@ -927,7 +1001,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '6px', padding: '6px 4px', textAlign: 'center' }}>
                 <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: '700', color: '#FCD34D' }}>
-                  {incidents.filter((i) => i.status === 'ASSIGNED').length}
+                  {incidents.filter((i) => i.status === 'ASSIGNED' || !!i.assignedAgent).length}
                 </div>
                 <div style={{ fontSize: '9px', color: 'var(--text-dim)', textTransform: 'uppercase', marginTop: '1px' }}>Assigned</div>
               </div>

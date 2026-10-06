@@ -546,3 +546,40 @@ body {
   background: #475569;
 }
 
+/* Animated Dash Path for Live Responder Connection Line */
+.devi-dispatch-live-route {
+  stroke-dasharray: 12, 10;
+  animation: routeDashFlow 1.2s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.6));
+}
+
+.devi-dispatch-live-route.en-route {
+  stroke-dasharray: 14, 10;
+  animation: routeDashFlow 0.8s linear infinite;
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.7));
+}
+
+@keyframes routeDashFlow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.devi-route-tooltip {
+  background: rgba(15, 23, 42, 0.95) !important;
+  backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(56, 189, 248, 0.5) !important;
+  color: #FFF !important;
+  border-radius: 8px !important;
+  padding: 6px 12px !important;
+  font-size: 11px !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7) !important;
+  pointer-events: none;
+}
+.devi-route-tooltip::before {
+  display: none !important;
+}
+

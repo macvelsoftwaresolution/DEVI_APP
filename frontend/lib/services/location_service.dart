@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import '../utils/map_utils.dart';
 import 'api_service.dart';
 import 'socket_service.dart';
 
@@ -43,7 +44,7 @@ class LocationService {
         // Try getting last known position if available
         final lastKnown = await Geolocator.getLastKnownPosition();
         if (lastKnown != null) {
-          final url = 'https://maps.google.com/?q=${lastKnown.latitude},${lastKnown.longitude}';
+          final url = MapUtils.getGoogleMapsUrl(lastKnown.latitude, lastKnown.longitude);
           return LocationResult(
             latitude: lastKnown.latitude,
             longitude: lastKnown.longitude,
@@ -100,7 +101,7 @@ class LocationService {
         final lng = position.longitude;
         final accuracy = position.accuracy;
         final capturedAt = position.timestamp.toUtc();
-        final mapsUrl = 'https://maps.google.com/?q=$lat,$lng';
+        final mapsUrl = MapUtils.getGoogleMapsUrl(lat, lng);
         return LocationResult(
           latitude: lat,
           longitude: lng,
@@ -362,4 +363,16 @@ class LocationService {
       } catch (_) {}
     }
   }
+
+  /// Checks if location permissions are currently granted.
+  static Future<bool> hasPermission() async {
+    final permission = await Geolocator.checkPermission();
+    return permission == LocationPermission.always || permission == LocationPermission.whileInUse;
+  }
+
+  /// Calculates straight-line distance in meters between two GPS coordinates using pure math.
+  static double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    return MapUtils.calculateDistanceInMeters(lat1, lon1, lat2, lon2);
+  }
 }
+

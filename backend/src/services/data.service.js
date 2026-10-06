@@ -312,7 +312,27 @@ export const DataService = {
       return this.geocodeCache.get(cacheKey);
     }
 
-    // Provider 1: OpenStreetMap Nominatim
+    // Provider 0: Google Maps Geocoding API (Fastest & Most Accurate in India)
+    const googleMapsKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (googleMapsKey) {
+      try {
+        const gRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleMapsKey}`, {
+          signal: AbortSignal.timeout(3500),
+        });
+        if (gRes.ok) {
+          const gData = await gRes.json();
+          if (gData.status === 'OK' && gData.results && gData.results.length > 0) {
+            const formatted = gData.results[0].formatted_address;
+            if (formatted) {
+              this.geocodeCache.set(cacheKey, formatted);
+              return formatted;
+            }
+          }
+        }
+      } catch (_) { }
+    }
+
+    // Provider 1: OpenStreetMap Nominatim (Fallback)
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
         headers: { 'User-Agent': 'DEVI-Women-Safety-ReverseGeocode/1.0' },

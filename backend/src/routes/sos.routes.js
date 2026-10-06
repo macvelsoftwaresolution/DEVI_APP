@@ -118,51 +118,101 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       );
     }
 
-    // STEP 3.5: Instant WhatsApp Emergency Dispatch to Active Approved On-Duty Agents (Nearest First)
+    // STEP 3.5: Auto-Assign Nearest Responder (Rank 1 from Admin Dashboard) & WhatsApp Dispatch
+    let autoAssignedAgent = null;
+
     try {
       const allResponders = await DataService.getResponders();
-      const onDutyAgents = allResponders
-        .filter(a =>
-          a.is_active !== false &&
-          a.is_live === true &&
-          (a.duty_status === 'ON_DUTY' || a.duty_status === 'AVAILABLE')
-        )
-        .map(agent => {
-          let distanceKm = null;
-          if (latitude && longitude && agent.latitude && agent.longitude) {
-            const R = 6371;
-            const dLat = (agent.latitude - latitude) * Math.PI / 180;
-            const dLon = (agent.longitude - longitude) * Math.PI / 180;
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(latitude * Math.PI / 180) * Math.cos(agent.latitude * Math.PI / 180) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            distanceKm = Math.round((R * c) * 10) / 10;
-          }
-          return { ...agent, distanceKm };
-        })
-        .sort((a, b) => {
-          if (a.distanceKm == null) return 1;
-          if (b.distanceKm == null) return -1;
-          return a.distanceKm - b.distanceKm;
-        });
+      if (allResponders && allResponders.length > 0) {
+        const vLat = parseFloat(latitude);
+        const vLng = parseFloat(longitude);
 
-      console.log(`🚨 [DISPATCHING LIVE SOS TO ${onDutyAgents.length} APPROVED ON-DUTY RESPONDERS VIA WHATSAPP (NEAREST FIRST)]`);
-      for (const agent of onDutyAgents) {
-        if (agent.phone) {
-          const proxStr = agent.distanceKm != null ? `[~${agent.distanceKm} KM Away] ` : '';
-          console.log(`📲 [WHATSAPP DISPATCH] Alerting On-Duty Agent ${agent.name} (+91 ${agent.phone}) ${proxStr}`);
+        const calcDistKm = (lat1, lon1, lat2, lon2) => {
+          if (isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) return 999;
+          const R = 6371;
+          const dLat = ((lat2 - lat1) * Math.PI) / 180;
+          const dLon = ((lon2 - lon1) * Math.PI) / 180;
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        };
+
+        // Rank responders matching Admin Dashboard ranking logic
+        const rankedResponders = allResponders
+          .filter(a => a.is_active !== false)
+          .map(agent => {
+            const rLat = parseFloat(agent.latitude);
+            const rLng = parseFloat(agent.longitude);
+            const distKm = (!isNaN(vLat) && !isNaN(vLng) && !isNaN(rLat) && !isNaN(rLng))
+              ? Math.round(calcDistKm(vLat, vLng, rLat, rLng) * 10) / 10
+              : 999;
+            const isOnDuty = agent.duty_status === 'ON_DUTY' || agent.duty_status === 'AVAILABLE' || agent.is_live === true;
+            return { ...agent, distKm, isOnDuty };
+          })
+          .sort((a, b) => {
+            // First priority: On-Duty / Live responders
+            if (a.isOnDuty && !b.isOnDuty) return -1;
+            if (!a.isOnDuty && b.isOnDuty) return 1;
+            // Second priority: Distance (Nearest first)
+            return a.distKm - b.distKm;
+          });
+
+        const NEARBY_THRESHOLD_KM = 0.5; // 500 meters proximity zone
+
+        // Single Primary Pick: Exactly 1st Nearest Person gets officially assigned
+        if (rankedResponders.length > 0) {
+          autoAssignedAgent = rankedResponders[0];
+          const distStr = autoAssignedAgent.distKm < 900 ? `~${autoAssignedAgent.distKm} km` : 'Standby Sector';
+          console.log(`🤖 [AUTO-ASSIGN NEAREST RESPONDER] Auto-assigning 1st Agent in Dashboard: ${autoAssignedAgent.name} (Phone: ${autoAssignedAgent.phone || 'N/A'}, Dist: ${distStr})`);
+
+          await DataService.assignAgent(alert.id, autoAssignedAgent.name, autoAssignedAgent.phone);
+        }
+
+        // WhatsApp emergency alerts dispatch:
+        // Identify all agents within 500 meters (or nearby on-duty agents within patrol zone)
+        const agentsWithin500m = rankedResponders.filter(a => a.distKm <= NEARBY_THRESHOLD_KM && a.phone);
+        const nearbyAgentsToAlert = agentsWithin500m.length > 0
+          ? rankedResponders.filter(a => a.distKm <= NEARBY_THRESHOLD_KM)
+          : rankedResponders.filter(a => a.isOnDuty && a.distKm < 10); // fallback within 10 km patrol zone
+
+        // 1. Dispatch official primary mission to 1st Auto-Assigned Agent
+        if (autoAssignedAgent && autoAssignedAgent.phone) {
+          const metersAway = autoAssignedAgent.distKm < 900 ? Math.round(autoAssignedAgent.distKm * 1000) : null;
+          const proxStr = metersAway != null ? (metersAway < 1000 ? `[~${metersAway}m Away] ` : `[~${autoAssignedAgent.distKm} KM Away] `) : '';
+          console.log(`📲 [WHATSAPP DISPATCH] Alerting Auto-Assigned Primary Agent ${autoAssignedAgent.name} (+91 ${autoAssignedAgent.phone}) ${proxStr}`);
           WhatsAppService.sendEmergencyAlert(
-            agent.phone,
+            autoAssignedAgent.phone,
             trackingUrl,
             victimName,
-            { latitude, longitude, location: `${proxStr}${location || 'Live GPS Coordinates'}` }
+            { latitude, longitude, location: `🚨 [PRIMARY MISSION ASSIGNED TO YOU] ${proxStr}${location || 'Live GPS Coordinates'}` }
           );
         }
+
+        // 2. Alert ALL other nearby agents within 500m (or nearby zone) so everyone in proximity is alerted!
+        const secondaryNearbyAgents = nearbyAgentsToAlert.filter(a => a.id !== autoAssignedAgent?.id);
+        console.log(`📢 [MULTI-AGENT RADIUS DISPATCH] Found ${secondaryNearbyAgents.length} additional nearby agent(s) within proximity zone to alert.`);
+        for (const agent of secondaryNearbyAgents) {
+          if (agent.phone) {
+            const metersAway = agent.distKm < 900 ? Math.round(agent.distKm * 1000) : null;
+            const proxStr = metersAway != null ? (metersAway < 1000 ? `[~${metersAway}m Away] ` : `[~${agent.distKm} KM Away] `) : '';
+            console.log(`📲 [WHATSAPP DISPATCH] Alerting Nearby Backup Agent ${agent.name} (+91 ${agent.phone}) ${proxStr}`);
+            WhatsAppService.sendEmergencyAlert(
+              agent.phone,
+              trackingUrl,
+              victimName,
+              { latitude, longitude, location: `⚠️ [NEARBY EMERGENCY - BACKUP ASSIST] ${proxStr}${location || 'Live GPS Coordinates'}` }
+            );
+          }
+        }
       }
-    } catch (agentDispatchErr) {
-      console.warn('⚠️ [ON-DUTY AGENT WHATSAPP DISPATCH ERROR]:', agentDispatchErr.message);
+    } catch (autoAssignErr) {
+      console.warn('⚠️ [AUTO-ASSIGN / AGENT DISPATCH ERROR]:', autoAssignErr.message);
     }
+
+    const assignedAgentDisplayName = autoAssignedAgent
+      ? (autoAssignedAgent.phone ? `${autoAssignedAgent.name} (${autoAssignedAgent.phone})` : autoAssignedAgent.name)
+      : null;
 
     // Broadcast real-time emergency alert via WebSockets to operator dashboard & responders
     socketService.broadcastNewSosAlert({
@@ -174,15 +224,33 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       location,
       trackingUrl,
       timestamp: alert.timestamp || new Date().toISOString(),
-      status: 'ACTIVE',
+      status: autoAssignedAgent ? 'DISPATCHED' : 'ACTIVE',
+      assignedAgent: assignedAgentDisplayName,
+      responderStatus: autoAssignedAgent ? 'ASSIGNED' : null,
     });
+
+    if (autoAssignedAgent) {
+      socketService.broadcastToRoom('dashboard', {
+        type: 'incident:assigned',
+        alertId: alert.id,
+        assignedAgent: assignedAgentDisplayName,
+        status: 'DISPATCHED',
+        responderStatus: 'ASSIGNED',
+      });
+      socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
+    }
 
     res.status(201).json({
       success: true,
       duplicate: false,
-      message: 'Emergency SOS alert recorded and live tracking initiated',
+      message: autoAssignedAgent
+        ? `Emergency SOS alert recorded and automatically assigned to nearest responder ${autoAssignedAgent.name}`
+        : 'Emergency SOS alert recorded and live tracking initiated',
       data: {
         ...alert,
+        assignedAgent: assignedAgentDisplayName,
+        status: autoAssignedAgent ? 'DISPATCHED' : 'ACTIVE',
+        responderStatus: autoAssignedAgent ? 'ASSIGNED' : null,
         trackingUrl,
       },
     });
