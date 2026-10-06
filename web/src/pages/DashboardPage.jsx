@@ -303,6 +303,28 @@ export default function DashboardPage() {
     } catch (_) {}
   };
 
+  // Start Agent Duty Manually from Admin Dashboard
+  const handleStartAgentDuty = async (agentId, agentName) => {
+    try {
+      const res = await fetch(apiUrl(`/api/dashboard/agents/${agentId}/duty`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'ON_DUTY' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResponders((prev) =>
+          prev.map((r) =>
+            String(r.id) === String(agentId)
+              ? { ...r, duty_status: 'ON_DUTY', status: 'ON_DUTY', is_live: true }
+              : r
+          )
+        );
+        fetchResponders();
+      }
+    } catch (_) {}
+  };
+
   // WebSocket Connection
   useEffect(() => {
     let ws = null;
@@ -1909,25 +1931,45 @@ export default function DashboardPage() {
                             <Power size={12} /> End Duty
                           </button>
                         ) : (
-                          <button
-                            onClick={() => {
-                              const dutyUrl = `${window.location.origin}/duty`;
-                              navigator.clipboard.writeText(dutyUrl);
-                              alert(`Duty portal link copied for ${agent.name}:\n${dutyUrl}`);
-                            }}
-                            style={{
-                              padding: '6px 12px',
-                              background: 'rgba(56, 189, 248, 0.1)',
-                              border: '1px solid rgba(56, 189, 248, 0.3)',
-                              color: '#38BDF8',
-                              borderRadius: '6px',
-                              fontSize: '11px',
-                              fontWeight: '700',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Copy Link
-                          </button>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              onClick={() => handleStartAgentDuty(agent.id, agent.name)}
+                              style={{
+                                padding: '6px 12px',
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                border: '1px solid rgba(16, 185, 129, 0.4)',
+                                color: '#34D399',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <Power size={12} /> Start Duty
+                            </button>
+                            <button
+                              onClick={() => {
+                                const dutyUrl = `${window.location.origin}/duty`;
+                                navigator.clipboard.writeText(dutyUrl);
+                                alert(`Duty portal link copied for ${agent.name}:\n${dutyUrl}`);
+                              }}
+                              style={{
+                                padding: '6px 12px',
+                                background: 'rgba(56, 189, 248, 0.1)',
+                                border: '1px solid rgba(56, 189, 248, 0.3)',
+                                color: '#38BDF8',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Copy Link
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>

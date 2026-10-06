@@ -1279,7 +1279,7 @@ export const DataService = {
     }
   },
 
-  async updateAgentLiveLocation(agentId, { latitude, longitude, heading = null, speed = null }) {
+  async updateAgentLiveLocation(agentId, { latitude, longitude, heading = null, speed = null, status = null }) {
     if (!agentId || !latitude || !longitude) return null;
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
@@ -1290,7 +1290,11 @@ export const DataService = {
       agent.latitude = lat;
       agent.longitude = lng;
       agent.last_seen = nowIso;
-      if (agent.duty_status !== 'OFF_DUTY') {
+      if (status === 'ON_DUTY') {
+        agent.duty_status = 'ON_DUTY';
+        agent.status = 'AVAILABLE';
+        agent.is_live = true;
+      } else if (agent.duty_status !== 'OFF_DUTY') {
         agent.is_live = true;
       }
     }
@@ -1301,7 +1305,10 @@ export const DataService = {
         longitude: lng,
         last_seen: nowIso,
       };
-      if (agent && agent.duty_status !== 'OFF_DUTY') {
+      if (status === 'ON_DUTY') {
+        updatePayload.duty_status = 'ON_DUTY';
+        updatePayload.is_live = true;
+      } else if (agent && agent.duty_status !== 'OFF_DUTY') {
         updatePayload.is_live = true;
       }
       if (heading !== null && heading !== undefined) updatePayload.heading = parseFloat(heading);

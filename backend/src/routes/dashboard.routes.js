@@ -334,12 +334,12 @@ router.delete('/agents/:id', async (req, res, next) => {
 router.post('/agents/:id/location', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { latitude, longitude, heading, speed } = req.body;
+    const { latitude, longitude, heading, speed, status } = req.body;
     if (!latitude || !longitude) {
       return res.status(400).json({ success: false, message: 'latitude and longitude are required' });
     }
 
-    const updated = await DataService.updateAgentLiveLocation(id, { latitude, longitude, heading, speed });
+    const updated = await DataService.updateAgentLiveLocation(id, { latitude, longitude, heading, speed, status });
 
     // Broadcast agent location to dashboard WebSocket
     socketService.broadcastAgentLocation(id, {

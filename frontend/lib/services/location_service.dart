@@ -248,6 +248,18 @@ class LocationService {
       return false;
     }
 
+    // 2.5 Notify backend that agent is ON_DUTY
+    if (agentId.isNotEmpty) {
+      try {
+        final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$agentId/duty');
+        await http.post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'status': 'ON_DUTY'}),
+        ).timeout(const Duration(seconds: 4));
+      } catch (_) {}
+    }
+
     // 3. Configure Android Foreground Service with Persistent Notification
     late LocationSettings locationSettings;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
@@ -333,6 +345,7 @@ class LocationService {
           'longitude': longitude,
           'heading': heading,
           'speed': speed,
+          'status': 'ON_DUTY',
         }),
       ).timeout(const Duration(seconds: 4));
     } catch (_) {}
