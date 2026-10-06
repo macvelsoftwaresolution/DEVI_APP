@@ -332,10 +332,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 20),
 
-                  // Instant SOS Pill Button (Zero Setup)
+                  // Guest User Pill Button
                   GuestUserButton(
-                    title: '⚡ Instant SOS',
-                    subtitle: 'Direct Emergency Mode • Zero Setup',
                     onPressed: _continueAsGuest,
                   ),
 
@@ -385,7 +383,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           children: [
                             Text('🛡️ ', style: TextStyle(fontSize: 13)),
                             Text(
-                              'DEVI Field Responder Portal',
+                              'HELPER PORTAL LOGIN',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,

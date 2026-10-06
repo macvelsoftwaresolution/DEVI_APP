@@ -67,7 +67,7 @@ class GuestUserButton extends StatelessWidget {
     super.key,
     required this.onPressed,
     this.title = 'Instant SOS',
-    this.subtitle = 'Direct Emergency Mode • Zero Setup',
+    this.subtitle = '',
   });
 
   @override
@@ -155,15 +155,17 @@ class GuestUserButton extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textMuted,
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textMuted,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
