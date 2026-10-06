@@ -1290,10 +1290,8 @@ export const DataService = {
       agent.latitude = lat;
       agent.longitude = lng;
       agent.last_seen = nowIso;
-      agent.is_live = true;
-      if (agent.duty_status === 'OFF_DUTY') {
-        agent.duty_status = 'ON_DUTY';
-        agent.status = 'AVAILABLE';
+      if (agent.duty_status !== 'OFF_DUTY') {
+        agent.is_live = true;
       }
     }
 
@@ -1302,8 +1300,10 @@ export const DataService = {
         latitude: lat,
         longitude: lng,
         last_seen: nowIso,
-        is_live: true,
       };
+      if (agent && agent.duty_status !== 'OFF_DUTY') {
+        updatePayload.is_live = true;
+      }
       if (heading !== null && heading !== undefined) updatePayload.heading = parseFloat(heading);
       if (speed !== null && speed !== undefined) updatePayload.speed = parseFloat(speed);
 

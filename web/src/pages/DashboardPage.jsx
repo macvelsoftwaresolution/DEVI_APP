@@ -385,6 +385,15 @@ export default function DashboardPage() {
               fetchIncidents(false);
               fetchResponders();
             } else if (msg.type === 'status' || msg.type === 'agent_update') {
+              if (msg.agentId && msg.status) {
+                setResponders((prev) =>
+                  prev.map((r) =>
+                    String(r.id) === String(msg.agentId)
+                      ? { ...r, duty_status: msg.status, status: msg.status }
+                      : r
+                  )
+                );
+              }
               fetchIncidents(false);
               fetchResponders();
             }

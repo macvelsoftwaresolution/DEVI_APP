@@ -405,7 +405,11 @@ router.post('/agents/:id/duty', async (req, res, next) => {
     const { id } = req.params;
     const { status } = req.body;
     const updated = await DataService.setAgentDutyStatus(id, status || 'ON_DUTY');
-    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
+    socketService.broadcastToRoom('dashboard', {
+      type: 'agent_update',
+      agentId: id,
+      status: status || 'ON_DUTY',
+    });
     res.json({
       success: true,
       agent: updated,
