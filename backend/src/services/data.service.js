@@ -1279,22 +1279,23 @@ export const DataService = {
     }
   },
 
-  async updateAgentLiveLocation(agentId, { latitude, longitude, heading = null, speed = null, status = null }) {
+  async updateAgentLiveLocation(agentId, { latitude, longitude, heading = null, speed = null }) {
     if (!agentId || !latitude || !longitude) return null;
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
     const nowIso = new Date().toISOString();
 
     let agent = await this.getAgentById(agentId);
+    const isCurrentlyOffDuty = agent && (agent.duty_status === 'OFF_DUTY' || agent.status === 'OFF_DUTY');
+
     if (agent) {
       agent.latitude = lat;
       agent.longitude = lng;
       agent.last_seen = nowIso;
-      if (status === 'ON_DUTY') {
-        agent.duty_status = 'ON_DUTY';
-        agent.status = 'AVAILABLE';
-        agent.is_live = true;
-      } else if (agent.duty_status !== 'OFF_DUTY') {
+      if (isCurrentlyOffDuty) {
+        agent.is_live = false;
+        agent.duty_status = 'OFF_DUTY';
+      } else {
         agent.is_live = true;
       }
     }
@@ -1305,11 +1306,9 @@ export const DataService = {
         longitude: lng,
         last_seen: nowIso,
       };
-      if (status === 'ON_DUTY') {
-        updatePayload.duty_status = 'ON_DUTY';
-        updatePayload.is_live = true;
-      } else if (agent && agent.duty_status !== 'OFF_DUTY') {
-        updatePayload.is_live = true;
+      if (isCurrentlyOffDuty) {
+        updatePayload.duty_status = 'OFF_DUTY';
+        updatePayload.is_live = false;
       }
       if (heading !== null && heading !== undefined) updatePayload.heading = parseFloat(heading);
       if (speed !== null && speed !== undefined) updatePayload.speed = parseFloat(speed);
@@ -1319,7 +1318,7 @@ export const DataService = {
       console.warn('Error updating agent live location in Supabase:', e.message);
     }
 
-    return agent || { id: agentId, latitude: lat, longitude: lng, last_seen: nowIso };
+    return agent ? { ...agent, isOffDuty: isCurrentlyOffDuty } : { id: agentId, latitude: lat, longitude: lng, last_seen: nowIso, duty_status: isCurrentlyOffDuty ? 'OFF_DUTY' : 'ON_DUTY', isOffDuty: isCurrentlyOffDuty };
   },
 
   async setAgentDutyStatus(agentId, status) {
@@ -1336,6 +1335,16 @@ export const DataService = {
         agent.shift_expires_at = null;
       }
     }
+
+    const inList = respondersList.find(a => a.id === agentId || a.id.toString() === agentId.toString());
+    if (inList) {
+      inList.duty_status = status;
+      inList.status = status;
+      inList.is_live = isLive;
+      inList.last_seen = nowIso;
+      if (!isLive) inList.shift_expires_at = null;
+    }
+
     try {
       const updateData = {
         duty_status: status,
@@ -1345,7 +1354,10 @@ export const DataService = {
       if (!isLive) {
         updateData.shift_expires_at = null;
       }
-      await supabase.from('agents').update(updateData).eq('id', agentId);
+      const { error } = await supabase.from('agents').update(updateData).eq('id', agentId);
+      if (error) {
+        console.error('Error updating duty status in Supabase:', error.message);
+      }
     } catch (e) {
       console.error('Error updating duty status in Supabase:', e.message);
     }

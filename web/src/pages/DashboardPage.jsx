@@ -286,6 +286,13 @@ export default function DashboardPage() {
   const handleEndAgentDuty = async (agentId, agentName) => {
     if (!window.confirm(`Are you sure you want to end ${agentName}'s duty shift now?`)) return;
     try {
+      setResponders((prev) =>
+        prev.map((r) =>
+          String(r.id) === String(agentId)
+            ? { ...r, duty_status: 'OFF_DUTY', status: 'OFF_DUTY', is_live: false }
+            : r
+        )
+      );
       const res = await fetch(apiUrl(`/api/dashboard/agents/${agentId}/end-duty`), {
         method: 'POST',
       });
@@ -298,7 +305,6 @@ export default function DashboardPage() {
               : r
           )
         );
-        fetchResponders();
       }
     } catch (_) {}
   };
@@ -306,6 +312,13 @@ export default function DashboardPage() {
   // Start Agent Duty Manually from Admin Dashboard
   const handleStartAgentDuty = async (agentId, agentName) => {
     try {
+      setResponders((prev) =>
+        prev.map((r) =>
+          String(r.id) === String(agentId)
+            ? { ...r, duty_status: 'ON_DUTY', status: 'ON_DUTY', is_live: true }
+            : r
+        )
+      );
       const res = await fetch(apiUrl(`/api/dashboard/agents/${agentId}/duty`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -320,7 +333,6 @@ export default function DashboardPage() {
               : r
           )
         );
-        fetchResponders();
       }
     } catch (_) {}
   };

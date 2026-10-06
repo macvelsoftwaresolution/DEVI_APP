@@ -216,7 +216,8 @@ class LocationService {
   // =========================================================================
   static StreamSubscription<Position>? _responderDutyStreamSub;
   static Timer? _responderShiftTimer;
-  static bool get isResponderDutyActive => _responderDutyStreamSub != null;
+  static bool _isDutyActive = false;
+  static bool get isResponderDutyActive => _isDutyActive && _responderDutyStreamSub != null;
 
   /// Starts continuous, high-priority foreground GPS tracking for DEVI Responders.
   /// Android Foreground Service with ongoing notification keeps GPS streaming
@@ -228,6 +229,7 @@ class LocationService {
     int intervalSeconds = 10,
     Function(Position position)? onUpdate,
     Function()? onShiftExpired,
+    Function()? onRemoteDutyEnded,
   }) async {
     // 1. Cancel any active duty tracking
     await stopResponderDuty(agentId: agentId, notifyBackend: false);
@@ -259,6 +261,8 @@ class LocationService {
         ).timeout(const Duration(seconds: 4));
       } catch (_) {}
     }
+
+    _isDutyActive = true;
 
     // 3. Configure Android Foreground Service with Persistent Notification
     late LocationSettings locationSettings;
@@ -295,6 +299,7 @@ class LocationService {
       _responderDutyStreamSub = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen((Position position) {
+        if (!_isDutyActive) return;
         debugPrint('🛰️ [DUTY GPS PUSH] Lat: ${position.latitude}, Lng: ${position.longitude}, Acc: ${position.accuracy}m');
         onUpdate?.call(position);
 
@@ -305,6 +310,7 @@ class LocationService {
           longitude: position.longitude,
           heading: position.heading,
           speed: position.speed,
+          onRemoteDutyEnded: onRemoteDutyEnded,
         );
       }, onError: (e) {
         debugPrint('⚠️ Error in Responder Duty GPS Stream: $e');
@@ -323,6 +329,7 @@ class LocationService {
       return true;
     } catch (e) {
       debugPrint('⚠️ Failed to initiate Responder Duty GPS Stream: $e');
+      _isDutyActive = false;
       return false;
     }
   }
@@ -334,10 +341,12 @@ class LocationService {
     required double longitude,
     double heading = 0.0,
     double speed = 0.0,
+    Function()? onRemoteDutyEnded,
   }) async {
+    if (!_isDutyActive) return;
     try {
       final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$agentId/location');
-      await http.post(
+      final res = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -345,9 +354,17 @@ class LocationService {
           'longitude': longitude,
           'heading': heading,
           'speed': speed,
-          'status': 'ON_DUTY',
         }),
       ).timeout(const Duration(seconds: 4));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['isOffDuty'] == true || data['duty_status'] == 'OFF_DUTY') {
+          debugPrint('🛑 [DUTY TERMINATED BY SERVER] Operator ended duty remotely.');
+          await stopResponderDuty(agentId: agentId, notifyBackend: false);
+          onRemoteDutyEnded?.call();
+        }
+      }
     } catch (_) {}
   }
 
@@ -356,12 +373,15 @@ class LocationService {
     required String agentId,
     bool notifyBackend = true,
   }) async {
+    _isDutyActive = false;
     _responderShiftTimer?.cancel();
     _responderShiftTimer = null;
 
     if (_responderDutyStreamSub != null) {
       debugPrint('🛑 [STOPPING RESPONDER DUTY] Dismissing notification & canceling stream');
-      await _responderDutyStreamSub?.cancel();
+      try {
+        await _responderDutyStreamSub?.cancel();
+      } catch (_) {}
       _responderDutyStreamSub = null;
     }
 

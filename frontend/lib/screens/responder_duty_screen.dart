@@ -189,6 +189,11 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
           );
         }
       },
+      onRemoteDutyEnded: () {
+        if (mounted) {
+          _stopDutyMode(fromRemote: true);
+        }
+      },
     );
 
     if (success) {
@@ -242,13 +247,22 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
       final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$_agentId/status');
       final res = await http.get(url).timeout(const Duration(seconds: 4));
       final data = jsonDecode(res.body);
-      if (data['success'] == true && data['assignment'] != null) {
-        if (mounted) {
-          setState(() => _activeAlert = data['assignment']);
+      if (data['success'] == true) {
+        if (data['agent'] != null) {
+          final agentStatus = data['agent']['duty_status'] ?? data['agent']['status'];
+          if (agentStatus == 'OFF_DUTY' && _isOnDuty) {
+            _stopDutyMode(fromRemote: true);
+            return;
+          }
         }
-      } else {
-        if (mounted && _activeAlert != null) {
-          setState(() => _activeAlert = null);
+        if (data['assignment'] != null) {
+          if (mounted) {
+            setState(() => _activeAlert = data['assignment']);
+          }
+        } else {
+          if (mounted && _activeAlert != null) {
+            setState(() => _activeAlert = null);
+          }
         }
       }
     } catch (_) {}
@@ -280,20 +294,22 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     } catch (_) {}
   }
 
-  Future<void> _stopDutyMode() async {
+  Future<void> _stopDutyMode({bool fromRemote = false}) async {
     _countdownTimer?.cancel();
     _assignmentPollTimer?.cancel();
 
     if (_agentId != null) {
-      await LocationService.stopResponderDuty(agentId: _agentId!);
-      try {
-        final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$_agentId/duty');
-        await http.post(
-          url,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'status': 'OFF_DUTY'}),
-        ).timeout(const Duration(seconds: 4));
-      } catch (_) {}
+      await LocationService.stopResponderDuty(agentId: _agentId!, notifyBackend: !fromRemote);
+      if (!fromRemote) {
+        try {
+          final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$_agentId/duty');
+          await http.post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'status': 'OFF_DUTY'}),
+          ).timeout(const Duration(seconds: 4));
+        } catch (_) {}
+      }
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -306,10 +322,12 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
         _activeAlert = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🛑 Duty Shift Ended. You are now OFF-LINE.'),
+        SnackBar(
+          content: Text(fromRemote
+              ? '🛑 Shift ended by Control Room. You are now OFF-LINE.'
+              : '🛑 Duty Shift Ended. You are now OFF-LINE.'),
           backgroundColor: Colors.orange,
-          duration: Duration(seconds: 3),
+          duration: const Duration(seconds: 3),
         ),
       );
     }
