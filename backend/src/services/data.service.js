@@ -1351,9 +1351,6 @@ export const DataService = {
         is_live: isLive,
         last_seen: nowIso,
       };
-      if (!isLive) {
-        updateData.shift_expires_at = null;
-      }
       const { error } = await supabase.from('agents').update(updateData).eq('id', agentId);
       if (error) {
         console.error('Error updating duty status in Supabase:', error.message);
