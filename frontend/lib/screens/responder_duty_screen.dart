@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -44,6 +45,39 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
 
   // Active SOS Assignment
   Map<String, dynamic>? _activeAlert;
+
+  List<LatLng>? _roadRoutePoints;
+  String? _lastRouteAlertId;
+
+  Future<void> _fetchRoadRoute() async {
+    if (_latitude == null || _longitude == null || _activeAlert == null) return;
+    if (_activeAlert!['responderStatus'] != 'EN_ROUTE') return;
+    if (_lastRouteAlertId == _activeAlert!['id']) return;
+
+    final victimLat = double.tryParse(_activeAlert!['latitude'].toString());
+    final victimLng = double.tryParse(_activeAlert!['longitude'].toString());
+    if (victimLat == null || victimLng == null) return;
+
+    try {
+      PolylinePoints polylinePoints = PolylinePoints(apiKey: "AIzaSyCVD-Yk9rET4YVlldHmgU9KuqzlQnQHfaM");
+      PolylineResult result = await polylinePoints.getRouteBetweenCoordinates(
+        request: PolylineRequest(
+          origin: PointLatLng(_latitude!, _longitude!),
+          destination: PointLatLng(victimLat, victimLng),
+          mode: TravelMode.driving,
+        ),
+      );
+
+      if (result.points.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _roadRoutePoints = result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
+            _lastRouteAlertId = _activeAlert!['id'];
+          });
+        }
+      }
+    } catch (_) {}
+  }
 
   @override
   void initState() {
