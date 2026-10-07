@@ -455,111 +455,10 @@ export default function DashboardPage() {
   const selectedIncident = incidents.find((i) => i.id === selectedIncidentId);
 
   useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    if (dispatchLineRef.current) {
-      map.removeLayer(dispatchLineRef.current);
-      dispatchLineRef.current = null;
+    if (selectedIncident) {
+      setOperatorNote(selectedIncident.operatorNotes || '');
     }
-
-    if (victimTrailRef.current) {
-      map.removeLayer(victimTrailRef.current);
-      victimTrailRef.current = null;
-    }
-
-    if (!selectedIncident) return;
-    const vLat = parseFloat(selectedIncident.latitude);
-    const vLng = parseFloat(selectedIncident.longitude);
-
-    // Draw Victim's Red Movement Trail (Breadcrumb Path as they move)
-    if (selectedIncident.breadcrumbs && selectedIncident.breadcrumbs.length > 1) {
-      const trailPoints = selectedIncident.breadcrumbs
-        .map((b) => [parseFloat(b.latitude), parseFloat(b.longitude)])
-        .filter(([lat, lng]) => !isNaN(lat) && !isNaN(lng));
-
-      if (trailPoints.length > 1) {
-        const trail = L.polyline(trailPoints, {
-          color: '#EF4444',
-          weight: 4,
-          opacity: 0.9,
-          dashArray: '6, 6',
-          lineCap: 'round',
-        }).addTo(map);
-        victimTrailRef.current = trail;
-      }
-    }
-
-    if (selectedIncident.assignedAgent) {
-      const assignedResp = responders.find((r) =>
-        selectedIncident.assignedAgent.toLowerCase().includes(r.name.toLowerCase()) ||
-        (r.phone && selectedIncident.assignedAgent.includes(r.phone.slice(-10)))
-      );
-
-      if (assignedResp) {
-        const rLat = parseFloat(assignedResp.latitude);
-        const rLng = parseFloat(assignedResp.longitude);
-        if (!isNaN(vLat) && !isNaN(vLng) && !isNaN(rLat) && !isNaN(rLng)) {
-          const isEnRoute = selectedIncident.responderStatus === 'EN_ROUTE';
-          const distKm = calcDistKm(rLat, rLng, vLat, vLng);
-          const estMins = Math.max(1, Math.round(distKm * 2.5));
-
-          const polyline = L.polyline(
-            [
-              [rLat, rLng],
-              [vLat, vLng],
-            ],
-            {
-              color: isEnRoute ? '#10B981' : '#38BDF8',
-              weight: 5,
-              opacity: 0.95,
-              dashArray: isEnRoute ? '12, 10' : '8, 8',
-              lineCap: 'round',
-              className: `devi-dispatch-live-route ${isEnRoute ? 'en-route' : ''}`,
-            }
-          ).addTo(map);
-
-          polyline.bindTooltip(
-            `<div style="text-align: center; font-family: Outfit, sans-serif;">
-              <span style="font-size: 11px; font-weight: 800; color: ${isEnRoute ? '#34D399' : '#38BDF8'};">
-                ${isEnRoute ? '🚀 EN ROUTE TO SCENE' : '⚡ ASSIGNED RESPONDER'}
-              </span><br/>
-              <span style="font-size: 10px; color: #E2E8F0;">${assignedResp.name} ➔ ${selectedIncident.user?.name || 'Victim'}</span><br/>
-              <span style="font-family: JetBrains Mono, monospace; font-size: 11px; font-weight: bold; color: #FFF;">
-                ~${distKm < 1 ? `${Math.round(distKm * 1000)} m` : `${distKm.toFixed(2)} km`} (~${estMins}m away)
-              </span>
-            </div>`,
-            { permanent: true, direction: 'center', className: 'devi-route-tooltip' }
-          );
-
-          dispatchLineRef.current = polyline;
-
-          map.fitBounds(
-            [
-              [rLat, rLng],
-              [vLat, vLng],
-            ],
-            { padding: [80, 80], maxZoom: 16 }
-          );
-          setOperatorNote(selectedIncident.operatorNotes || '');
-          return;
-        }
-      }
-    }
-
-    if (!isNaN(vLat) && !isNaN(vLng) && !isFlyingRef.current) {
-      smoothFlyTo(vLat, vLng, 17);
-    }
-    setOperatorNote(selectedIncident.operatorNotes || '');
-  }, [
-    selectedIncidentId,
-    selectedIncident?.latitude,
-    selectedIncident?.longitude,
-    selectedIncident?.assignedAgent,
-    selectedIncident?.responderStatus,
-    selectedIncident?.breadcrumbs,
-    responders,
-  ]);
+  }, [selectedIncidentId, selectedIncident?.operatorNotes]);
 
   // Distance Calculator
   const calcDistKm = (lat1, lon1, lat2, lon2) => {
@@ -2090,7 +1989,7 @@ export default function DashboardPage() {
                 <button
                   onClick={() => {
                     if (mapInstanceRef.current && !isNaN(emergencyAlertModal.lat) && !isNaN(emergencyAlertModal.lng)) {
-                      mapInstanceRef.current.flyTo([emergencyAlertModal.lat, emergencyAlertModal.lng], 19, { animate: true, duration: 1.5 });
+                      smoothFlyTo(emergencyAlertModal.lat, emergencyAlertModal.lng, 19);
                     }
                   }}
                   style={{
