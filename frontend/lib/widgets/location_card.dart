@@ -50,6 +50,17 @@ class _LocationCardState extends State<LocationCard> {
   void _fitMapBounds() {
     if (mapController == null) return;
     if (widget.latitude != null && widget.longitude != null && widget.victimLatitude != null && widget.victimLongitude != null) {
+      final latDiff = (widget.latitude! - widget.victimLatitude!).abs();
+      final lngDiff = (widget.longitude! - widget.victimLongitude!).abs();
+      if (latDiff < 0.0003 && lngDiff < 0.0003) {
+        mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng((widget.latitude! + widget.victimLatitude!) / 2, (widget.longitude! + widget.victimLongitude!) / 2),
+            17.5,
+          ),
+        );
+        return;
+      }
       final bounds = LatLngBounds(
         southwest: LatLng(
           widget.latitude! < widget.victimLatitude! ? widget.latitude! : widget.victimLatitude!,
@@ -60,9 +71,9 @@ class _LocationCardState extends State<LocationCard> {
           widget.longitude! > widget.victimLongitude! ? widget.longitude! : widget.victimLongitude!,
         ),
       );
-      mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+      mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
     } else if (widget.latitude != null && widget.longitude != null) {
-      mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(widget.latitude!, widget.longitude!)));
+      mapController!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(widget.latitude!, widget.longitude!), 16.5));
     }
   }
 
@@ -189,7 +200,7 @@ class _LocationCardState extends State<LocationCard> {
                 bottomRight: Radius.circular(20),
               ),
               child: SizedBox(
-                height: 180, // Height of the embedded map
+                height: 250, // Expanded height for full route viewing
                 width: double.infinity,
                 child: GoogleMap(
                   initialCameraPosition: CameraPosition(
@@ -218,9 +229,8 @@ class _LocationCardState extends State<LocationCard> {
                       Polyline(
                         polylineId: const PolylineId('route'),
                         points: widget.routePoints!,
-                        color: const Color(0xFF10B981), // Green Route
+                        color: const Color(0xFF10B981), // Solid Green Route
                         width: 5,
-                        patterns: [PatternItem.dash(15), PatternItem.gap(10)],
                       )
                   },
                   myLocationEnabled: false,

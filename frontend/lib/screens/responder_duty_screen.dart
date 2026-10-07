@@ -48,15 +48,19 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
 
   List<LatLng>? _roadRoutePoints;
   String? _lastRouteAlertId;
+  DateTime? _lastRouteFetchTime;
 
   Future<void> _fetchRoadRoute() async {
     if (_latitude == null || _longitude == null || _activeAlert == null) return;
-    if (_activeAlert!['responderStatus'] != 'EN_ROUTE') return;
-    if (_lastRouteAlertId == _activeAlert!['id']) return;
 
     final victimLat = double.tryParse(_activeAlert!['latitude'].toString());
     final victimLng = double.tryParse(_activeAlert!['longitude'].toString());
     if (victimLat == null || victimLng == null) return;
+
+    final now = DateTime.now();
+    if (_lastRouteAlertId == _activeAlert!['id'] && _lastRouteFetchTime != null) {
+      if (now.difference(_lastRouteFetchTime!).inSeconds < 6) return;
+    }
 
     try {
       PolylinePoints polylinePoints = PolylinePoints(apiKey: "AIzaSyCVD-Yk9rET4YVlldHmgU9KuqzlQnQHfaM");
@@ -73,6 +77,7 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
           setState(() {
             _roadRoutePoints = result.points.map((p) => LatLng(p.latitude, p.longitude)).toList();
             _lastRouteAlertId = _activeAlert!['id'];
+            _lastRouteFetchTime = now;
           });
         }
       }
@@ -232,6 +237,9 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
             _accuracy = pos.accuracy;
             _speed = pos.speed;
           });
+          if (_activeAlert != null) {
+            _fetchRoadRoute();
+          }
         }
       },
       onRemoteDutyEnded: () {
@@ -320,10 +328,14 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
         if (data['assignment'] != null) {
           if (mounted) {
             setState(() => _activeAlert = data['assignment']);
+            _fetchRoadRoute();
           }
         } else {
           if (mounted && _activeAlert != null) {
-            setState(() => _activeAlert = null);
+            setState(() {
+              _activeAlert = null;
+              _roadRoutePoints = null;
+            });
           }
         }
       }
@@ -733,22 +745,24 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
         // GOOGLE MAP PORTAL (LOCATION CARD)
         if (_isOnDuty)
           SizedBox(
-            height: 300,
+            height: 350,
             child: LocationCard(
               latitude: _latitude,
               longitude: _longitude,
               accuracy: _accuracy,
               victimLatitude: _activeAlert?['latitude'] != null ? double.tryParse(_activeAlert!['latitude'].toString()) : null,
               victimLongitude: _activeAlert?['longitude'] != null ? double.tryParse(_activeAlert!['longitude'].toString()) : null,
-              routePoints: (_activeAlert?['latitude'] != null && _latitude != null) 
-                  ? [
-                      LatLng(_latitude!, _longitude!),
-                      LatLng(
-                        double.tryParse(_activeAlert!['latitude'].toString()) ?? 0, 
-                        double.tryParse(_activeAlert!['longitude'].toString()) ?? 0
-                      )
-                    ] 
-                  : null,
+              routePoints: (_roadRoutePoints != null && _roadRoutePoints!.isNotEmpty)
+                  ? _roadRoutePoints
+                  : ((_activeAlert?['latitude'] != null && _latitude != null) 
+                      ? [
+                          LatLng(_latitude!, _longitude!),
+                          LatLng(
+                            double.tryParse(_activeAlert!['latitude'].toString()) ?? 0, 
+                            double.tryParse(_activeAlert!['longitude'].toString()) ?? 0
+                          )
+                        ] 
+                      : null),
               isTracking: true,
             ),
           ),

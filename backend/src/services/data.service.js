@@ -568,14 +568,35 @@ export const DataService = {
     }
 
     if (!isNaN(lat) && !isNaN(lng)) {
-      session.breadcrumbs.push({
-        latitude: lat,
-        longitude: lng,
-        timestamp: nowIso,
-      });
-      // Keep last 100 breadcrumb points
-      if (session.breadcrumbs.length > 100) {
-        session.breadcrumbs.shift();
+      if (!Array.isArray(session.breadcrumbs)) {
+        session.breadcrumbs = [];
+      }
+      const lastPt = session.breadcrumbs[session.breadcrumbs.length - 1];
+      let shouldAppend = true;
+      if (lastPt) {
+        const dLat = ((lat - lastPt.latitude) * Math.PI) / 180;
+        const dLng = ((lng - lastPt.longitude) * Math.PI) / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((lastPt.latitude * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) *
+          Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const distMeters = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        // Ignore minor GPS drift < 12 meters to prevent zig-zags through buildings/schools
+        if (distMeters < 12) {
+          shouldAppend = false;
+          lastPt.timestamp = nowIso;
+        }
+      }
+
+      if (shouldAppend) {
+        session.breadcrumbs.push({
+          latitude: lat,
+          longitude: lng,
+          timestamp: nowIso,
+        });
+        // Keep last 100 breadcrumb points
+        if (session.breadcrumbs.length > 100) {
+          session.breadcrumbs.shift();
+        }
       }
     }
 

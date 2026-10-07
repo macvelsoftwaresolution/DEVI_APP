@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [acceptedAlertBanner, setAcceptedAlertBanner] = useState(null); // { alertId, agentName, agentPhone, victimName, location, time }
   const [operatorNote, setOperatorNote] = useState('');
   const [isSavingResponder, setIsSavingResponder] = useState(false);
+  const [roadRoute, setRoadRoute] = useState([]);
 
   // Responder Form & OTP Verification
   const { isLoaded } = useJsApiLoader({
@@ -64,6 +65,7 @@ export default function DashboardPage() {
   const victimTrailRef = useRef(null);
   const audioCtxRef = useRef(null);
   const prevActiveIdsRef = useRef(new Set());
+  const initialLoadRef = useRef(true);
   const wsRef = useRef(null);
 
   // Digital Clock
@@ -179,10 +181,16 @@ export default function DashboardPage() {
         setIncidents(data.incidents);
 
         const currentActive = new Set();
+        const isFirstLoad = initialLoadRef.current;
+        if (isFirstLoad) {
+          initialLoadRef.current = false;
+        }
+
         data.incidents.forEach((inc) => {
           if (inc.status === 'DISPATCHED' || inc.status === 'ACTIVE') {
             currentActive.add(inc.id);
-            if (!prevActiveIdsRef.current.has(inc.id) && !manual) {
+            // Only alert if NOT first load and not already tracked
+            if (!isFirstLoad && !prevActiveIdsRef.current.has(inc.id) && !manual) {
               const lat = parseFloat(inc.latitude);
               const lng = parseFloat(inc.longitude);
               playSiren(inc);
@@ -400,9 +408,27 @@ export default function DashboardPage() {
                 window.speechSynthesis.speak(utterance);
               } catch (_) {}
               fetchIncidents(false);
+            } else if (msg.type === 'sos:new') {
+              const alertData = msg.data;
+              if (alertData) {
+                const lat = parseFloat(alertData.latitude);
+                const lng = parseFloat(alertData.longitude);
+                playSiren(alertData);
+                setEmergencyAlertModal({
+                  id: alertData.id,
+                  name: alertData.userName || alertData.user?.name || 'Emergency Victim',
+                  phone: alertData.userPhone || alertData.user?.phone || 'N/A',
+                  location: alertData.location || 'Live GPS Location',
+                  lat,
+                  lng,
+                });
+                setSelectedIncidentId(alertData.id);
+                smoothFlyTo(lat, lng, 17);
+              }
+              fetchIncidents(true);
               fetchResponders();
-            } else if (msg.type === 'sos:new' || msg.type === 'incident:assigned') {
-              fetchIncidents(false);
+            } else if (msg.type === 'incident:assigned') {
+              fetchIncidents(true);
               fetchResponders();
             } else if (msg.type === 'status' || msg.type === 'agent_update') {
               if (msg.agentId && msg.status) {
@@ -459,6 +485,72 @@ export default function DashboardPage() {
       setOperatorNote(selectedIncident.operatorNotes || '');
     }
   }, [selectedIncidentId, selectedIncident?.operatorNotes]);
+
+  // Calculate Real-world Driving Road Route using Google Directions Service
+  useEffect(() => {
+    if (!isLoaded || !window.google || !window.google.maps || !selectedIncident) {
+      setRoadRoute([]);
+      return;
+    }
+
+    const vLat = parseFloat(selectedIncident.latitude);
+    const vLng = parseFloat(selectedIncident.longitude);
+    if (isNaN(vLat) || isNaN(vLng)) {
+      setRoadRoute([]);
+      return;
+    }
+
+    let assignedResp = null;
+    if (selectedIncident.assignedAgent) {
+      assignedResp = responders.find((r) =>
+        selectedIncident.assignedAgent.toLowerCase().includes(r.name.toLowerCase()) ||
+        (r.phone && selectedIncident.assignedAgent.includes(r.phone.slice(-10)))
+      );
+    }
+
+    if (!assignedResp) {
+      setRoadRoute([]);
+      return;
+    }
+
+    const rLat = parseFloat(assignedResp.latitude);
+    const rLng = parseFloat(assignedResp.longitude);
+    if (isNaN(rLat) || isNaN(rLng)) {
+      setRoadRoute([]);
+      return;
+    }
+
+    try {
+      const directionsService = new window.google.maps.DirectionsService();
+      directionsService.route(
+        {
+          origin: { lat: rLat, lng: rLng },
+          destination: { lat: vLat, lng: vLng },
+          travelMode: window.google.maps.TravelMode.DRIVING,
+        },
+        (result, status) => {
+          if (status === window.google.maps.DirectionsStatus.OK && result?.routes?.[0]?.overview_path) {
+            const points = result.routes[0].overview_path.map((p) => ({
+              lat: p.lat(),
+              lng: p.lng(),
+            }));
+            setRoadRoute(points);
+          } else {
+            setRoadRoute([{ lat: rLat, lng: rLng }, { lat: vLat, lng: vLng }]);
+          }
+        }
+      );
+    } catch (_) {
+      setRoadRoute([{ lat: rLat, lng: rLng }, { lat: vLat, lng: vLng }]);
+    }
+  }, [
+    isLoaded,
+    selectedIncidentId,
+    selectedIncident?.latitude,
+    selectedIncident?.longitude,
+    selectedIncident?.assignedAgent,
+    responders,
+  ]);
 
   // Distance Calculator
   const calcDistKm = (lat1, lon1, lat2, lon2) => {
@@ -1070,18 +1162,33 @@ export default function DashboardPage() {
 
                  return (
                    <>
-                     {selectedIncident.breadcrumbs && selectedIncident.breadcrumbs.length > 1 && (
-                       <Polyline 
-                         path={selectedIncident.breadcrumbs.map(b => ({lat: parseFloat(b.latitude), lng: parseFloat(b.longitude)})).filter(p => !isNaN(p.lat) && !isNaN(p.lng))} 
-                         options={{ strokeColor: '#EF4444', strokeWeight: 4 }} 
-                       />
-                     )}
-                     {!isNaN(rLat) && !isNaN(rLng) && (
-                         <>
-                           <Polyline 
-                             path={[{lat: rLat, lng: rLng}, {lat: vLat, lng: vLng}]} 
-                             options={{ strokeColor: isEnRoute ? '#10B981' : '#38BDF8', strokeWeight: 5 }} 
-                           />
+                     {/* Victim Movement Trail (Jitter Filtered) */}
+                      {selectedIncident.breadcrumbs && selectedIncident.breadcrumbs.length > 1 && (() => {
+                        const cleanTrail = [];
+                        selectedIncident.breadcrumbs.forEach((b) => {
+                          const lat = parseFloat(b.latitude);
+                          const lng = parseFloat(b.longitude);
+                          if (isNaN(lat) || isNaN(lng)) return;
+                          const last = cleanTrail[cleanTrail.length - 1];
+                          if (!last || calcDistKm(last.lat, last.lng, lat, lng) >= 0.012) {
+                            cleanTrail.push({ lat, lng });
+                          }
+                        });
+                        return cleanTrail.length > 1 ? (
+                          <Polyline 
+                            path={cleanTrail} 
+                            options={{ strokeColor: '#EF4444', strokeWeight: 4 }} 
+                          />
+                        ) : null;
+                      })()}
+
+                      {/* Roadway Driving Route from Responder to Victim */}
+                      {!isNaN(rLat) && !isNaN(rLng) && (
+                          <>
+                            <Polyline 
+                              path={roadRoute && roadRoute.length > 0 ? roadRoute : [{lat: rLat, lng: rLng}, {lat: vLat, lng: vLng}]} 
+                              options={{ strokeColor: isEnRoute ? '#10B981' : '#38BDF8', strokeWeight: 5 }} 
+                            />
                            <OverlayView
                              position={{ lat: (rLat + vLat) / 2, lng: (rLng + vLng) / 2 }}
                              mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}

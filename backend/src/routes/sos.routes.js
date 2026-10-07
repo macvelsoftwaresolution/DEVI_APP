@@ -138,25 +138,18 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
           return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         };
 
-        // Rank responders matching Admin Dashboard ranking logic
+        // Strictly consider ONLY responders who are currently ON_DUTY
         const rankedResponders = allResponders
-          .filter(a => a.is_active !== false)
+          .filter(a => a.is_active !== false && (a.duty_status === 'ON_DUTY' || a.duty_status === 'AVAILABLE') && a.duty_status !== 'OFF_DUTY')
           .map(agent => {
             const rLat = parseFloat(agent.latitude);
             const rLng = parseFloat(agent.longitude);
             const distKm = (!isNaN(vLat) && !isNaN(vLng) && !isNaN(rLat) && !isNaN(rLng))
               ? Math.round(calcDistKm(vLat, vLng, rLat, rLng) * 10) / 10
               : 999;
-            const isOnDuty = agent.duty_status === 'ON_DUTY' || agent.duty_status === 'AVAILABLE' || agent.is_live === true;
-            return { ...agent, distKm, isOnDuty };
+            return { ...agent, distKm, isOnDuty: true };
           })
-          .sort((a, b) => {
-            // First priority: On-Duty / Live responders
-            if (a.isOnDuty && !b.isOnDuty) return -1;
-            if (!a.isOnDuty && b.isOnDuty) return 1;
-            // Second priority: Distance (Nearest first)
-            return a.distKm - b.distKm;
-          });
+          .sort((a, b) => a.distKm - b.distKm);
 
         // Progressive Proximity Tiers (Check 500m -> 1.0km -> 1.5km -> Active Patrol Sector)
         const tier500m = rankedResponders.filter(a => a.distKm <= 0.5 && a.phone);
@@ -175,14 +168,14 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
         } else if (tier15km.length > 0) {
           targetHelpersToAlert = tier15km;
           proximityTierLabel = '1.5 km Extended Zone';
-        } else {
-          targetHelpersToAlert = rankedResponders.filter(a => a.isOnDuty && a.phone && a.distKm < 10);
+        } else if (rankedResponders.length > 0) {
+          targetHelpersToAlert = rankedResponders.filter(a => a.phone && a.distKm < 10);
           proximityTierLabel = 'Active Patrol Sector';
         }
 
-        console.log(`🚨 [PROGRESSIVE PROXIMITY DISPATCH] Found ${targetHelpersToAlert.length} helper(s) within ${proximityTierLabel}. Alerting ALL of them!`);
+        console.log(`🚨 [PROGRESSIVE PROXIMITY DISPATCH] Found ${targetHelpersToAlert.length} ON-DUTY helper(s) within ${proximityTierLabel || 'N/A'}.`);
 
-        // Designate the 1st Nearest Person as Primary Assignee
+        // Designate the 1st Nearest ON-DUTY Person as Primary Assignee
         if (targetHelpersToAlert.length > 0) {
           autoAssignedAgent = targetHelpersToAlert[0];
         } else if (rankedResponders.length > 0) {
