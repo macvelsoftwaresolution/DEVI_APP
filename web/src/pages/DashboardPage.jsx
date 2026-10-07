@@ -1156,8 +1156,9 @@ export default function DashboardPage() {
                  
                  let rLat, rLng;
                  let isEnRoute = false;
+                 let assignedResp = null;
                  if (selectedIncident.assignedAgent) {
-                   const assignedResp = responders.find(r => 
+                   assignedResp = responders.find(r => 
                      selectedIncident.assignedAgent.toLowerCase().includes(r.name.toLowerCase()) || 
                      (r.phone && selectedIncident.assignedAgent.includes(r.phone.slice(-10)))
                    );
@@ -1191,7 +1192,7 @@ export default function DashboardPage() {
                                <span style={{ fontSize: '11px', fontWeight: '800', color: isEnRoute ? '#34D399' : '#38BDF8' }}>
                                  {isEnRoute ? '🚀 EN ROUTE TO SCENE' : '⚡ ASSIGNED RESPONDER'}
                                </span><br/>
-                               <span style={{ fontSize: '10px', color: '#E2E8F0' }}>{assignedResp.name} ➔ {selectedIncident.user?.name || 'Victim'}</span><br/>
+                               <span style={{ fontSize: '10px', color: '#E2E8F0' }}>{assignedResp?.name} ➔ {selectedIncident.user?.name || 'Victim'}</span><br/>
                                <span style={{ fontFamily: 'monospace', fontSize: '11px', fontWeight: 'bold', color: '#FFF' }}>
                                  ~{(() => {
                                     const d = calcDistKm(rLat, rLng, vLat, vLng);
