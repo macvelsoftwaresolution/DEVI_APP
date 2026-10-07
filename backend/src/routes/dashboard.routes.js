@@ -340,17 +340,20 @@ router.post('/agents/:id/location', async (req, res, next) => {
     }
 
     const updated = await DataService.updateAgentLiveLocation(id, { latitude, longitude, heading, speed });
+    const isOffDuty = !updated || updated.isOffDuty || updated.duty_status === 'OFF_DUTY';
 
-    // Broadcast agent location to dashboard WebSocket
-    socketService.broadcastAgentLocation(id, {
-      id,
-      name: updated ? updated.name : id,
-      latitude,
-      longitude,
-      heading,
-      speed,
-      status: updated ? updated.duty_status : 'ON_DUTY',
-    });
+    // Broadcast agent location to dashboard WebSocket ONLY if currently on duty
+    if (!isOffDuty) {
+      socketService.broadcastAgentLocation(id, {
+        id,
+        name: updated ? updated.name : id,
+        latitude,
+        longitude,
+        heading,
+        speed,
+        status: updated ? updated.duty_status : 'ON_DUTY',
+      });
+    }
 
     // Check if an emergency assignment is currently assigned to this agent
     const activeAssignment = await DataService.getAgentActiveAssignment(id);
@@ -358,6 +361,8 @@ router.post('/agents/:id/location', async (req, res, next) => {
     res.json({
       success: true,
       agent: updated,
+      isOffDuty,
+      duty_status: updated ? updated.duty_status : 'OFF_DUTY',
       hasAssignment: !!activeAssignment,
       assignment: activeAssignment || null,
     });
@@ -392,7 +397,11 @@ router.post('/agents/:id/end-duty', async (req, res, next) => {
   try {
     const { id } = req.params;
     const updated = await DataService.setAgentDutyStatus(id, 'OFF_DUTY');
-    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
+    socketService.broadcastToRoom('dashboard', {
+      type: 'agent_update',
+      agentId: id,
+      status: 'OFF_DUTY',
+    });
     res.json({ success: true, agent: updated, message: 'Agent duty ended successfully' });
   } catch (err) {
     next(err);
@@ -405,7 +414,11 @@ router.post('/agents/:id/duty', async (req, res, next) => {
     const { id } = req.params;
     const { status } = req.body;
     const updated = await DataService.setAgentDutyStatus(id, status || 'ON_DUTY');
-    socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
+    socketService.broadcastToRoom('dashboard', {
+      type: 'agent_update',
+      agentId: id,
+      status: status || 'ON_DUTY',
+    });
     res.json({
       success: true,
       agent: updated,

@@ -139,10 +139,10 @@ class LocationService {
     late LocationSettings locationSettings;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 8, // Low-bandwidth optimization: send update every 8 meters
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 2, // High-precision live tracking: updates every 2 meters
         forceLocationManager: true,
-        intervalDuration: const Duration(seconds: 4),
+        intervalDuration: const Duration(seconds: 2),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: "🚨 DEVI Emergency SOS Active",
           notificationText: "Live GPS is continuously streaming to your emergency guardians.",
@@ -152,16 +152,16 @@ class LocationService {
       );
     } else if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS)) {
       locationSettings = AppleSettings(
-        accuracy: LocationAccuracy.high,
+        accuracy: LocationAccuracy.bestForNavigation,
         activityType: ActivityType.fitness,
-        distanceFilter: 8,
+        distanceFilter: 2,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
       );
     } else {
       locationSettings = const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 8,
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 2,
       );
     }
 
@@ -215,26 +215,29 @@ class LocationService {
   // "🛡️ DEVI Responder: Live Duty Active" (STAYS ALIVE WHEN PHONE IS LOCKED)
   // =========================================================================
   static StreamSubscription<Position>? _responderDutyStreamSub;
-  static Timer? _responderShiftTimer;
-  static bool get isResponderDutyActive => _responderDutyStreamSub != null;
+  static bool _isDutyActive = false;
+  static bool get isResponderDutyActive => _isDutyActive && _responderDutyStreamSub != null;
 
   /// Starts continuous, high-priority foreground GPS tracking for DEVI Responders.
-  /// Android Foreground Service with ongoing notification keeps GPS streaming
-  /// even when the phone is locked, asleep, or in the responder's pocket for 10+ hours.
+  /// Runs as long as the agent is logged in and active.
   static Future<bool> startResponderDuty({
     required String agentId,
     required String agentName,
-    int shiftHours = 8,
     int intervalSeconds = 10,
     Function(Position position)? onUpdate,
-    Function()? onShiftExpired,
+    Function()? onRemoteDutyEnded,
   }) async {
     // 1. Cancel any active duty tracking
     await stopResponderDuty(agentId: agentId, notifyBackend: false);
 
-    debugPrint('🛡️ [STARTING RESPONDER DUTY] Agent: $agentName ($agentId), Shift: ${shiftHours}h, Interval: ${intervalSeconds}s');
+    // 2. Check if device hardware GPS is enabled
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      debugPrint('⚠️ Device Location Services (GPS) are turned off.');
+      return false;
+    }
 
-    // 2. Request fine location & background permissions if needed
+    // 2.1 Request fine location & background permissions if needed
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -248,14 +251,28 @@ class LocationService {
       return false;
     }
 
+    // 2.5 Notify backend that agent is ON_DUTY
+    if (agentId.isNotEmpty) {
+      try {
+        final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$agentId/duty');
+        await http.post(
+          url,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'status': 'ON_DUTY'}),
+        ).timeout(const Duration(seconds: 4));
+      } catch (_) {}
+    }
+
+    _isDutyActive = true;
+
     // 3. Configure Android Foreground Service with Persistent Notification
     late LocationSettings locationSettings;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5, // Update on 5 meters movement
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 2, // Ultra-responsive: updates every 2 meters
         forceLocationManager: true,
-        intervalDuration: Duration(seconds: intervalSeconds),
+        intervalDuration: Duration(seconds: intervalSeconds <= 2 ? intervalSeconds : 2),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: "🛡️ DEVI Responder: Live Duty Active",
           notificationText: "Live GPS is streaming to Control Room. Duty shift is active.",
@@ -265,16 +282,16 @@ class LocationService {
       );
     } else if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS)) {
       locationSettings = AppleSettings(
-        accuracy: LocationAccuracy.high,
+        accuracy: LocationAccuracy.bestForNavigation,
         activityType: ActivityType.fitness,
-        distanceFilter: 5,
+        distanceFilter: 2,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
       );
     } else {
       locationSettings = const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 2,
       );
     }
 
@@ -283,6 +300,7 @@ class LocationService {
       _responderDutyStreamSub = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen((Position position) {
+        if (!_isDutyActive) return;
         debugPrint('🛰️ [DUTY GPS PUSH] Lat: ${position.latitude}, Lng: ${position.longitude}, Acc: ${position.accuracy}m');
         onUpdate?.call(position);
 
@@ -293,24 +311,16 @@ class LocationService {
           longitude: position.longitude,
           heading: position.heading,
           speed: position.speed,
+          onRemoteDutyEnded: onRemoteDutyEnded,
         );
       }, onError: (e) {
         debugPrint('⚠️ Error in Responder Duty GPS Stream: $e');
       });
 
-      // 5. Shift Duration Auto-Expire Timer
-      if (shiftHours > 0) {
-        _responderShiftTimer?.cancel();
-        _responderShiftTimer = Timer(Duration(hours: shiftHours), () {
-          debugPrint('⏰ [SHIFT EXPIRED] Auto-stopping responder duty after ${shiftHours}h');
-          stopResponderDuty(agentId: agentId);
-          onShiftExpired?.call();
-        });
-      }
-
       return true;
     } catch (e) {
       debugPrint('⚠️ Failed to initiate Responder Duty GPS Stream: $e');
+      _isDutyActive = false;
       return false;
     }
   }
@@ -322,10 +332,12 @@ class LocationService {
     required double longitude,
     double heading = 0.0,
     double speed = 0.0,
+    Function()? onRemoteDutyEnded,
   }) async {
+    if (!_isDutyActive) return;
     try {
       final url = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$agentId/location');
-      await http.post(
+      final res = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -335,6 +347,15 @@ class LocationService {
           'speed': speed,
         }),
       ).timeout(const Duration(seconds: 4));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['isOffDuty'] == true || data['duty_status'] == 'OFF_DUTY') {
+          debugPrint('🛑 [DUTY TERMINATED BY SERVER] Operator ended duty remotely.');
+          await stopResponderDuty(agentId: agentId, notifyBackend: false);
+          onRemoteDutyEnded?.call();
+        }
+      }
     } catch (_) {}
   }
 
@@ -343,12 +364,13 @@ class LocationService {
     required String agentId,
     bool notifyBackend = true,
   }) async {
-    _responderShiftTimer?.cancel();
-    _responderShiftTimer = null;
+    _isDutyActive = false;
 
     if (_responderDutyStreamSub != null) {
       debugPrint('🛑 [STOPPING RESPONDER DUTY] Dismissing notification & canceling stream');
-      await _responderDutyStreamSub?.cancel();
+      try {
+        await _responderDutyStreamSub?.cancel();
+      } catch (_) {}
       _responderDutyStreamSub = null;
     }
 

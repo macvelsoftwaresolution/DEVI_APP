@@ -64,13 +64,7 @@ export function createVictimDivIcon(inc = {}, isSelected = false) {
   `;
 
   // Window.L is Leaflet loaded via CDN in index.html
-  const L = window.L;
-  return L.divIcon({
-    className: 'leaflet-div-icon devi-div-icon',
-    html,
-    iconSize: [200, 110],
-    iconAnchor: [100, 85],
-  });
+  return html;
 }
 
 export function createResponderDivIcon(agent = {}, isSelected = false) {
@@ -144,13 +138,7 @@ export function createResponderDivIcon(agent = {}, isSelected = false) {
     </div>
   `;
 
-  const L = window.L;
-  return L.divIcon({
-    className: 'leaflet-div-icon devi-div-icon',
-    html,
-    iconSize: [180, 100],
-    iconAnchor: [90, 75],
-  });
+  return html;
 }
 
 export function createGuardianDivIcon() {
@@ -180,11 +168,5 @@ export function createGuardianDivIcon() {
     </div>
   `;
 
-  const L = window.L;
-  return L.divIcon({
-    className: 'leaflet-div-icon devi-div-icon',
-    html,
-    iconSize: [180, 100],
-    iconAnchor: [90, 75],
-  });
+  return html;
 }

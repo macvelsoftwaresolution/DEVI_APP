@@ -19,6 +19,7 @@
         android:label="devi"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data android:name="com.google.android.geo.API_KEY" android:value="AIzaSyCVD-Yk9rET4YVlldHmgU9KuqzlQnQHfaM" />
         <!-- Foreground Location Service for 24/7 Background SOS GPS Tracking -->
         <service
             android:name="com.baseflow.geolocator.GeolocatorLocationService"

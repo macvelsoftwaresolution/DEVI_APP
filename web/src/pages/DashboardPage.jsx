@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import L from 'leaflet';
+import { GoogleMap, useJsApiLoader, OverlayView, Polyline } from '@react-google-maps/api';
 import { Shield, Radio, Volume2, VolumeX, RefreshCw, Plus, Link2, X, Phone, CheckCircle, Navigation, MapPin, Settings, Clock, UserCheck, Power } from 'lucide-react';
 import { apiUrl, WS_URL } from '../config/api';
 import { createVictimDivIcon, createResponderDivIcon } from '../utils/mapMarkers';
+
+// Define static constants outside component to avoid re-renders resetting map position
+const defaultMapCenter = { lat: 10.85, lng: 78.70 };
+const defaultMapOptions = { disableDefaultUI: true, zoomControl: true };
 
 export default function DashboardPage() {
   const [incidents, setIncidents] = useState([]);
@@ -14,9 +18,8 @@ export default function DashboardPage() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [liveTime, setLiveTime] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showShiftSettingsModal, setShowShiftSettingsModal] = useState(false);
+  const [showGpsSettingsModal, setShowGpsSettingsModal] = useState(false);
   const [showAgentsListModal, setShowAgentsListModal] = useState(false);
-  const [shiftHours, setShiftHours] = useState(8);
   const [gpsInterval, setGpsInterval] = useState(10);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [emergencyAlertModal, setEmergencyAlertModal] = useState(null); // { id, name, phone, location, lat, lng }
@@ -25,9 +28,15 @@ export default function DashboardPage() {
   const [isSavingResponder, setIsSavingResponder] = useState(false);
 
   // Responder Form & OTP Verification
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+  });
+
+  const generateRandomPin = () => Math.floor(1000 + Math.random() * 9000).toString();
   const [respName, setRespName] = useState('');
   const [respPhone, setRespPhone] = useState('');
-  const [respPin, setRespPin] = useState('7421');
+  const [respPin, setRespPin] = useState(() => Math.floor(1000 + Math.random() * 9000).toString());
   const [respArea, setRespArea] = useState('');
   const [respVehicle, setRespVehicle] = useState('Patrol Bike');
   const [addAgentStep, setAddAgentStep] = useState(1); // 1 = Details, 2 = OTP Verification
@@ -35,6 +44,17 @@ export default function DashboardPage() {
   const [devOtp, setDevOtp] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [createdInviteInfo, setCreatedInviteInfo] = useState(null);
+
+  const handleOpenAddAgentModal = () => {
+    setRespPin(generateRandomPin());
+    setRespName('');
+    setRespPhone('');
+    setRespArea('');
+    setAddAgentStep(1);
+    setRespOtp('');
+    setDevOtp('');
+    setShowAddModal(true);
+  };
 
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -57,41 +77,7 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Initialize Map
-  useEffect(() => {
-    if (!mapContainerRef.current || mapInstanceRef.current) return;
-
-    const map = L.map(mapContainerRef.current, { zoomControl: false }).setView([10.85, 78.70], 8);
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-    const satellite = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
-      attribution: '© Google Satellite',
-      subdomains: ['0', '1', '2', '3'],
-      maxZoom: 21,
-    });
-
-    const dark = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap',
-      maxZoom: 19,
-      className: 'tactical-dark-tiles',
-    });
-
-    const street = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-      attribution: '© Google Maps',
-      subdomains: ['0', '1', '2', '3'],
-      maxZoom: 20,
-    });
-
-    street.addTo(map);
-    L.control.layers({ '🗺️ Streets': street, '🛰️ Satellite': satellite, '🌑 Dark Map': dark }, null, { position: 'topright' }).addTo(map);
-
-    mapInstanceRef.current = map;
-
-    return () => {
-      map.remove();
-      mapInstanceRef.current = null;
-    };
-  }, []);
+  
 
   // Smooth Cinematic Map FlyTo Helper (Prevents animation jitter / abrupt snap)
   const isFlyingRef = useRef(false);
@@ -100,14 +86,8 @@ export default function DashboardPage() {
     if (!map || isNaN(lat) || isNaN(lng)) return;
     
     // Stop any conflicting animation and smoothly glide
-    map.stop();
-    isFlyingRef.current = true;
-    map.flyTo([lat, lng], zoom, {
-      animate: true,
-      duration: 2.8, // Smooth cinematic glide while audio speaks
-      easeLinearity: 0.2,
-      noMoveStart: true,
-    });
+    map.panTo({ lat, lng });
+    map.setZoom(zoom);
 
     setTimeout(() => {
       isFlyingRef.current = false;
@@ -252,7 +232,6 @@ export default function DashboardPage() {
       if (!res.ok) return;
       const data = await res.json();
       if (data.success && data.settings) {
-        setShiftHours(data.settings.shiftDurationHours || 8);
         setGpsInterval(data.settings.gpsIntervalSeconds || 10);
       }
     } catch (_) {}
@@ -266,12 +245,12 @@ export default function DashboardPage() {
       const res = await fetch(apiUrl('/api/dashboard/settings/duty'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shiftDurationHours: Number(shiftHours), gpsIntervalSeconds: Number(gpsInterval) }),
+        body: JSON.stringify({ gpsIntervalSeconds: Number(gpsInterval) }),
       });
       const data = await res.json();
       if (data.success) {
-        setShowShiftSettingsModal(false);
-        alert(`✅ Duty Shift Configuration Updated!\n• Shift Duration: ${shiftHours} Hours\n• GPS Update Frequency: Every ${gpsInterval}s`);
+        setShowGpsSettingsModal(false);
+        alert(`✅ GPS Tracking Configuration Updated!\n• GPS Update Frequency: Every ${gpsInterval}s`);
       } else {
         alert(data.message || 'Failed to update settings');
       }
@@ -284,14 +263,55 @@ export default function DashboardPage() {
 
   // End Agent Duty Manually
   const handleEndAgentDuty = async (agentId, agentName) => {
-    if (!window.confirm(`Are you sure you want to end ${agentName}'s duty shift now?`)) return;
+    if (!window.confirm(`Are you sure you want to take ${agentName} off-duty now?`)) return;
     try {
+      setResponders((prev) =>
+        prev.map((r) =>
+          String(r.id) === String(agentId)
+            ? { ...r, duty_status: 'OFF_DUTY', status: 'OFF_DUTY', is_live: false }
+            : r
+        )
+      );
       const res = await fetch(apiUrl(`/api/dashboard/agents/${agentId}/end-duty`), {
         method: 'POST',
       });
       const data = await res.json();
       if (data.success) {
-        fetchResponders();
+        setResponders((prev) =>
+          prev.map((r) =>
+            String(r.id) === String(agentId)
+              ? { ...r, duty_status: 'OFF_DUTY', status: 'OFF_DUTY', is_live: false }
+              : r
+          )
+        );
+      }
+    } catch (_) {}
+  };
+
+  // Start Agent Duty Manually from Admin Dashboard
+  const handleStartAgentDuty = async (agentId, agentName) => {
+    try {
+      setResponders((prev) =>
+        prev.map((r) =>
+          String(r.id) === String(agentId)
+            ? { ...r, duty_status: 'ON_DUTY', status: 'ON_DUTY', is_live: true }
+            : r
+        )
+      );
+      const res = await fetch(apiUrl(`/api/dashboard/agents/${agentId}/duty`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'ON_DUTY' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setResponders((prev) =>
+          prev.map((r) =>
+            String(r.id) === String(agentId)
+              ? { ...r, duty_status: 'ON_DUTY', status: 'ON_DUTY', is_live: true }
+              : r
+          )
+        );
       }
     } catch (_) {}
   };
@@ -385,6 +405,15 @@ export default function DashboardPage() {
               fetchIncidents(false);
               fetchResponders();
             } else if (msg.type === 'status' || msg.type === 'agent_update') {
+              if (msg.agentId && msg.status) {
+                setResponders((prev) =>
+                  prev.map((r) =>
+                    String(r.id) === String(msg.agentId)
+                      ? { ...r, duty_status: msg.status, status: msg.status }
+                      : r
+                  )
+                );
+              }
               fetchIncidents(false);
               fetchResponders();
             }
@@ -418,77 +447,9 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // Update Incident Map Markers
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
+  
 
-    const currentIds = new Set(incidents.map((i) => i.id));
-    for (const [id, marker] of markersRef.current.entries()) {
-      if (!currentIds.has(id)) {
-        map.removeLayer(marker);
-        markersRef.current.delete(id);
-      }
-    }
-
-    incidents.forEach((inc) => {
-      const lat = parseFloat(inc.latitude);
-      const lng = parseFloat(inc.longitude);
-      if (isNaN(lat) || isNaN(lng)) return;
-
-      const isSelected = inc.id === selectedIncidentId;
-      const icon = createVictimDivIcon(inc, isSelected);
-
-      if (markersRef.current.has(inc.id)) {
-        const marker = markersRef.current.get(inc.id);
-        marker.setLatLng([lat, lng]);
-        marker.setIcon(icon);
-      } else {
-        const marker = L.marker([lat, lng], { icon }).addTo(map);
-        marker.bindTooltip(`<strong>${inc.user?.name || inc.userName || 'Victim'}</strong><br/>Status: <strong>${inc.status}</strong>`, { direction: 'top' });
-        marker.on('click', () => setSelectedIncidentId(inc.id));
-        markersRef.current.set(inc.id, marker);
-      }
-    });
-  }, [incidents, selectedIncidentId]);
-
-  // Update Responder Map Markers
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    if (!showResponders) {
-      for (const marker of responderMarkersRef.current.values()) map.removeLayer(marker);
-      responderMarkersRef.current.clear();
-      return;
-    }
-
-    const currentIds = new Set(responders.map((r) => r.id));
-    for (const [id, marker] of responderMarkersRef.current.entries()) {
-      if (!currentIds.has(id)) {
-        map.removeLayer(marker);
-        responderMarkersRef.current.delete(id);
-      }
-    }
-
-    responders.forEach((r) => {
-      const lat = parseFloat(r.latitude);
-      const lng = parseFloat(r.longitude);
-      if (isNaN(lat) || isNaN(lng)) return;
-
-      const icon = createResponderDivIcon(r, false);
-
-      if (responderMarkersRef.current.has(r.id)) {
-        const marker = responderMarkersRef.current.get(r.id);
-        marker.setLatLng([lat, lng]);
-        marker.setIcon(icon);
-      } else {
-        const marker = L.marker([lat, lng], { icon }).addTo(map);
-        marker.bindTooltip(`<strong>${r.name}</strong><br/>📍 ${r.area || 'Sector'}<br/>📞 ${r.phone}`, { direction: 'top' });
-        responderMarkersRef.current.set(r.id, marker);
-      }
-    });
-  }, [responders, showResponders]);
+  
 
   // Selected Incident Focus
   const selectedIncident = incidents.find((i) => i.id === selectedIncidentId);
@@ -746,6 +707,7 @@ export default function DashboardPage() {
         setRespName('');
         setRespPhone('');
         setRespArea('');
+        setRespPin(generateRandomPin());
       } else {
         alert('Verification failed: ' + (data.message || 'Invalid OTP code'));
       }
@@ -884,26 +846,7 @@ export default function DashboardPage() {
 
         {/* BUTTONS */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={() => setShowAddModal(true)}
-            style={{
-              background: 'var(--green-soft)',
-              borderColor: 'rgba(16, 185, 129, 0.4)',
-              color: '#34D399',
-              height: '34px',
-              padding: '0 12px',
-              borderRadius: '8px',
-              border: '1px solid rgba(16, 185, 129, 0.4)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: '700',
-            }}
-          >
-            <Plus size={14} /> Add Agent
-          </button>
+          
           <button
             onClick={() => {
               const url = `${window.location.origin}/duty`;
@@ -928,7 +871,7 @@ export default function DashboardPage() {
             <Link2 size={14} /> Duty Link
           </button>
           <button
-            onClick={() => setShowShiftSettingsModal(true)}
+            onClick={() => setShowGpsSettingsModal(true)}
             style={{
               background: 'var(--bg-surface)',
               border: '1px solid var(--border)',
@@ -944,10 +887,10 @@ export default function DashboardPage() {
               fontWeight: '700',
             }}
           >
-            <Settings size={14} /> Shift: {shiftHours}h
+            <Settings size={14} /> GPS: {gpsInterval}s
           </button>
           <button
-            onClick={() => setShowAgentsListModal(true)}
+            onClick={() => window.location.href = '/agents'}
             style={{
               background: 'var(--bg-surface)',
               border: '1px solid var(--border)',
@@ -1154,7 +1097,98 @@ export default function DashboardPage() {
 
         {/* MAP */}
         <main style={{ flex: 1, height: '100%', position: 'relative', background: '#0B0E14' }}>
-          <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }}></div>
+          {isLoaded ? (
+            <GoogleMap
+              mapContainerStyle={{ width: '100%', height: '100%' }}
+              center={defaultMapCenter}
+              zoom={8}
+              onLoad={(map) => { mapInstanceRef.current = map; }}
+              options={defaultMapOptions}
+            >
+              {/* Incidents */}
+              {incidents.map((inc) => {
+                const lat = parseFloat(inc.latitude);
+                const lng = parseFloat(inc.longitude);
+                if (isNaN(lat) || isNaN(lng)) return null;
+                const isEmergency = inc.status === 'DISPATCHED' || inc.status === 'ACTIVE';
+                const isSelected = selectedIncidentId === inc.id;
+                return (
+                  <OverlayView
+                    key={inc.id}
+                    position={{ lat, lng }}
+                    mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                    getPixelPositionOffset={(width, height) => ({ x: -100, y: -85 })}
+                  >
+                    <div 
+                      onClick={() => setSelectedIncidentId(inc.id)}
+                      dangerouslySetInnerHTML={{ __html: createVictimDivIcon(inc, isSelected) }} 
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </OverlayView>
+                );
+              })}
+              
+              {/* Responders */}
+              {showResponders && responders.map((r) => {
+                const lat = parseFloat(r.latitude);
+                const lng = parseFloat(r.longitude);
+                if (isNaN(lat) || isNaN(lng)) return null;
+                const isOnDuty = r.duty_status === 'ON_DUTY';
+                return (
+                  <OverlayView
+                    key={r.id}
+                    position={{ lat, lng }}
+                    mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                    getPixelPositionOffset={(width, height) => ({ x: -90, y: -75 })}
+                  >
+                    <div 
+                      dangerouslySetInnerHTML={{ __html: createResponderDivIcon(r, false) }} 
+                    />
+                  </OverlayView>
+                );
+              })}
+
+              {/* Polylines for Selected Incident */}
+              {selectedIncident && (() => {
+                 const vLat = parseFloat(selectedIncident.latitude);
+                 const vLng = parseFloat(selectedIncident.longitude);
+                 if (isNaN(vLat) || isNaN(vLng)) return null;
+                 
+                 let rLat, rLng;
+                 let isEnRoute = false;
+                 if (selectedIncident.assignedAgent) {
+                   const assignedResp = responders.find(r => 
+                     selectedIncident.assignedAgent.toLowerCase().includes(r.name.toLowerCase()) || 
+                     (r.phone && selectedIncident.assignedAgent.includes(r.phone.slice(-10)))
+                   );
+                   if (assignedResp) {
+                     rLat = parseFloat(assignedResp.latitude);
+                     rLng = parseFloat(assignedResp.longitude);
+                     isEnRoute = selectedIncident.responderStatus === 'EN_ROUTE';
+                   }
+                 }
+
+                 return (
+                   <>
+                     {selectedIncident.breadcrumbs && selectedIncident.breadcrumbs.length > 1 && (
+                       <Polyline 
+                         path={selectedIncident.breadcrumbs.map(b => ({lat: parseFloat(b.latitude), lng: parseFloat(b.longitude)})).filter(p => !isNaN(p.lat) && !isNaN(p.lng))} 
+                         options={{ strokeColor: '#EF4444', strokeWeight: 4 }} 
+                       />
+                     )}
+                     {!isNaN(rLat) && !isNaN(rLng) && (
+                       <Polyline 
+                         path={[{lat: rLat, lng: rLng}, {lat: vLat, lng: vLng}]} 
+                         options={{ strokeColor: isEnRoute ? '#10B981' : '#38BDF8', strokeWeight: 5 }} 
+                       />
+                     )}
+                   </>
+                 );
+              })()}
+            </GoogleMap>
+          ) : (
+            <div style={{color: 'white', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%'}}>Loading Google Maps...</div>
+          )}
         </main>
 
         {/* RIGHT DRAWER */}
@@ -1437,6 +1471,55 @@ export default function DashboardPage() {
 
 
                 <div style={{ marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                    <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Security PIN (For Mobile App Login)</label>
+                    <button
+                      type="button"
+                      onClick={() => setRespPin(generateRandomPin())}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#38BDF8',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: 0
+                      }}
+                    >
+                      🎲 Generate New PIN
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <span style={{ padding: '0 10px', fontSize: '13px', fontWeight: '700', color: '#38BDF8', background: 'rgba(56, 189, 248, 0.1)', borderRight: '1px solid var(--border)' }}>PIN</span>
+                    <input
+                      required
+                      type="text"
+                      maxLength={6}
+                      placeholder="4-digit PIN"
+                      value={respPin}
+                      onChange={(e) => setRespPin(e.target.value.replace(/\D/g, ''))}
+                      style={{
+                        width: '100%',
+                        background: 'transparent',
+                        border: 'none',
+                        padding: '9px 12px',
+                        fontSize: '14px',
+                        fontWeight: '800',
+                        letterSpacing: '3px',
+                        color: '#38BDF8',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                  <span style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px', display: 'block' }}>
+                    Auto-generated unique PIN. Sent to responder via WhatsApp for login.
+                  </span>
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Patrol Area / Station</label>
                   <input required type="text" placeholder="e.g. Central Sector / Sivakasi" value={respArea} onChange={(e) => setRespArea(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '9px 12px', fontSize: '13px', color: '#FFF', outline: 'none' }} />
                 </div>
@@ -1629,8 +1712,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* SHIFT & GPS SETTINGS MODAL */}
-      {showShiftSettingsModal && (
+      {/* GPS SETTINGS MODAL */}
+      {showGpsSettingsModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: '450px', maxWidth: '94vw', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '24px', boxShadow: '0 25px 60px rgba(0,0,0,0.7)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -1639,55 +1722,14 @@ export default function DashboardPage() {
                   ⚙️
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>Shift & GPS Tracking Settings</h3>
-                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Control responder duty duration & battery sync rate</p>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>GPS Tracking Settings</h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Control responder telemetry update sync frequency</p>
                 </div>
               </div>
-              <button onClick={() => setShowShiftSettingsModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
+              <button onClick={() => setShowGpsSettingsModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
             </div>
 
             <form onSubmit={handleSaveDutySettings}>
-              {/* Shift Duration Selection */}
-              <div style={{ marginBottom: '18px' }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '8px' }}>
-                  Default Shift Duration
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '10px' }}>
-                  {[4, 8, 10, 12].map((hrs) => (
-                    <button
-                      type="button"
-                      key={hrs}
-                      onClick={() => setShiftHours(hrs)}
-                      style={{
-                        padding: '10px 0',
-                        borderRadius: '8px',
-                        border: `1px solid ${shiftHours === hrs ? '#38BDF8' : 'var(--border)'}`,
-                        background: shiftHours === hrs ? 'rgba(56, 189, 248, 0.2)' : 'var(--bg-dark)',
-                        color: shiftHours === hrs ? '#38BDF8' : '#FFF',
-                        fontWeight: '800',
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {hrs} Hours
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Custom Shift Hours:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={shiftHours}
-                    onChange={(e) => setShiftHours(parseInt(e.target.value) || 8)}
-                    style={{ width: '60px', background: 'transparent', border: 'none', color: '#38BDF8', fontWeight: '800', fontSize: '14px', outline: 'none' }}
-                  />
-                  <span style={{ fontSize: '11px', color: '#94A3B8' }}>hrs (Auto-ends duty afterwards)</span>
-                </div>
-              </div>
-
               {/* GPS Update Rate */}
               <div style={{ marginBottom: '22px' }}>
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '8px' }}>
@@ -1724,7 +1766,7 @@ export default function DashboardPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button
                   type="button"
-                  onClick={() => setShowShiftSettingsModal(false)}
+                  onClick={() => setShowGpsSettingsModal(false)}
                   style={{ padding: '10px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                 >
                   Cancel
@@ -1745,7 +1787,7 @@ export default function DashboardPage() {
       {/* AGENTS & ON-DUTY MANAGEMENT MODAL */}
       {showAgentsListModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: '640px', maxWidth: '94vw', maxHeight: '85vh', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 60px rgba(0,0,0,0.7)' }}>
+          <div style={{ width: '850px', maxWidth: '94vw', maxHeight: '85vh', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 60px rgba(0,0,0,0.7)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10B981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>
@@ -1768,19 +1810,6 @@ export default function DashboardPage() {
                 responders.map((agent) => {
                   const isOnDuty = agent.duty_status === 'ON_DUTY' || agent.duty_status === 'AVAILABLE';
                   const isPending = agent.duty_status === 'PENDING_APPROVAL';
-
-                  // Calculate remaining shift time if on duty
-                  let remainingStr = '';
-                  if (isOnDuty && agent.shift_expires_at) {
-                    const diffMs = new Date(agent.shift_expires_at).getTime() - Date.now();
-                    if (diffMs > 0) {
-                      const hrs = Math.floor(diffMs / (3600 * 1000));
-                      const mins = Math.floor((diffMs % (3600 * 1000)) / (60 * 1000));
-                      remainingStr = `⏳ ${hrs}h ${mins}m left`;
-                    } else {
-                      remainingStr = '⏰ Shift Expired';
-                    }
-                  }
 
                   return (
                     <div
@@ -1811,11 +1840,6 @@ export default function DashboardPage() {
                           >
                             {isOnDuty ? '🟢 ON DUTY' : isPending ? '🟡 PENDING APPROVAL' : '⚪ OFF DUTY'}
                           </span>
-                          {remainingStr && (
-                            <span style={{ fontSize: '10px', color: '#FBBF24', fontWeight: '700' }}>
-                              {remainingStr}
-                            </span>
-                          )}
                           {isOnDuty && (
                             <span
                               style={{
@@ -1893,25 +1917,45 @@ export default function DashboardPage() {
                             <Power size={12} /> End Duty
                           </button>
                         ) : (
-                          <button
-                            onClick={() => {
-                              const dutyUrl = `${window.location.origin}/duty`;
-                              navigator.clipboard.writeText(dutyUrl);
-                              alert(`Duty portal link copied for ${agent.name}:\n${dutyUrl}`);
-                            }}
-                            style={{
-                              padding: '6px 12px',
-                              background: 'rgba(56, 189, 248, 0.1)',
-                              border: '1px solid rgba(56, 189, 248, 0.3)',
-                              color: '#38BDF8',
-                              borderRadius: '6px',
-                              fontSize: '11px',
-                              fontWeight: '700',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Copy Link
-                          </button>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              onClick={() => handleStartAgentDuty(agent.id, agent.name)}
+                              style={{
+                                padding: '6px 12px',
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                border: '1px solid rgba(16, 185, 129, 0.4)',
+                                color: '#34D399',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <Power size={12} /> Start Duty
+                            </button>
+                            <button
+                              onClick={() => {
+                                const dutyUrl = `${window.location.origin}/duty`;
+                                navigator.clipboard.writeText(dutyUrl);
+                                alert(`Duty portal link copied for ${agent.name}:\n${dutyUrl}`);
+                              }}
+                              style={{
+                                padding: '6px 12px',
+                                background: 'rgba(56, 189, 248, 0.1)',
+                                border: '1px solid rgba(56, 189, 248, 0.3)',
+                                color: '#38BDF8',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Copy Link
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1921,12 +1965,7 @@ export default function DashboardPage() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-              <button
-                onClick={() => { setShowAgentsListModal(false); setShowAddModal(true); }}
-                style={{ padding: '8px 14px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Plus size={14} /> Add New Agent
-              </button>
+              
               <button
                 onClick={() => setShowAgentsListModal(false)}
                 style={{ padding: '8px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}

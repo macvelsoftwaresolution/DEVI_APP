@@ -9,6 +9,9 @@ class LocationCard extends StatefulWidget {
   final double? latitude;
   final double? longitude;
   final double? accuracy;
+  final double? victimLatitude;
+  final double? victimLongitude;
+  final List<LatLng>? routePoints;
   final String? addressOrStatus;
   final VoidCallback? onRefresh;
   final bool isTracking;
@@ -18,6 +21,9 @@ class LocationCard extends StatefulWidget {
     this.latitude,
     this.longitude,
     this.accuracy,
+    this.victimLatitude,
+    this.victimLongitude,
+    this.routePoints,
     this.addressOrStatus,
     this.onRefresh,
     this.isTracking = false,
@@ -29,6 +35,36 @@ class LocationCard extends StatefulWidget {
 
 class _LocationCardState extends State<LocationCard> {
   GoogleMapController? mapController;
+
+  @override
+  void didUpdateWidget(LocationCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.latitude != oldWidget.latitude || 
+        widget.longitude != oldWidget.longitude || 
+        widget.victimLatitude != oldWidget.victimLatitude || 
+        widget.victimLongitude != oldWidget.victimLongitude) {
+      _fitMapBounds();
+    }
+  }
+
+  void _fitMapBounds() {
+    if (mapController == null) return;
+    if (widget.latitude != null && widget.longitude != null && widget.victimLatitude != null && widget.victimLongitude != null) {
+      final bounds = LatLngBounds(
+        southwest: LatLng(
+          widget.latitude! < widget.victimLatitude! ? widget.latitude! : widget.victimLatitude!,
+          widget.longitude! < widget.victimLongitude! ? widget.longitude! : widget.victimLongitude!,
+        ),
+        northeast: LatLng(
+          widget.latitude! > widget.victimLatitude! ? widget.latitude! : widget.victimLatitude!,
+          widget.longitude! > widget.victimLongitude! ? widget.longitude! : widget.victimLongitude!,
+        ),
+      );
+      mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+    } else if (widget.latitude != null && widget.longitude != null) {
+      mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(widget.latitude!, widget.longitude!)));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -162,28 +198,30 @@ class _LocationCardState extends State<LocationCard> {
                   ),
                   onMapCreated: (GoogleMapController controller) {
                     mapController = controller;
+                    _fitMapBounds();
                   },
                   markers: {
                     Marker(
                       markerId: const MarkerId('current_loc'),
                       position: LatLng(widget.latitude!, widget.longitude!),
-                      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-                    )
+                      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure), // Agent = Blue
+                    ),
+                    if (widget.victimLatitude != null && widget.victimLongitude != null)
+                      Marker(
+                        markerId: const MarkerId('victim_loc'),
+                        position: LatLng(widget.victimLatitude!, widget.victimLongitude!),
+                        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed), // Victim = Red
+                      )
                   },
-                  // Example Prototype for your Polygon/Zone drawing!
-                  polygons: {
-                    Polygon(
-                      polygonId: const PolygonId('danger_zone_1'),
-                      points: [
-                        LatLng(widget.latitude! + 0.005, widget.longitude! - 0.005),
-                        LatLng(widget.latitude! + 0.005, widget.longitude! + 0.005),
-                        LatLng(widget.latitude! - 0.005, widget.longitude! + 0.005),
-                        LatLng(widget.latitude! - 0.005, widget.longitude! - 0.005),
-                      ],
-                      strokeWidth: 2,
-                      strokeColor: Colors.red,
-                      fillColor: Colors.red.withOpacity(0.2), // Semi-transparent red zone
-                    )
+                  polylines: {
+                    if (widget.routePoints != null && widget.routePoints!.isNotEmpty)
+                      Polyline(
+                        polylineId: const PolylineId('route'),
+                        points: widget.routePoints!,
+                        color: const Color(0xFF10B981), // Green Route
+                        width: 5,
+                        patterns: [PatternItem.dash(15), PatternItem.gap(10)],
+                      )
                   },
                   myLocationEnabled: false,
                   myLocationButtonEnabled: false,
