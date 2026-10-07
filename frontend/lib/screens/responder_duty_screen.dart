@@ -16,10 +16,11 @@ class ResponderDutyScreen extends StatefulWidget {
   State<ResponderDutyScreen> createState() => _ResponderDutyScreenState();
 }
 
-class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
+class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsBindingObserver {
   // Auth & Profile
   bool _isLoading = false;
   bool _isOnDuty = false;
+  bool _isGpsDisabled = false;
   String? _agentId;
   String? _agentName;
   String? _agentPhone;
@@ -45,15 +46,43 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSavedSession();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _assignmentPollTimer?.cancel();
     _phoneController.dispose();
     _pinController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _agentId != null) {
+      _checkLocationOnAppResume();
+    }
+  }
+
+  Future<void> _checkLocationOnAppResume() async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    if (enabled) {
+      if (_isGpsDisabled) {
+        setState(() => _isGpsDisabled = false);
+      }
+      if (!_isOnDuty) {
+        _startDutyMode();
+      }
+    } else {
+      if (!_isGpsDisabled) {
+        setState(() {
+          _isGpsDisabled = true;
+          _isOnDuty = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadSavedSession() async {
@@ -137,6 +166,18 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
   Future<void> _startDutyMode() async {
     if (_agentId == null) return;
 
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        setState(() {
+          _isGpsDisabled = true;
+          _isOnDuty = false;
+        });
+        _showEnableGpsDialog();
+      }
+      return;
+    }
+
     final success = await LocationService.startResponderDuty(
       agentId: _agentId!,
       agentName: _agentName ?? 'DEVI Responder',
@@ -159,7 +200,10 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     );
 
     if (success) {
-      setState(() => _isOnDuty = true);
+      setState(() {
+        _isOnDuty = true;
+        _isGpsDisabled = false;
+      });
 
       try {
         final dUrl = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$_agentId/duty');
@@ -183,6 +227,38 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
         );
       }
     }
+  }
+
+  Future<void> _showEnableGpsDialog() async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Device Location is OFF', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'Your phone GPS is turned off. Please turn on Location in settings to start active duty tracking.',
+          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Later', style: TextStyle(color: Color(0xFF94A3B8))),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await Geolocator.openLocationSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0284C7),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Turn On Location', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _checkForAssignments() async {
@@ -376,12 +452,36 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
         ),
         actions: [
           if (_agentId != null)
-            IconButton(
-              icon: const Icon(Icons.logout_rounded, color: Color(0xFF94A3B8), size: 20),
-              tooltip: 'Sign Out & Off Duty',
-              onPressed: _logout,
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+              child: InkWell(
+                onTap: _logout,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.power_settings_new_rounded, color: Color(0xFFEF4444), size: 15),
+                      SizedBox(width: 4),
+                      Text(
+                        'Off Duty',
+                        style: TextStyle(
+                          color: Color(0xFFEF4444),
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          const SizedBox(width: 4),
         ],
       ),
       body: SafeArea(
@@ -539,6 +639,41 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
           const SizedBox(height: 16),
         ],
 
+        // GPS DISABLED WARNING BANNER
+        if (_isGpsDisabled) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+              border: Border.all(color: const Color(0xFFEF4444)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.location_off_rounded, color: Color(0xFFF87171), size: 20),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Device Location is OFF. Tap to enable.',
+                    style: TextStyle(color: Color(0xFFFCA5A5), fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () => Geolocator.openLocationSettings(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFEF4444),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    minimumSize: Size.zero,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  ),
+                  child: const Text('Turn On', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // AGENT PROFILE & DUTY STATUS CARD
         _buildProfileCard(),
         const SizedBox(height: 14),
@@ -551,10 +686,6 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
 
         // BACKGROUND GPS CHIP
         _buildGpsStatusBadge(),
-        const SizedBox(height: 20),
-
-        // PRIMARY ACTION BUTTON (OFF DUTY & SIGN OUT)
-        _buildDutyActionButton(),
       ],
     );
   }
@@ -994,39 +1125,6 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildDutyActionButton() {
-    if (!_isOnDuty) {
-      return SizedBox(
-        height: 50,
-        child: ElevatedButton.icon(
-          onPressed: () => _startDutyMode(),
-          icon: const Icon(Icons.play_arrow_rounded, size: 22),
-          label: const Text('Go On Duty', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF10B981),
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        ),
-      );
-    }
-
-    return SizedBox(
-      height: 50,
-      child: OutlinedButton.icon(
-        onPressed: _logout,
-        icon: const Icon(Icons.power_settings_new_rounded, size: 18, color: Color(0xFFEF4444)),
-        label: const Text('Go Off Duty & Sign Out', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFFEF4444))),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Color(0xFFEF4444), width: 1.2),
-          backgroundColor: const Color(0xFFEF4444).withValues(alpha: 0.08),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
       ),
     );
   }

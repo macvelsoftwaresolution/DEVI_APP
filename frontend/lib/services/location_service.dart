@@ -230,9 +230,14 @@ class LocationService {
     // 1. Cancel any active duty tracking
     await stopResponderDuty(agentId: agentId, notifyBackend: false);
 
-    debugPrint('🛡️ [STARTING RESPONDER DUTY] Agent: $agentName ($agentId), Interval: ${intervalSeconds}s');
+    // 2. Check if device hardware GPS is enabled
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      debugPrint('⚠️ Device Location Services (GPS) are turned off.');
+      return false;
+    }
 
-    // 2. Request fine location & background permissions if needed
+    // 2.1 Request fine location & background permissions if needed
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
