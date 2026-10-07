@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../widgets/location_card.dart';
 
 class ResponderDutyScreen extends StatefulWidget {
   final String? initialToken;
@@ -741,6 +742,14 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
                 ),
               ],
             ),
+          ),
+        const SizedBox(height: 16),
+        
+        // GOOGLE MAP PORTAL (LOCATION CARD)
+        if (_isOnDuty)
+          const SizedBox(
+            height: 300,
+            child: LocationCard(),
           ),
         const SizedBox(height: 24),
 

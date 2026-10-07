@@ -713,7 +713,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                   SizedBox(height: isShortScreen ? 4 : 6),
 
                   // Emergency 2-Minute Recording Live Banner & Evidence Player
-                  const EmergencyRecordingBanner(),
+                  // const EmergencyRecordingBanner(),
 
                   // Demo Pill
                   GestureDetector(

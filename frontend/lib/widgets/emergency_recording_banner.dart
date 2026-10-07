@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import '../services/emergency_media_service.dart';
 import '../theme/app_colors.dart';
 
-class EmergencyRecordingBanner extends StatefulWidget {
+class EmergencyRecordingBanner extends StatelessWidget {
   const EmergencyRecordingBanner({super.key});
 
   @override
-  State<EmergencyRecordingBanner> createState() =>
-      _EmergencyRecordingBannerState();
+  Widget build(BuildContext context) {
+    return const SizedBox.shrink();
+  }
 }
+
+/*
 
 class _EmergencyRecordingBannerState extends State<EmergencyRecordingBanner>
     with SingleTickerProviderStateMixin {
@@ -297,3 +300,4 @@ class _EmergencyRecordingBannerState extends State<EmergencyRecordingBanner>
     return const SizedBox.shrink();
   }
 }
+*/

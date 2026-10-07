@@ -82,8 +82,8 @@ export default function DashboardPage() {
       maxZoom: 20,
     });
 
-    satellite.addTo(map);
-    L.control.layers({ '🛰️ Satellite': satellite, '🌑 Dark Map': dark, '🗺️ Streets': street }, null, { position: 'topright' }).addTo(map);
+    street.addTo(map);
+    L.control.layers({ '🗺️ Streets': street, '🛰️ Satellite': satellite, '🌑 Dark Map': dark }, null, { position: 'topright' }).addTo(map);
 
     mapInstanceRef.current = map;
 
