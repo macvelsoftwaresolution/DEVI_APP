@@ -178,7 +178,20 @@ export default function DashboardPage() {
       if (!res.ok) return;
       const data = await res.json();
       if (data.success && Array.isArray(data.incidents)) {
-        setIncidents(data.incidents);
+        setIncidents((prev) => {
+          const prevMap = new Map(prev.map((i) => [String(i.id), i]));
+          return data.incidents.map((serverInc) => {
+            const existing = prevMap.get(String(serverInc.id));
+            if (!existing) return serverInc;
+            const existingCrumbs = existing.breadcrumbs || [];
+            const serverCrumbs = serverInc.breadcrumbs || [];
+            const mergedCrumbs = existingCrumbs.length >= serverCrumbs.length ? existingCrumbs : serverCrumbs;
+            return {
+              ...serverInc,
+              breadcrumbs: mergedCrumbs,
+            };
+          });
+        });
 
         const currentActive = new Set();
         const isFirstLoad = initialLoadRef.current;
@@ -1170,7 +1183,7 @@ export default function DashboardPage() {
                           const lng = parseFloat(b.longitude);
                           if (isNaN(lat) || isNaN(lng)) return;
                           const last = cleanTrail[cleanTrail.length - 1];
-                          if (!last || calcDistKm(last.lat, last.lng, lat, lng) >= 0.012) {
+                          if (!last || calcDistKm(last.lat, last.lng, lat, lng) >= 0.008) {
                             cleanTrail.push({ lat, lng });
                           }
                         });

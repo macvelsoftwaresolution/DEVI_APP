@@ -580,8 +580,8 @@ export const DataService = {
           Math.cos((lastPt.latitude * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) *
           Math.sin(dLng / 2) * Math.sin(dLng / 2);
         const distMeters = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        // Ignore minor GPS drift < 12 meters to prevent zig-zags through buildings/schools
-        if (distMeters < 12) {
+        // Ignore minor stationary GPS drift < 8 meters to keep trail accurate without false zig-zags
+        if (distMeters < 8) {
           shouldAppend = false;
           lastPt.timestamp = nowIso;
         }
@@ -593,9 +593,9 @@ export const DataService = {
           longitude: lng,
           timestamp: nowIso,
         });
-        // Keep last 100 breadcrumb points
-        if (session.breadcrumbs.length > 100) {
-          session.breadcrumbs.shift();
+        // Keep up to 1000 breadcrumb points (~33+ mins of live trail) while preserving origin point #0
+        if (session.breadcrumbs.length > 1000) {
+          session.breadcrumbs.splice(1, 1);
         }
       }
     }
