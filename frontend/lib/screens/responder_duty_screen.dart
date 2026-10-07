@@ -30,11 +30,7 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
   final _pinController = TextEditingController();
   String _errorMessage = '';
 
-  // Shift & Tracking
-  int _shiftHours = 8;
-  DateTime? _shiftEndTime;
-  Duration _remainingShift = Duration.zero;
-  Timer? _countdownTimer;
+  // Telemetry & Assignment Polling
   Timer? _assignmentPollTimer;
 
   // Live GPS telemetry
@@ -54,7 +50,6 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
 
   @override
   void dispose() {
-    _countdownTimer?.cancel();
     _assignmentPollTimer?.cancel();
     _phoneController.dispose();
     _pinController.dispose();
@@ -67,7 +62,6 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     final savedName = prefs.getString('devi_responder_name');
     final savedPhone = prefs.getString('devi_responder_phone');
     final savedArea = prefs.getString('devi_responder_area');
-    final savedShiftEnd = prefs.getString('devi_shift_end_time');
 
     if (savedId != null && savedName != null) {
       setState(() {
@@ -77,13 +71,8 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
         _agentArea = savedArea;
       });
 
-      if (savedShiftEnd != null) {
-        final endTime = DateTime.tryParse(savedShiftEnd);
-        if (endTime != null && endTime.isAfter(DateTime.now())) {
-          _shiftEndTime = endTime;
-          _startDutyMode(resume: true);
-        }
-      }
+      // Automatically start duty mode when resuming session
+      _startDutyMode();
     }
   }
 
@@ -92,11 +81,11 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     final pin = _pinController.text.trim();
 
     if (phone.length < 10) {
-      setState(() => _errorMessage = 'Please enter a valid 10-digit mobile number');
+      setState(() => _errorMessage = 'Enter a valid 10-digit phone number');
       return;
     }
     if (pin.length < 4) {
-      setState(() => _errorMessage = 'Please enter your 4-digit Security PIN');
+      setState(() => _errorMessage = 'Enter your 4-digit PIN');
       return;
     }
 
@@ -133,40 +122,24 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
           _agentArea = area;
         });
 
+        // Automatically go On Duty upon login
         _startDutyMode();
       } else {
-        setState(() => _errorMessage = data['message'] ?? 'Invalid Mobile Number or Security PIN');
+        setState(() => _errorMessage = data['message'] ?? 'Invalid phone or PIN');
       }
     } catch (e) {
-      setState(() => _errorMessage = 'Connection error: ${e.toString()}');
+      setState(() => _errorMessage = 'Network error. Please try again.');
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _startDutyMode({bool resume = false}) async {
+  Future<void> _startDutyMode() async {
     if (_agentId == null) return;
-
-    if (!resume) {
-      // Fetch system duty settings for shift hours
-      try {
-        final sUrl = Uri.parse('${ApiService.baseUrl}/dashboard/settings/duty');
-        final sRes = await http.get(sUrl).timeout(const Duration(seconds: 4));
-        final sData = jsonDecode(sRes.body);
-        if (sData['success'] == true && sData['settings'] != null) {
-          _shiftHours = (sData['settings']['shiftDurationHours'] ?? 8) as int;
-        }
-      } catch (_) {}
-
-      _shiftEndTime = DateTime.now().add(Duration(hours: _shiftHours));
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('devi_shift_end_time', _shiftEndTime!.toIso8601String());
-    }
 
     final success = await LocationService.startResponderDuty(
       agentId: _agentId!,
       agentName: _agentName ?? 'DEVI Responder',
-      shiftHours: _shiftHours,
       intervalSeconds: 2,
       onUpdate: (Position pos) {
         if (mounted) {
@@ -176,17 +149,6 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
             _accuracy = pos.accuracy;
             _speed = pos.speed;
           });
-        }
-      },
-      onShiftExpired: () {
-        if (mounted) {
-          _stopDutyMode();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⏰ Duty shift completed! Going offline to preserve battery.'),
-              backgroundColor: Colors.amber,
-            ),
-          );
         }
       },
       onRemoteDutyEnded: () {
@@ -199,7 +161,6 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     if (success) {
       setState(() => _isOnDuty = true);
 
-      // Notify backend that agent is actively ON_DUTY
       try {
         final dUrl = Uri.parse('${ApiService.baseUrl}/dashboard/agents/$_agentId/duty');
         await http.post(
@@ -209,23 +170,6 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
         ).timeout(const Duration(seconds: 4));
       } catch (_) {}
 
-      // Start countdown ticker
-      _countdownTimer?.cancel();
-      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (_shiftEndTime != null) {
-          final diff = _shiftEndTime!.difference(DateTime.now());
-          if (diff.isNegative) {
-            timer.cancel();
-            _stopDutyMode();
-          } else {
-            if (mounted) {
-              setState(() => _remainingShift = diff);
-            }
-          }
-        }
-      });
-
-      // Poll for active SOS assignment
       _assignmentPollTimer?.cancel();
       _assignmentPollTimer = Timer.periodic(const Duration(seconds: 5), (_) => _checkForAssignments());
       _checkForAssignments();
@@ -233,8 +177,8 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('⚠️ Location permissions are required for Emergency Responder Duty.'),
-            backgroundColor: Colors.red,
+            content: Text('Location permission required for duty mode'),
+            backgroundColor: Color(0xFFEF4444),
           ),
         );
       }
@@ -285,8 +229,8 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
           });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('🚀 Mission Accepted! Control Room notified. You are now EN ROUTE.'),
-              backgroundColor: Colors.green,
+              content: Text('Mission accepted. Status: En Route'),
+              backgroundColor: Color(0xFF10B981),
             ),
           );
         }
@@ -295,7 +239,6 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
   }
 
   Future<void> _stopDutyMode({bool fromRemote = false}) async {
-    _countdownTimer?.cancel();
     _assignmentPollTimer?.cancel();
 
     if (_agentId != null) {
@@ -312,28 +255,51 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
       }
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('devi_shift_end_time');
-
     if (mounted) {
       setState(() {
         _isOnDuty = false;
-        _shiftEndTime = null;
         _activeAlert = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(fromRemote
-              ? '🛑 Shift ended by Control Room. You are now OFF-LINE.'
-              : '🛑 Duty Shift Ended. You are now OFF-LINE.'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 3),
+          content: Text(fromRemote ? 'Duty ended by Control Room' : 'Duty paused. You are now Off Duty'),
+          backgroundColor: const Color(0xFFF97316),
+          duration: const Duration(seconds: 2),
         ),
       );
     }
   }
 
   Future<void> _logout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Go Off Duty & Sign Out?', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'Signing out will end your duty session and turn off live GPS tracking.',
+          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Sign Out', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+
     await _stopDutyMode();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('devi_responder_id');
@@ -351,63 +317,76 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     }
   }
 
-  String _formatDuration(Duration d) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final h = twoDigits(d.inHours);
-    final m = twoDigits(d.inMinutes.remainder(60));
-    final s = twoDigits(d.inSeconds.remainder(60));
-    return '$h:$m:$s';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B132B),
+      backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1C2541),
+        backgroundColor: const Color(0xFF1E293B),
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
-                color: const Color(0xFF0284C7).withOpacity(0.3),
-                borderRadius: BorderRadius.circular(8),
+                color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: const Text('🛡️', style: TextStyle(fontSize: 16)),
+              child: const Icon(Icons.shield_outlined, color: Color(0xFF38BDF8), size: 18),
             ),
-            const SizedBox(width: 10),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'DEVI Field Responder',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-                Text(
-                  '24/7 Foreground GPS Duty Mode',
-                  style: TextStyle(fontSize: 11, color: Colors.white70),
-                ),
-              ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Agent Portal',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _isOnDuty ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _isOnDuty ? 'Active Duty' : 'Off Duty',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
         actions: [
           if (_agentId != null)
             IconButton(
-              icon: const Icon(Icons.logout, color: Color(0xFFF87171), size: 20),
-              tooltip: 'Logout',
+              icon: const Icon(Icons.logout_rounded, color: Color(0xFF94A3B8), size: 20),
+              tooltip: 'Sign Out & Off Duty',
               onPressed: _logout,
             ),
+          const SizedBox(width: 4),
         ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: _agentId == null ? _buildLoginForm() : _buildActiveDutyView(),
         ),
       ),
@@ -418,101 +397,133 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 20),
-        Container(
-          width: 80,
-          height: 80,
-          margin: const EdgeInsets.only(bottom: 20),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFF0284C7).withOpacity(0.15),
-            border: Border.all(color: const Color(0xFF0284C7), width: 2),
-          ),
-          child: const Center(
-            child: Text('🛡️', style: TextStyle(fontSize: 40)),
+        const SizedBox(height: 24),
+        Center(
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+              border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3), width: 1.5),
+            ),
+            child: const Icon(Icons.security, size: 36, color: Color(0xFF38BDF8)),
           ),
         ),
+        const SizedBox(height: 20),
         const Text(
-          'Responder Sign In',
+          'Agent Sign In',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
         ),
         const SizedBox(height: 6),
         const Text(
-          'Enter the registered phone number & 4-digit PIN you received on WhatsApp to start your duty shift.',
+          'Sign in to automatically begin duty tracking',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 13, color: Colors.white70, height: 1.4),
+          style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
         ),
         const SizedBox(height: 28),
 
         if (_errorMessage.isNotEmpty)
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.15),
-              border: Border.all(color: Colors.red.withOpacity(0.4)),
+              color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+              border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Text(
-              _errorMessage,
-              style: const TextStyle(color: Color(0xFFFCA5A5), fontSize: 13),
-              textAlign: TextAlign.center,
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Color(0xFFFCA5A5), size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _errorMessage,
+                    style: const TextStyle(color: Color(0xFFFCA5A5), fontSize: 13),
+                  ),
+                ),
+              ],
             ),
           ),
 
+        // Phone Input
         TextField(
           controller: _phoneController,
           keyboardType: TextInputType.phone,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: Colors.white, fontSize: 15),
           decoration: InputDecoration(
-            labelText: 'MOBILE NUMBER',
-            labelStyle: const TextStyle(color: Colors.white60, fontSize: 12),
-            prefixIcon: const Icon(Icons.phone_android, color: Color(0xFF38BDF8)),
+            hintText: 'Mobile number',
+            hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 14),
+            prefixIcon: const Icon(Icons.phone_outlined, color: Color(0xFF38BDF8), size: 20),
             filled: true,
-            fillColor: Colors.white.withOpacity(0.06),
-            border: OutlineInputBorder(
+            fillColor: const Color(0xFF1E293B),
+            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+              borderSide: const BorderSide(color: Color(0xFF334155)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF0284C7), width: 1.5),
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
 
+        // PIN Input
         TextField(
           controller: _pinController,
           obscureText: true,
           maxLength: 6,
           keyboardType: TextInputType.number,
-          style: const TextStyle(color: Colors.white, letterSpacing: 6, fontSize: 18),
+          style: const TextStyle(color: Colors.white, letterSpacing: 4, fontSize: 16),
           decoration: InputDecoration(
             counterText: '',
-            labelText: '4-DIGIT SECURITY PIN',
-            labelStyle: const TextStyle(color: Colors.white60, fontSize: 12, letterSpacing: 0),
-            prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF38BDF8)),
+            hintText: 'Security PIN',
+            hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 14, letterSpacing: 0),
+            prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF38BDF8), size: 20),
             filled: true,
-            fillColor: Colors.white.withOpacity(0.06),
-            border: OutlineInputBorder(
+            fillColor: const Color(0xFF1E293B),
+            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+              borderSide: const BorderSide(color: Color(0xFF334155)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF0284C7), width: 1.5),
             ),
           ),
         ),
         const SizedBox(height: 24),
 
-        ElevatedButton(
-          onPressed: _isLoading ? null : _loginResponder,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF0284C7),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        // Submit Button
+        SizedBox(
+          height: 48,
+          child: ElevatedButton(
+            onPressed: _isLoading ? null : _loginResponder,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0284C7),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: _isLoading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Sign In & Go On Duty', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      SizedBox(width: 8),
+                      Icon(Icons.arrow_forward_rounded, size: 18),
+                    ],
+                  ),
           ),
-          child: _isLoading
-              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Text(
-                  'START DUTY SHIFT',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
         ),
       ],
     );
@@ -522,84 +533,310 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // EMERGENCY SOS POPUP (IF ASSIGNED)
+        // EMERGENCY MISSION DISPATCH CARD
         if (_activeAlert != null) ...[
+          _buildEmergencyCard(),
+          const SizedBox(height: 16),
+        ],
+
+        // AGENT PROFILE & DUTY STATUS CARD
+        _buildProfileCard(),
+        const SizedBox(height: 14),
+
+        // TELEMETRY METRICS
+        if (_isOnDuty) ...[
+          _buildMetricsGrid(),
+          const SizedBox(height: 14),
+        ],
+
+        // BACKGROUND GPS CHIP
+        _buildGpsStatusBadge(),
+        const SizedBox(height: 20),
+
+        // PRIMARY ACTION BUTTON (OFF DUTY & SIGN OUT)
+        _buildDutyActionButton(),
+      ],
+    );
+  }
+
+  Widget _buildProfileCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _isOnDuty ? const Color(0xFF10B981).withValues(alpha: 0.4) : const Color(0xFF334155),
+          width: 1.2,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Avatar circle
           Container(
-            padding: const EdgeInsets.all(16),
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFDC2626), Color(0xFF991B1B)],
+              shape: BoxShape.circle,
+              color: _isOnDuty ? const Color(0xFF10B981).withValues(alpha: 0.15) : const Color(0xFF334155),
+              border: Border.all(
+                color: _isOnDuty ? const Color(0xFF10B981) : const Color(0xFF475569),
+                width: 1.5,
               ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.red.withOpacity(0.4),
-                  blurRadius: 16,
-                  spreadRadius: 2,
-                ),
-              ],
             ),
+            child: Center(
+              child: Icon(
+                Icons.person_rounded,
+                color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
+                size: 24,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+
+          // Name and info
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
+                Text(
+                  _agentName ?? 'Field Agent',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 5),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text('🚨', style: TextStyle(fontSize: 22)),
-                    SizedBox(width: 8),
-                    Text(
-                      'EMERGENCY SOS ASSIGNED!',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    if (_agentArea != null && _agentArea!.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_on, size: 12, color: Color(0xFF38BDF8)),
+                            const SizedBox(width: 3),
+                            Text(
+                              _agentArea!,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFFE2E8F0),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_agentPhone != null)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.phone_outlined, size: 11, color: Color(0xFF94A3B8)),
+                          const SizedBox(width: 3),
+                          Text(
+                            '+91 $_agentPhone',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Status Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: _isOnDuty
+                  ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                  : const Color(0xFF64748B).withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: _isOnDuty ? const Color(0xFF10B981) : const Color(0xFF64748B),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  _isOnDuty ? 'ON DUTY' : 'OFFLINE',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                    color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmergencyCard() {
+    final victimName = _activeAlert!['user']?['name'] ?? _activeAlert!['userName'] ?? 'Emergency Victim';
+    final victimPhone = _activeAlert!['user']?['phone'] ?? _activeAlert!['userPhone'] ?? '';
+    final locationText = _activeAlert!['location'] ?? 'Live coordinates';
+    final isEnRoute = _activeAlert!['responderStatus'] == 'EN_ROUTE';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF991B1B), Color(0xFF7F1D1D)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEF4444), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Banner row
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Emergency Mission Assigned',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ),
+              if (isEnRoute)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'En Route',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Victim detail card
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.person_pin, size: 16, color: Colors.white70),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        victimName,
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                      ),
+                    ),
+                    if (victimPhone.isNotEmpty)
+                      InkWell(
+                        onTap: () => launchUrl(Uri.parse('tel:$victimPhone')),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.call, size: 14, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text('Call', style: TextStyle(fontSize: 12, color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(Icons.place_outlined, size: 16, color: Colors.white60),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        locationText,
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  'Victim: ${_activeAlert!['user']?['name'] ?? _activeAlert!['userName'] ?? 'Emergency Victim'}',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-                Text(
-                  'Phone: ${_activeAlert!['user']?['phone'] ?? _activeAlert!['userPhone'] ?? 'N/A'}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-                Text(
-                  'Location: ${_activeAlert!['location'] ?? 'Live GPS Coordinates'}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-                const SizedBox(height: 14),
-                if (_activeAlert!['responderStatus'] == 'EN_ROUTE') ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withOpacity(0.25),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF10B981)),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text('🚀', style: TextStyle(fontSize: 16)),
-                        SizedBox(width: 8),
-                        Text(
-                          'YOU ARE EN ROUTE (CONTROL ROOM CONNECTED)',
-                          style: TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.bold, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ] else ...[
-                  ElevatedButton.icon(
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Action buttons
+          Row(
+            children: [
+              if (!isEnRoute) ...[
+                Expanded(
+                  child: ElevatedButton.icon(
                     onPressed: _acceptMission,
-                    icon: const Icon(Icons.check_circle_outline, color: Colors.black),
-                    label: const Text('ACCEPT MISSION & START EN ROUTE', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+                    icon: const Icon(Icons.check_circle_outline, size: 18),
+                    label: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold)),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF38BDF8),
-                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 0,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                ],
-                ElevatedButton.icon(
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: ElevatedButton.icon(
                   onPressed: () {
                     final lat = _activeAlert!['latitude'];
                     final lng = _activeAlert!['longitude'];
@@ -607,200 +844,190 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> {
                       launchUrl(Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng'));
                     }
                   },
-                  icon: const Icon(Icons.navigation, color: Colors.white),
-                  label: const Text('OPEN GOOGLE MAPS NAVIGATION', style: TextStyle(fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.navigation_outlined, size: 18),
+                  label: const Text('Navigate', style: TextStyle(fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black45,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(height: 18),
         ],
+      ),
+    );
+  }
 
-        // ON DUTY STATUS BADGE
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1C2541),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: _isOnDuty ? const Color(0xFF10B981) : Colors.white24,
-              width: 1.5,
-            ),
-          ),
-          child: Column(
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _isOnDuty ? const Color(0xFF10B981).withOpacity(0.2) : Colors.white10,
-                  border: Border.all(
-                    color: _isOnDuty ? const Color(0xFF10B981) : Colors.white30,
-                    width: 2,
-                  ),
-                ),
-                child: Center(
-                  child: Text(_isOnDuty ? '🟢' : '⚪', style: const TextStyle(fontSize: 26)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _isOnDuty ? 'ON DUTY — LIVE TRACKING ACTIVE' : 'DUTY OFF-LINE',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1,
-                  color: _isOnDuty ? const Color(0xFF34D399) : Colors.white60,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                _agentName ?? 'Field Responder',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-              if (_agentPhone != null)
-                Text(
-                  '📞 +91 $_agentPhone',
-                  style: const TextStyle(fontSize: 12, color: Colors.white60),
-                ),
-              if (_agentArea != null && _agentArea!.isNotEmpty)
-                Text(
-                  'Assigned Sector: $_agentArea',
-                  style: const TextStyle(fontSize: 13, color: Colors.white70),
-                ),
-            ],
+  Widget _buildMetricsGrid() {
+    return Row(
+      children: [
+        // Duty Status Card
+        Expanded(
+          child: _metricCard(
+            icon: Icons.shield_rounded,
+            iconColor: const Color(0xFF10B981),
+            label: 'Duty Mode',
+            value: _isOnDuty ? 'Active' : 'Offline',
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(width: 10),
 
-        // NOTIFICATION & LOCK-SCREEN GUARANTEE CARD
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.blue.withOpacity(0.08),
-            border: Border.all(color: Colors.blue.withOpacity(0.25)),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text('🛡️', style: TextStyle(fontSize: 16)),
-                  SizedBox(width: 8),
-                  Text(
-                    '24/7 Locked Screen Guarantee',
-                    style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ],
-              ),
-              SizedBox(height: 6),
-              Text(
-                'The persistent status notification "🛡️ DEVI Responder: Live Duty Active" is pinned in your notification bar. Android OS will NEVER sleep or kill GPS — even if your phone is locked in your pocket for 10 hours.',
-                style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.5),
-              ),
-            ],
+        // GPS Accuracy Card
+        Expanded(
+          child: _metricCard(
+            icon: Icons.my_location_rounded,
+            iconColor: const Color(0xFF38BDF8),
+            label: 'GPS Accuracy',
+            value: _accuracy != null ? '±${_accuracy!.round()}m' : 'Locating...',
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(width: 10),
 
-        // REMAINING SHIFT DURATION COUNTDOWN
-        if (_isOnDuty)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.timer_outlined, color: Color(0xFFFBBF24), size: 20),
-                    SizedBox(width: 8),
-                    Text('Shift Countdown:', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                Text(
-                  _formatDuration(_remainingShift),
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFFFBBF24),
-                  ),
-                ),
-              ],
-            ),
+        // Speed Card
+        Expanded(
+          child: _metricCard(
+            icon: Icons.speed_rounded,
+            iconColor: const Color(0xFF34D399),
+            label: 'Speed',
+            value: _speed != null && _speed! > 0 ? '${(_speed! * 3.6).round()} km/h' : '0 km/h',
           ),
-        const SizedBox(height: 16),
-
-        // TELEMETRY DISPLAY
-        if (_latitude != null && _longitude != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'GPS: ${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'),
-                ),
-                Row(
-                  children: [
-                    if (_accuracy != null)
-                      Text(
-                        '±${_accuracy!.round()}m ',
-                        style: const TextStyle(color: Color(0xFF34D399), fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    if (_speed != null && _speed! > 0)
-                      Text(
-                        '(${(_speed! * 3.6).round()} km/h)',
-                        style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        const SizedBox(height: 24),
-
-        // DUTY TOGGLE BUTTON
-        if (!_isOnDuty)
-          ElevatedButton.icon(
-            onPressed: () => _startDutyMode(),
-            icon: const Icon(Icons.play_arrow, color: Colors.white),
-            label: const Text('RESUME ON-DUTY SHIFT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          )
-        else
-          ElevatedButton.icon(
-            onPressed: _stopDutyMode,
-            icon: const Icon(Icons.stop, color: Colors.white),
-            label: const Text('🛑 STOP DUTY & GO OFF-LINE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
+        ),
       ],
+    );
+  }
+
+  Widget _metricCard({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String value,
+    bool isMonospace = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: iconColor, size: 18),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              fontFamily: isMonospace ? 'monospace' : null,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGpsStatusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _isOnDuty
+            ? const Color(0xFF0284C7).withValues(alpha: 0.08)
+            : const Color(0xFF334155).withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: _isOnDuty ? const Color(0xFF0284C7).withValues(alpha: 0.25) : const Color(0xFF334155),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _isOnDuty ? Icons.radar_rounded : Icons.location_off_outlined,
+            size: 16,
+            color: _isOnDuty ? const Color(0xFF38BDF8) : const Color(0xFF94A3B8),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _isOnDuty ? 'Background GPS Active' : 'GPS Standby (Offline)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _isOnDuty ? const Color(0xFF38BDF8) : const Color(0xFF94A3B8),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (_isOnDuty && _latitude != null && _longitude != null)
+                  Text(
+                    '${_latitude!.toStringAsFixed(4)}, ${_longitude!.toStringAsFixed(4)}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF64748B),
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (_isOnDuty)
+            Container(
+              width: 7,
+              height: 7,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFF34D399),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDutyActionButton() {
+    if (!_isOnDuty) {
+      return SizedBox(
+        height: 50,
+        child: ElevatedButton.icon(
+          onPressed: () => _startDutyMode(),
+          icon: const Icon(Icons.play_arrow_rounded, size: 22),
+          label: const Text('Go On Duty', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF10B981),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 50,
+      child: OutlinedButton.icon(
+        onPressed: _logout,
+        icon: const Icon(Icons.power_settings_new_rounded, size: 18, color: Color(0xFFEF4444)),
+        label: const Text('Go Off Duty & Sign Out', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFFEF4444))),
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Color(0xFFEF4444), width: 1.2),
+          backgroundColor: const Color(0xFFEF4444).withValues(alpha: 0.08),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
     );
   }
 }

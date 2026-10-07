@@ -912,24 +912,15 @@ export const DataService = {
 
   // --- DASHBOARD: RESPONDERS / FIELD AGENTS MANAGEMENT ---
   async getResponders() {
-    const nowTime = Date.now();
     try {
       const { data, error } = await supabase.from('agents').select('*').order('created_at', { ascending: false });
       if (!error && Array.isArray(data)) {
         return data.map(a => {
           let dutyStatus = a.duty_status || 'OFF_DUTY';
-          let isLive = a.is_live;
-          if (a.shift_expires_at && dutyStatus === 'ON_DUTY') {
-            const exp = new Date(a.shift_expires_at).getTime();
-            if (nowTime > exp) {
-              dutyStatus = 'COMPLETED';
-              isLive = false;
-            }
-          }
           return {
             ...a,
             duty_status: dutyStatus,
-            is_live: isLive,
+            is_live: a.is_live,
             status: dutyStatus === 'ON_DUTY' ? 'AVAILABLE' : dutyStatus
           };
         });
@@ -939,18 +930,10 @@ export const DataService = {
     }
     return respondersList.map(a => {
       let dutyStatus = a.duty_status || 'OFF_DUTY';
-      let isLive = a.is_live;
-      if (a.shift_expires_at && dutyStatus === 'ON_DUTY') {
-        const exp = new Date(a.shift_expires_at).getTime();
-        if (nowTime > exp) {
-          dutyStatus = 'COMPLETED';
-          isLive = false;
-        }
-      }
       return {
         ...a,
         duty_status: dutyStatus,
-        is_live: isLive,
+        is_live: a.is_live,
         status: dutyStatus === 'ON_DUTY' ? 'AVAILABLE' : dutyStatus
       };
     });
@@ -1209,17 +1192,12 @@ export const DataService = {
     }
 
     if (action === 'APPROVE') {
-      const settings = this.getDutySettings();
-      const shiftHours = Number(settings.shiftDurationHours || 8);
       const dutyStartedAt = new Date().toISOString();
-      const shiftExpiresAt = new Date(Date.now() + shiftHours * 3600 * 1000).toISOString();
 
       invite.claimed = true;
       invite.claimedAt = dutyStartedAt;
       invite.deviceFingerprint = deviceFingerprint;
       invite.status = 'ACCEPTED';
-      invite.shiftDurationHours = shiftHours;
-      invite.shiftExpiresAt = shiftExpiresAt;
       this._persistInvites();
 
       try {
@@ -1228,7 +1206,6 @@ export const DataService = {
           is_live: true,
           is_active: true,
           duty_started_at: dutyStartedAt,
-          shift_expires_at: shiftExpiresAt,
         }).eq('id', invite.agentId);
       } catch (_) { }
 
@@ -1238,17 +1215,12 @@ export const DataService = {
         agent.status = 'ON_DUTY';
         agent.is_live = true;
         agent.duty_started_at = dutyStartedAt;
-        agent.shift_expires_at = shiftExpiresAt;
-        agent.shift_duration_hours = shiftHours;
       }
 
-      console.log(`✅ [AGENT INVITE ACCEPTED & SHIFT STARTED] Agent: ${invite.name}, Shift: ${shiftHours}h, Expires: ${shiftExpiresAt}`);
+      console.log(`✅ [AGENT INVITE ACCEPTED & DUTY STARTED] Agent: ${invite.name}`);
       return {
         success: true,
         invite,
-        shift_expires_at: shiftExpiresAt,
-        shift_duration_hours: shiftHours,
-        gps_interval_seconds: settings.gpsIntervalSeconds || 10,
         agent: agent || {
           id: invite.agentId,
           name: invite.name,
@@ -1256,8 +1228,6 @@ export const DataService = {
           area: invite.area,
           duty_status: 'ON_DUTY',
           is_live: true,
-          shift_expires_at: shiftExpiresAt,
-          shift_duration_hours: shiftHours,
         }
       };
     } else {

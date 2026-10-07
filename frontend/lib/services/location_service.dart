@@ -215,26 +215,22 @@ class LocationService {
   // "🛡️ DEVI Responder: Live Duty Active" (STAYS ALIVE WHEN PHONE IS LOCKED)
   // =========================================================================
   static StreamSubscription<Position>? _responderDutyStreamSub;
-  static Timer? _responderShiftTimer;
   static bool _isDutyActive = false;
   static bool get isResponderDutyActive => _isDutyActive && _responderDutyStreamSub != null;
 
   /// Starts continuous, high-priority foreground GPS tracking for DEVI Responders.
-  /// Android Foreground Service with ongoing notification keeps GPS streaming
-  /// even when the phone is locked, asleep, or in the responder's pocket for 10+ hours.
+  /// Runs as long as the agent is logged in and active.
   static Future<bool> startResponderDuty({
     required String agentId,
     required String agentName,
-    int shiftHours = 8,
     int intervalSeconds = 10,
     Function(Position position)? onUpdate,
-    Function()? onShiftExpired,
     Function()? onRemoteDutyEnded,
   }) async {
     // 1. Cancel any active duty tracking
     await stopResponderDuty(agentId: agentId, notifyBackend: false);
 
-    debugPrint('🛡️ [STARTING RESPONDER DUTY] Agent: $agentName ($agentId), Shift: ${shiftHours}h, Interval: ${intervalSeconds}s');
+    debugPrint('🛡️ [STARTING RESPONDER DUTY] Agent: $agentName ($agentId), Interval: ${intervalSeconds}s');
 
     // 2. Request fine location & background permissions if needed
     LocationPermission permission = await Geolocator.checkPermission();
@@ -316,16 +312,6 @@ class LocationService {
         debugPrint('⚠️ Error in Responder Duty GPS Stream: $e');
       });
 
-      // 5. Shift Duration Auto-Expire Timer
-      if (shiftHours > 0) {
-        _responderShiftTimer?.cancel();
-        _responderShiftTimer = Timer(Duration(hours: shiftHours), () {
-          debugPrint('⏰ [SHIFT EXPIRED] Auto-stopping responder duty after ${shiftHours}h');
-          stopResponderDuty(agentId: agentId);
-          onShiftExpired?.call();
-        });
-      }
-
       return true;
     } catch (e) {
       debugPrint('⚠️ Failed to initiate Responder Duty GPS Stream: $e');
@@ -374,8 +360,6 @@ class LocationService {
     bool notifyBackend = true,
   }) async {
     _isDutyActive = false;
-    _responderShiftTimer?.cancel();
-    _responderShiftTimer = null;
 
     if (_responderDutyStreamSub != null) {
       debugPrint('🛑 [STOPPING RESPONDER DUTY] Dismissing notification & canceling stream');

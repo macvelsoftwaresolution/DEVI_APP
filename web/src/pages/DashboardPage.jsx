@@ -14,9 +14,8 @@ export default function DashboardPage() {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [liveTime, setLiveTime] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showShiftSettingsModal, setShowShiftSettingsModal] = useState(false);
+  const [showGpsSettingsModal, setShowGpsSettingsModal] = useState(false);
   const [showAgentsListModal, setShowAgentsListModal] = useState(false);
-  const [shiftHours, setShiftHours] = useState(8);
   const [gpsInterval, setGpsInterval] = useState(10);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [emergencyAlertModal, setEmergencyAlertModal] = useState(null); // { id, name, phone, location, lat, lng }
@@ -25,9 +24,10 @@ export default function DashboardPage() {
   const [isSavingResponder, setIsSavingResponder] = useState(false);
 
   // Responder Form & OTP Verification
+  const generateRandomPin = () => Math.floor(1000 + Math.random() * 9000).toString();
   const [respName, setRespName] = useState('');
   const [respPhone, setRespPhone] = useState('');
-  const [respPin, setRespPin] = useState('7421');
+  const [respPin, setRespPin] = useState(() => Math.floor(1000 + Math.random() * 9000).toString());
   const [respArea, setRespArea] = useState('');
   const [respVehicle, setRespVehicle] = useState('Patrol Bike');
   const [addAgentStep, setAddAgentStep] = useState(1); // 1 = Details, 2 = OTP Verification
@@ -35,6 +35,17 @@ export default function DashboardPage() {
   const [devOtp, setDevOtp] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [createdInviteInfo, setCreatedInviteInfo] = useState(null);
+
+  const handleOpenAddAgentModal = () => {
+    setRespPin(generateRandomPin());
+    setRespName('');
+    setRespPhone('');
+    setRespArea('');
+    setAddAgentStep(1);
+    setRespOtp('');
+    setDevOtp('');
+    setShowAddModal(true);
+  };
 
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -252,7 +263,6 @@ export default function DashboardPage() {
       if (!res.ok) return;
       const data = await res.json();
       if (data.success && data.settings) {
-        setShiftHours(data.settings.shiftDurationHours || 8);
         setGpsInterval(data.settings.gpsIntervalSeconds || 10);
       }
     } catch (_) {}
@@ -266,12 +276,12 @@ export default function DashboardPage() {
       const res = await fetch(apiUrl('/api/dashboard/settings/duty'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shiftDurationHours: Number(shiftHours), gpsIntervalSeconds: Number(gpsInterval) }),
+        body: JSON.stringify({ gpsIntervalSeconds: Number(gpsInterval) }),
       });
       const data = await res.json();
       if (data.success) {
-        setShowShiftSettingsModal(false);
-        alert(`✅ Duty Shift Configuration Updated!\n• Shift Duration: ${shiftHours} Hours\n• GPS Update Frequency: Every ${gpsInterval}s`);
+        setShowGpsSettingsModal(false);
+        alert(`✅ GPS Tracking Configuration Updated!\n• GPS Update Frequency: Every ${gpsInterval}s`);
       } else {
         alert(data.message || 'Failed to update settings');
       }
@@ -284,7 +294,7 @@ export default function DashboardPage() {
 
   // End Agent Duty Manually
   const handleEndAgentDuty = async (agentId, agentName) => {
-    if (!window.confirm(`Are you sure you want to end ${agentName}'s duty shift now?`)) return;
+    if (!window.confirm(`Are you sure you want to take ${agentName} off-duty now?`)) return;
     try {
       setResponders((prev) =>
         prev.map((r) =>
@@ -796,6 +806,7 @@ export default function DashboardPage() {
         setRespName('');
         setRespPhone('');
         setRespArea('');
+        setRespPin(generateRandomPin());
       } else {
         alert('Verification failed: ' + (data.message || 'Invalid OTP code'));
       }
@@ -935,7 +946,7 @@ export default function DashboardPage() {
         {/* BUTTONS */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={handleOpenAddAgentModal}
             style={{
               background: 'var(--green-soft)',
               borderColor: 'rgba(16, 185, 129, 0.4)',
@@ -978,7 +989,7 @@ export default function DashboardPage() {
             <Link2 size={14} /> Duty Link
           </button>
           <button
-            onClick={() => setShowShiftSettingsModal(true)}
+            onClick={() => setShowGpsSettingsModal(true)}
             style={{
               background: 'var(--bg-surface)',
               border: '1px solid var(--border)',
@@ -994,7 +1005,7 @@ export default function DashboardPage() {
               fontWeight: '700',
             }}
           >
-            <Settings size={14} /> Shift: {shiftHours}h
+            <Settings size={14} /> GPS: {gpsInterval}s
           </button>
           <button
             onClick={() => setShowAgentsListModal(true)}
@@ -1487,6 +1498,55 @@ export default function DashboardPage() {
 
 
                 <div style={{ marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                    <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Security PIN (For Mobile App Login)</label>
+                    <button
+                      type="button"
+                      onClick={() => setRespPin(generateRandomPin())}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#38BDF8',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: 0
+                      }}
+                    >
+                      🎲 Generate New PIN
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <span style={{ padding: '0 10px', fontSize: '13px', fontWeight: '700', color: '#38BDF8', background: 'rgba(56, 189, 248, 0.1)', borderRight: '1px solid var(--border)' }}>PIN</span>
+                    <input
+                      required
+                      type="text"
+                      maxLength={6}
+                      placeholder="4-digit PIN"
+                      value={respPin}
+                      onChange={(e) => setRespPin(e.target.value.replace(/\D/g, ''))}
+                      style={{
+                        width: '100%',
+                        background: 'transparent',
+                        border: 'none',
+                        padding: '9px 12px',
+                        fontSize: '14px',
+                        fontWeight: '800',
+                        letterSpacing: '3px',
+                        color: '#38BDF8',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                  <span style={{ fontSize: '10px', color: '#94A3B8', marginTop: '4px', display: 'block' }}>
+                    Auto-generated unique PIN. Sent to responder via WhatsApp for login.
+                  </span>
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--text-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>Patrol Area / Station</label>
                   <input required type="text" placeholder="e.g. Central Sector / Sivakasi" value={respArea} onChange={(e) => setRespArea(e.target.value)} style={{ width: '100%', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '9px 12px', fontSize: '13px', color: '#FFF', outline: 'none' }} />
                 </div>
@@ -1679,8 +1739,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* SHIFT & GPS SETTINGS MODAL */}
-      {showShiftSettingsModal && (
+      {/* GPS SETTINGS MODAL */}
+      {showGpsSettingsModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ width: '450px', maxWidth: '94vw', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '18px', padding: '24px', boxShadow: '0 25px 60px rgba(0,0,0,0.7)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -1689,55 +1749,14 @@ export default function DashboardPage() {
                   ⚙️
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>Shift & GPS Tracking Settings</h3>
-                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Control responder duty duration & battery sync rate</p>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#FFF' }}>GPS Tracking Settings</h3>
+                  <p style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Control responder telemetry update sync frequency</p>
                 </div>
               </div>
-              <button onClick={() => setShowShiftSettingsModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
+              <button onClick={() => setShowGpsSettingsModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}><X size={18} /></button>
             </div>
 
             <form onSubmit={handleSaveDutySettings}>
-              {/* Shift Duration Selection */}
-              <div style={{ marginBottom: '18px' }}>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '8px' }}>
-                  Default Shift Duration
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '10px' }}>
-                  {[4, 8, 10, 12].map((hrs) => (
-                    <button
-                      type="button"
-                      key={hrs}
-                      onClick={() => setShiftHours(hrs)}
-                      style={{
-                        padding: '10px 0',
-                        borderRadius: '8px',
-                        border: `1px solid ${shiftHours === hrs ? '#38BDF8' : 'var(--border)'}`,
-                        background: shiftHours === hrs ? 'rgba(56, 189, 248, 0.2)' : 'var(--bg-dark)',
-                        color: shiftHours === hrs ? '#38BDF8' : '#FFF',
-                        fontWeight: '800',
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {hrs} Hours
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 12px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Custom Shift Hours:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={24}
-                    value={shiftHours}
-                    onChange={(e) => setShiftHours(parseInt(e.target.value) || 8)}
-                    style={{ width: '60px', background: 'transparent', border: 'none', color: '#38BDF8', fontWeight: '800', fontSize: '14px', outline: 'none' }}
-                  />
-                  <span style={{ fontSize: '11px', color: '#94A3B8' }}>hrs (Auto-ends duty afterwards)</span>
-                </div>
-              </div>
-
               {/* GPS Update Rate */}
               <div style={{ marginBottom: '22px' }}>
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: '800', color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: '8px' }}>
@@ -1774,7 +1793,7 @@ export default function DashboardPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button
                   type="button"
-                  onClick={() => setShowShiftSettingsModal(false)}
+                  onClick={() => setShowGpsSettingsModal(false)}
                   style={{ padding: '10px 16px', background: 'var(--bg-dark)', border: '1px solid var(--border)', color: '#FFF', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
                 >
                   Cancel
@@ -1819,19 +1838,6 @@ export default function DashboardPage() {
                   const isOnDuty = agent.duty_status === 'ON_DUTY' || agent.duty_status === 'AVAILABLE';
                   const isPending = agent.duty_status === 'PENDING_APPROVAL';
 
-                  // Calculate remaining shift time if on duty
-                  let remainingStr = '';
-                  if (isOnDuty && agent.shift_expires_at) {
-                    const diffMs = new Date(agent.shift_expires_at).getTime() - Date.now();
-                    if (diffMs > 0) {
-                      const hrs = Math.floor(diffMs / (3600 * 1000));
-                      const mins = Math.floor((diffMs % (3600 * 1000)) / (60 * 1000));
-                      remainingStr = `⏳ ${hrs}h ${mins}m left`;
-                    } else {
-                      remainingStr = '⏰ Shift Expired';
-                    }
-                  }
-
                   return (
                     <div
                       key={agent.id}
@@ -1861,11 +1867,6 @@ export default function DashboardPage() {
                           >
                             {isOnDuty ? '🟢 ON DUTY' : isPending ? '🟡 PENDING APPROVAL' : '⚪ OFF DUTY'}
                           </span>
-                          {remainingStr && (
-                            <span style={{ fontSize: '10px', color: '#FBBF24', fontWeight: '700' }}>
-                              {remainingStr}
-                            </span>
-                          )}
                           {isOnDuty && (
                             <span
                               style={{
@@ -1992,7 +1993,7 @@ export default function DashboardPage() {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
               <button
-                onClick={() => { setShowAgentsListModal(false); setShowAddModal(true); }}
+                onClick={() => { setShowAgentsListModal(false); handleOpenAddAgentModal(); }}
                 style={{ padding: '8px 14px', background: 'var(--green-soft)', border: '1px solid rgba(16,185,129,0.4)', color: '#34D399', borderRadius: '8px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
               >
                 <Plus size={14} /> Add New Agent
