@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
@@ -14,22 +15,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
   List<Map<String, dynamic>> _alerts = [];
   bool _isLoading = true;
   final Set<String> _expandedIds = {};
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     _fetchHistory();
+    // Auto-refresh every 4 seconds if there is an active/unresolved alert
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted && _alerts.any((a) => (a['status'] ?? '').toString().toUpperCase() != 'RESOLVED')) {
+        _fetchHistory(isSilent: true);
+      }
+    });
   }
 
-  Future<void> _fetchHistory() async {
-    setState(() => _isLoading = true);
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchHistory({bool isSilent = false}) async {
+    if (!isSilent) setState(() => _isLoading = true);
     final userPhone = AppState.instance.phone;
     final results = await ApiService.instance.getHistory(userPhone);
 
     if (mounted) {
       setState(() {
         _alerts = results;
-        _isLoading = false;
+        if (!isSilent) _isLoading = false;
         // Auto-expand the latest alert by default
         if (results.isNotEmpty && results.first['id'] != null) {
           _expandedIds.add(results.first['id'].toString());
@@ -149,13 +163,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
                               // Status determination:
                               // 1. RESOLVED
-                              // 2. HELPER ON THE WAY (Assigned)
+                              // 2. HELPER ON THE WAY (Assigned / En Route)
                               // 3. DISPATCHED (Triggered)
                               final rawStatus = (item['status'] ?? 'ACTIVE').toString().toUpperCase();
+                              final responderStatus = (item['responderStatus'] ?? '').toString().toUpperCase();
                               final isResolved = rawStatus == 'RESOLVED';
                               final hasHelper = item['assignedAgent'] != null &&
                                   item['assignedAgent'].toString().trim().isNotEmpty;
-                              final isHelperAssigned = !isResolved && (hasHelper || rawStatus == 'ASSIGNED');
+                              final isHelperAssigned = !isResolved && (hasHelper || rawStatus == 'ASSIGNED' || rawStatus == 'EN_ROUTE' || responderStatus == 'EN_ROUTE');
 
                               // Badge configuration
                               final Color badgeBg;

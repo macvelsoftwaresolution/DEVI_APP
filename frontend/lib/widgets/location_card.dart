@@ -12,6 +12,7 @@ class LocationCard extends StatefulWidget {
   final double? victimLatitude;
   final double? victimLongitude;
   final List<LatLng>? routePoints;
+  final List<LatLng>? victimBreadcrumbs;
   final String? addressOrStatus;
   final VoidCallback? onRefresh;
   final bool isTracking;
@@ -24,6 +25,7 @@ class LocationCard extends StatefulWidget {
     this.victimLatitude,
     this.victimLongitude,
     this.routePoints,
+    this.victimBreadcrumbs,
     this.addressOrStatus,
     this.onRefresh,
     this.isTracking = false,
@@ -225,13 +227,22 @@ class _LocationCardState extends State<LocationCard> {
                       )
                   },
                   polylines: {
+                    // Helper Driving / Road Route (Green)
                     if (widget.routePoints != null && widget.routePoints!.isNotEmpty)
                       Polyline(
                         polylineId: const PolylineId('route'),
                         points: widget.routePoints!,
                         color: const Color(0xFF10B981), // Solid Green Route
                         width: 5,
-                      )
+                      ),
+                    // Victim Live Movement Trail (Red Line)
+                    if (widget.victimBreadcrumbs != null && widget.victimBreadcrumbs!.length > 1)
+                      Polyline(
+                        polylineId: const PolylineId('victim_trail'),
+                        points: widget.victimBreadcrumbs!,
+                        color: const Color(0xFFEF4444), // Solid Red Line for Victim GPS Trail
+                        width: 4,
+                      ),
                   },
                   myLocationEnabled: false,
                   myLocationButtonEnabled: false,

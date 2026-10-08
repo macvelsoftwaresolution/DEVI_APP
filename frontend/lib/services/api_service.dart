@@ -276,6 +276,7 @@ class ApiService {
     required String alertId,
     required double latitude,
     required double longitude,
+    double? accuracy,
     String? address,
     String status = 'ACTIVE',
   }) async {
@@ -287,6 +288,9 @@ class ApiService {
         'address': address,
         'status': status,
       };
+      if (accuracy != null) {
+        payload['accuracy'] = accuracy;
+      }
 
       // Encrypt live coordinates with AES-256
       final encryptedToken = EncryptionService.instance.encryptJson(payload);

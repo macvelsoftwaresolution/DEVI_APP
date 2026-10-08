@@ -777,6 +777,29 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
         );
       }
     }
+
+    // Real-time breadcrumb trail from victim movement
+    final crumbs = (_activeAlert?['breadcrumbs'] as List?)
+        ?.map((b) {
+          final lat = double.tryParse(b['latitude']?.toString() ?? '');
+          final lng = double.tryParse(b['longitude']?.toString() ?? '');
+          if (lat != null && lng != null) return LatLng(lat, lng);
+          return null;
+        })
+        .whereType<LatLng>()
+        .toList();
+    if (crumbs != null && crumbs.length > 1) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('victim_breadcrumbs_trail'),
+          points: crumbs,
+          color: const Color(0xFFEF4444),
+          width: 4,
+          patterns: [PatternItem.dash(10), PatternItem.gap(6)],
+        ),
+      );
+    }
+
     return polylines;
   }
 

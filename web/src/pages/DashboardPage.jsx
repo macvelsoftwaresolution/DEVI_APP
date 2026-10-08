@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleMap, useJsApiLoader, OverlayView, Polyline } from '@react-google-maps/api';
+import { GoogleMap, useJsApiLoader, OverlayView, Polyline, Circle } from '@react-google-maps/api';
 import { Shield, Radio, Volume2, VolumeX, RefreshCw, Plus, Link2, X, Phone, CheckCircle, Navigation, MapPin, Settings, Clock, UserCheck, Power } from 'lucide-react';
 import { apiUrl, WS_URL } from '../config/api';
 import { createVictimDivIcon, createResponderDivIcon } from '../utils/mapMarkers';
@@ -188,6 +188,7 @@ export default function DashboardPage() {
             const mergedCrumbs = existingCrumbs.length >= serverCrumbs.length ? existingCrumbs : serverCrumbs;
             return {
               ...serverInc,
+              accuracy: serverInc.accuracy != null ? serverInc.accuracy : existing.accuracy,
               breadcrumbs: mergedCrumbs,
             };
           });
@@ -372,18 +373,35 @@ export default function DashboardPage() {
             } else if (msg.type === 'loc' && msg.alertId) {
               const vLat = parseFloat(msg.latitude);
               const vLng = parseFloat(msg.longitude);
+              const acc = msg.accuracy != null && !isNaN(parseFloat(msg.accuracy)) ? parseFloat(msg.accuracy) : null;
               if (!isNaN(vLat) && !isNaN(vLng)) {
                 setIncidents((prev) =>
                   prev.map((inc) => {
                     if (String(inc.id) === String(msg.alertId)) {
-                      const updatedBreadcrumbs = [
-                        ...(inc.breadcrumbs || [{ latitude: inc.latitude, longitude: inc.longitude }]),
-                        { latitude: vLat, longitude: vLng, timestamp: new Date().toISOString() },
-                      ];
+                      // Filter stationary jitter: ignore if moved less than 3.5m from last crumb
+                      const existingCrumbs = inc.breadcrumbs || [{ latitude: inc.latitude, longitude: inc.longitude }];
+                      const lastCrumb = existingCrumbs[existingCrumbs.length - 1];
+                      let shouldAppend = true;
+                      if (lastCrumb) {
+                        const dist = calcDistKm(parseFloat(lastCrumb.latitude), parseFloat(lastCrumb.longitude), vLat, vLng);
+                        const minMoveKm = (acc && acc < 10) ? 0.0035 : 0.006;
+                        if (dist < minMoveKm) {
+                          shouldAppend = false;
+                        }
+                      }
+
+                      const updatedBreadcrumbs = shouldAppend
+                        ? [
+                            ...existingCrumbs,
+                            { latitude: vLat, longitude: vLng, accuracy: acc, timestamp: new Date().toISOString() },
+                          ]
+                        : existingCrumbs;
+
                       return {
                         ...inc,
                         latitude: vLat,
                         longitude: vLng,
+                        accuracy: acc ?? inc.accuracy,
                         location: msg.address || inc.location,
                         breadcrumbs: updatedBreadcrumbs,
                       };
@@ -1184,7 +1202,7 @@ export default function DashboardPage() {
 
                  return (
                    <>
-                     {/* Victim Movement Trail (Jitter Filtered) */}
+                     {/* Victim Movement Trail (Jitter Filtered, Glow & Direction Indicated) */}
                       {selectedIncident.breadcrumbs && selectedIncident.breadcrumbs.length > 1 && (() => {
                         const cleanTrail = [];
                         selectedIncident.breadcrumbs.forEach((b) => {
@@ -1192,17 +1210,108 @@ export default function DashboardPage() {
                           const lng = parseFloat(b.longitude);
                           if (isNaN(lat) || isNaN(lng)) return;
                           const last = cleanTrail[cleanTrail.length - 1];
-                          if (!last || calcDistKm(last.lat, last.lng, lat, lng) >= 0.008) {
+                          if (!last) {
                             cleanTrail.push({ lat, lng });
+                          } else {
+                            const dist = calcDistKm(last.lat, last.lng, lat, lng);
+                            // Dynamic threshold: filter stationary jitter (< 3.5m) and impossible teleports (> 600m)
+                            if (dist >= 0.0035 && dist <= 0.6) {
+                              cleanTrail.push({ lat, lng });
+                            }
                           }
                         });
-                        return cleanTrail.length > 1 ? (
-                          <Polyline 
-                            path={cleanTrail} 
-                            options={{ strokeColor: '#EF4444', strokeWeight: 4 }} 
-                          />
-                        ) : null;
+
+                        // Ensure current live victim location is connected at the tip
+                        if (cleanTrail.length > 0) {
+                          const last = cleanTrail[cleanTrail.length - 1];
+                          if (calcDistKm(last.lat, last.lng, vLat, vLng) >= 0.002) {
+                            cleanTrail.push({ lat: vLat, lng: vLng });
+                          }
+                        }
+
+                        if (cleanTrail.length <= 1) return null;
+
+                        const arrowIcons = (window.google && window.google.maps) ? [{
+                          icon: {
+                            path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                            strokeColor: '#B91C1C',
+                            fillColor: '#EF4444',
+                            fillOpacity: 1,
+                            scale: 2.2,
+                            strokeWeight: 1,
+                          },
+                          offset: '100%',
+                          repeat: '70px',
+                        }] : [];
+
+                        return (
+                          <>
+                            {/* Outer Ambient Glow Line */}
+                            <Polyline 
+                              path={cleanTrail} 
+                              options={{ 
+                                strokeColor: '#EF4444', 
+                                strokeOpacity: 0.3, 
+                                strokeWeight: 8, 
+                                zIndex: 2 
+                              }} 
+                            />
+                            {/* Sharp Core Polyline with Direction Arrows */}
+                            <Polyline 
+                              path={cleanTrail} 
+                              options={{ 
+                                strokeColor: '#EF4444', 
+                                strokeOpacity: 0.95, 
+                                strokeWeight: 4, 
+                                icons: arrowIcons,
+                                zIndex: 3 
+                              }} 
+                            />
+                            {/* SOS Trigger Origin Point Marker */}
+                            {cleanTrail.length > 1 && calcDistKm(cleanTrail[0].lat, cleanTrail[0].lng, vLat, vLng) >= 0.015 && (
+                              <OverlayView
+                                position={cleanTrail[0]}
+                                mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                                getPixelPositionOffset={() => ({ x: -14, y: -14 })}
+                              >
+                                <div 
+                                  title="SOS Trigger Point (Origin)"
+                                  style={{
+                                    width: '28px',
+                                    height: '28px',
+                                    borderRadius: '50%',
+                                    background: '#10B981',
+                                    border: '2px solid #FFFFFF',
+                                    boxShadow: '0 0 12px rgba(16, 185, 129, 0.8)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '12px',
+                                    cursor: 'default',
+                                  }}
+                                >
+                                  🏁
+                                </div>
+                              </OverlayView>
+                            )}
+                          </>
+                        );
                       })()}
+
+                      {/* GPS Accuracy Radius Circle around Victim Pin */}
+                      <Circle
+                        center={{ lat: vLat, lng: vLng }}
+                        radius={Math.max(6, Math.min(45, parseFloat(selectedIncident.accuracy) || 12))}
+                        options={{
+                          fillColor: '#EF4444',
+                          fillOpacity: 0.12,
+                          strokeColor: '#EF4444',
+                          strokeOpacity: 0.55,
+                          strokeWeight: 1.5,
+                          clickable: false,
+                          zIndex: 1,
+                        }}
+                      />
 
                       {/* Roadway Driving Route from Responder to Victim */}
                       {!isNaN(rLat) && !isNaN(rLng) && (
@@ -1297,6 +1406,12 @@ export default function DashboardPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-dim)' }}>Location</span>
                     <span style={{ fontSize: '11px', textAlign: 'right', maxWidth: '240px' }}>{selectedIncident.location}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-dim)' }}>GPS Accuracy</span>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', color: selectedIncident.accuracy && selectedIncident.accuracy <= 10 ? '#34D399' : '#FBBF24', fontWeight: '700' }}>
+                      {selectedIncident.accuracy ? `±${Math.round(selectedIncident.accuracy)} meters` : 'High Precision'}
+                    </span>
                   </div>
                 </div>
 

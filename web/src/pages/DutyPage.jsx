@@ -972,6 +972,15 @@ export default function DutyPage() {
                 🧭 OPEN GOOGLE MAPS NAVIGATION
               </a>
 
+              <a
+                href={`/track/${activeAlert.id}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', background: 'rgba(239, 68, 68, 0.16)', border: '1px solid rgba(239, 68, 68, 0.5)', color: '#FCA5A5', padding: '12px', borderRadius: '12px', fontFamily: 'Outfit, sans-serif', fontWeight: '800', fontSize: '14px', textDecoration: 'none', marginBottom: '8px' }}
+              >
+                🔴 VIEW LIVE GPS MOVEMENT TRAIL (RED LINE)
+              </a>
+
               <div style={{ display: 'flex', gap: '8px' }}>
                 <a href={`tel:${activeAlert.userPhone || activeAlert.phone}`} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#38BDF8', padding: '11px', borderRadius: '10px', fontWeight: '700', fontSize: '13px', textDecoration: 'none' }}>
                   <Phone size={14} /> Call Victim
