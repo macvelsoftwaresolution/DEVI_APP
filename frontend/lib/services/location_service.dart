@@ -141,7 +141,7 @@ class LocationService {
       locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 2, // High-precision live tracking: updates every 2 meters
-        forceLocationManager: true,
+        forceLocationManager: false, // Google Play Services FusedLocationProviderClient for high accuracy (Wi-Fi + Cell + GPS)
         intervalDuration: const Duration(seconds: 2),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: "🚨 DEVI Emergency SOS Active",
@@ -169,7 +169,13 @@ class LocationService {
       _positionStreamSub = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen((Position position) {
-        debugPrint('📍 [LIVE GPS MOVED] Lat: ${position.latitude}, Lng: ${position.longitude}');
+        // Discard low-accuracy / wild jitter readings (e.g. weak indoor satellite multipath)
+        if (position.accuracy > 35.0) {
+          debugPrint('⚠️ [GPS JITTER FILTER] Skipping low-accuracy reading: ±${position.accuracy.toStringAsFixed(1)}m');
+          return;
+        }
+
+        debugPrint('📍 [LIVE GPS MOVED] Lat: ${position.latitude}, Lng: ${position.longitude}, Acc: ±${position.accuracy.toStringAsFixed(1)}m');
         
         onUpdate?.call(position.latitude, position.longitude);
 
@@ -179,6 +185,7 @@ class LocationService {
             alertId: _activeTrackingAlertId!,
             latitude: position.latitude,
             longitude: position.longitude,
+            accuracy: position.accuracy,
             speed: position.speed,
             heading: position.heading,
             status: 'ACTIVE',
@@ -271,7 +278,7 @@ class LocationService {
       locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 2, // Ultra-responsive: updates every 2 meters
-        forceLocationManager: true,
+        forceLocationManager: false, // Google Fused Location for accurate responder routing
         intervalDuration: Duration(seconds: intervalSeconds <= 2 ? intervalSeconds : 2),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: "🛡️ DEVI Responder: Live Duty Active",

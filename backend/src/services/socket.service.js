@@ -197,14 +197,18 @@ class SocketService {
 
       // Compact location update packet from Flutter App or Guardian
       case 'loc': {
-        const { alertId, lat, lng, speed, heading, status, seq } = msg;
+        const { alertId, lat, lng, speed, heading, status, seq, accuracy, acc, spd, hd } = msg;
         if (!alertId || lat == null || lng == null) return;
+        const currentAccuracy = (accuracy != null ? Number(accuracy) : (acc != null ? Number(acc) : null));
+        const currentSpeed = speed ?? spd ?? null;
+        const currentHeading = heading ?? hd ?? null;
 
         // Persist/cache in DataService
         await DataService.updateLiveLocation({
           alertId,
           latitude: lat,
           longitude: lng,
+          accuracy: currentAccuracy,
           status: status || 'ACTIVE',
         });
 
@@ -213,8 +217,9 @@ class SocketService {
           alertId: String(alertId),
           latitude: Number(lat),
           longitude: Number(lng),
-          speed: speed ?? null,
-          heading: heading ?? null,
+          accuracy: currentAccuracy,
+          speed: currentSpeed,
+          heading: currentHeading,
           status: status || 'ACTIVE',
           timestamp: new Date().toISOString(),
         };

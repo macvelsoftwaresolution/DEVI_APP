@@ -541,11 +541,12 @@ export const DataService = {
   },
 
   // --- LIVE LOCATION TRACKING ---
-  async updateLiveLocation({ alertId, latitude, longitude, address, status = 'ACTIVE' }) {
+  async updateLiveLocation({ alertId, latitude, longitude, accuracy, address, status = 'ACTIVE' }) {
     if (!alertId) return null;
     const key = alertId.toString();
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
+    const acc = accuracy != null && !isNaN(parseFloat(accuracy)) ? parseFloat(accuracy) : null;
 
     let session = liveTrackSessions.get(key);
     const nowIso = new Date().toISOString();
@@ -555,6 +556,7 @@ export const DataService = {
         id: key,
         latitude: lat,
         longitude: lng,
+        accuracy: acc,
         status,
         lastUpdated: nowIso,
         breadcrumbs: [],
@@ -563,6 +565,7 @@ export const DataService = {
     } else {
       session.latitude = lat;
       session.longitude = lng;
+      if (acc != null) session.accuracy = acc;
       session.status = status;
       session.lastUpdated = nowIso;
     }
@@ -580,10 +583,14 @@ export const DataService = {
           Math.cos((lastPt.latitude * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) *
           Math.sin(dLng / 2) * Math.sin(dLng / 2);
         const distMeters = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        // Ignore minor stationary GPS drift < 8 meters to keep trail accurate without false zig-zags
-        if (distMeters < 8) {
+        
+        // Smart jitter filter:
+        // When GPS precision is high (< 10m), record movements >= 3.5m; otherwise >= 7m to avoid false indoor zig-zags
+        const minMoveDist = (acc && acc < 10) ? 3.5 : 7.0;
+        if (distMeters < minMoveDist) {
           shouldAppend = false;
           lastPt.timestamp = nowIso;
+          if (acc != null) lastPt.accuracy = acc;
         }
       }
 
@@ -591,6 +598,7 @@ export const DataService = {
         session.breadcrumbs.push({
           latitude: lat,
           longitude: lng,
+          accuracy: acc,
           timestamp: nowIso,
         });
         // Keep up to 1000 breadcrumb points (~33+ mins of live trail) while preserving origin point #0
@@ -813,6 +821,7 @@ export const DataService = {
           timeAgo,
           latitude: liveSession?.latitude ?? alert.latitude ?? 13.0827,
           longitude: liveSession?.longitude ?? alert.longitude ?? 80.2707,
+          accuracy: liveSession?.accuracy ?? alert.accuracy ?? null,
           location: alert.location_address || `GPS (${alert.latitude}, ${alert.longitude})`,
           status: liveSession?.status || alert.status || 'DISPATCHED',
           evidenceUrl: alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null,

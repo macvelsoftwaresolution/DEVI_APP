@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import '../services/emergency_media_service.dart';
-import '../theme/app_colors.dart';
 
 class EmergencyRecordingBanner extends StatelessWidget {
   const EmergencyRecordingBanner({super.key});

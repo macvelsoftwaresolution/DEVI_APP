@@ -8,7 +8,6 @@ import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/emergency_recording_banner.dart';
 import '../widgets/emergency_sound_card.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';

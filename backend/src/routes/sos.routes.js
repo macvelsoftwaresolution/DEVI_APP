@@ -300,7 +300,8 @@ router.post('/live-update', async (req, res, next) => {
       if (decrypted) reqData = { ...reqData, ...decrypted };
     }
 
-    const { alertId, latitude, longitude, address, status } = reqData;
+    const { alertId, latitude, longitude, address, status, accuracy, acc } = reqData;
+    const finalAccuracy = accuracy != null ? parseFloat(accuracy) : (acc != null ? parseFloat(acc) : null);
 
     if (!alertId || latitude == null || longitude == null) {
       return res.status(400).json({
@@ -313,6 +314,7 @@ router.post('/live-update', async (req, res, next) => {
       alertId,
       latitude,
       longitude,
+      accuracy: finalAccuracy,
       address,
       status: status || 'ACTIVE',
     });
@@ -322,6 +324,7 @@ router.post('/live-update', async (req, res, next) => {
       alertId,
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
+      accuracy: finalAccuracy,
       address,
       status: status || 'ACTIVE',
       lastUpdated: new Date().toISOString(),
