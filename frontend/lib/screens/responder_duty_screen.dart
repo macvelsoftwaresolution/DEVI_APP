@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
-import '../widgets/location_card.dart';
 
 class ResponderDutyScreen extends StatefulWidget {
   final String? initialToken;
@@ -50,6 +49,9 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
   String? _lastRouteAlertId;
   DateTime? _lastRouteFetchTime;
 
+  GoogleMapController? _mapController;
+  MapType _currentMapType = MapType.normal;
+
   Future<void> _fetchRoadRoute() async {
     if (_latitude == null || _longitude == null || _activeAlert == null) return;
 
@@ -79,6 +81,7 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
             _lastRouteAlertId = _activeAlert!['id'];
             _lastRouteFetchTime = now;
           });
+          _fitMapBounds();
         }
       }
     } catch (_) {}
@@ -329,6 +332,7 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
           if (mounted) {
             setState(() => _activeAlert = data['assignment']);
             _fetchRoadRoute();
+            _fitMapBounds();
           }
         } else {
           if (mounted && _activeAlert != null) {
@@ -336,6 +340,7 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
               _activeAlert = null;
               _roadRoutePoints = null;
             });
+            _recenterToAgent();
           }
         }
       }
@@ -449,6 +454,17 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
 
   @override
   Widget build(BuildContext context) {
+    if (_agentId != null) {
+      // Swiggy / Zomato style full-screen hero map view for on-duty responder
+      return Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        body: SafeArea(
+          child: _buildSwiggyZomatoDutyView(),
+        ),
+      );
+    }
+
+    // Agent Login Screen
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
@@ -458,90 +474,15 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
           icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0284C7).withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.shield_outlined, color: Color(0xFF38BDF8), size: 18),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Agent Portal',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _isOnDuty ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _isOnDuty ? 'Active Duty' : 'Off Duty',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+        title: const Text(
+          'Agent Portal Sign In',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
         ),
-        actions: [
-          if (_agentId != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-              child: InkWell(
-                onTap: _logout,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.power_settings_new_rounded, color: Color(0xFFEF4444), size: 15),
-                      SizedBox(width: 4),
-                      Text(
-                        'Off Duty',
-                        style: TextStyle(
-                          color: Color(0xFFEF4444),
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: _agentId == null ? _buildLoginForm() : _buildActiveDutyView(),
+          child: _buildLoginForm(),
         ),
       ),
     );
@@ -683,531 +624,808 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
     );
   }
 
-  Widget _buildActiveDutyView() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _buildSwiggyZomatoDutyView() {
+    return Stack(
       children: [
-        // EMERGENCY MISSION DISPATCH CARD
-        if (_activeAlert != null) ...[
-          _buildEmergencyCard(),
-          const SizedBox(height: 16),
-        ],
-
-        // GPS DISABLED WARNING BANNER
-        if (_isGpsDisabled) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            margin: const EdgeInsets.only(bottom: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-              border: Border.all(color: const Color(0xFFEF4444)),
-              borderRadius: BorderRadius.circular(12),
+        // 1. HERO FULL-SCREEN GOOGLE MAP
+        Positioned.fill(
+          child: GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: LatLng(_latitude ?? 10.85, _longitude ?? 78.70),
+              zoom: 15.0,
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.location_off_rounded, color: Color(0xFFF87171), size: 20),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Device Location is OFF. Tap to enable.',
-                    style: TextStyle(color: Color(0xFFFCA5A5), fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () => Geolocator.openLocationSettings(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFEF4444),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    minimumSize: Size.zero,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                  ),
-                  child: const Text('Turn On', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                ),
-              ],
+            mapType: _currentMapType,
+            onMapCreated: (GoogleMapController controller) {
+              _mapController = controller;
+              _fitMapBounds();
+            },
+            markers: _buildMapMarkers(),
+            polylines: _buildMapPolylines(),
+            circles: _buildMapCircles(),
+            myLocationEnabled: false,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            padding: EdgeInsets.only(
+              bottom: _activeAlert != null ? 310 : 230,
+              top: 75,
             ),
           ),
-        ],
+        ),
 
-        // AGENT PROFILE & DUTY STATUS CARD
-        _buildProfileCard(),
-        const SizedBox(height: 14),
+        // 2. FLOATING MAP CONTROLS (RIGHT EDGE, ABOVE BOTTOM SHEET)
+        Positioned(
+          right: 14,
+          bottom: _activeAlert != null ? 320 : 240,
+          child: _buildFloatingMapControls(),
+        ),
 
-        // TELEMETRY METRICS
-        if (_isOnDuty) ...[
-          _buildMetricsGrid(),
-          const SizedBox(height: 14),
-        ],
+        // 3. FLOATING TOP BAR (AGENT & STATUS OVERLAY)
+        Positioned(
+          top: 12,
+          left: 14,
+          right: 14,
+          child: _buildFloatingTopBar(),
+        ),
 
-        // BACKGROUND GPS CHIP
-        _buildGpsStatusBadge(),
-        const SizedBox(height: 16),
-
-        // GOOGLE MAP PORTAL (LOCATION CARD)
-        if (_isOnDuty)
-          SizedBox(
-            height: 350,
-            child: LocationCard(
-              latitude: _latitude,
-              longitude: _longitude,
-              accuracy: _accuracy,
-              victimLatitude: _activeAlert?['latitude'] != null ? double.tryParse(_activeAlert!['latitude'].toString()) : null,
-              victimLongitude: _activeAlert?['longitude'] != null ? double.tryParse(_activeAlert!['longitude'].toString()) : null,
-              routePoints: (_roadRoutePoints != null && _roadRoutePoints!.isNotEmpty)
-                  ? _roadRoutePoints
-                  : ((_activeAlert?['latitude'] != null && _latitude != null) 
-                      ? [
-                          LatLng(_latitude!, _longitude!),
-                          LatLng(
-                            double.tryParse(_activeAlert!['latitude'].toString()) ?? 0, 
-                            double.tryParse(_activeAlert!['longitude'].toString()) ?? 0
-                          )
-                        ] 
-                      : null),
-              isTracking: true,
+        // 4. GPS DISABLED WARNING BANNER (IF OFF)
+        if (_isGpsDisabled)
+          Positioned(
+            top: 78,
+            left: 14,
+            right: 14,
+            child: InkWell(
+              onTap: () => Geolocator.openLocationSettings(),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444),
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8),
+                  ],
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.location_off_rounded, color: Colors.white, size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Device Location is OFF. Tap to enable GPS.',
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: Colors.white, size: 18),
+                  ],
+                ),
+              ),
             ),
           ),
+
+        // 5. SWIGGY / ZOMATO STYLE BOTTOM SHEET CARD
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: _buildSwiggyZomatoBottomSheet(),
+        ),
       ],
     );
   }
 
-  Widget _buildProfileCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _isOnDuty ? const Color(0xFF10B981).withValues(alpha: 0.4) : const Color(0xFF334155),
-          width: 1.2,
+  Set<Marker> _buildMapMarkers() {
+    final markers = <Marker>{};
+    if (_latitude != null && _longitude != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('current_agent_loc'),
+          position: LatLng(_latitude!, _longitude!),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          infoWindow: InfoWindow(
+            title: _agentName ?? 'My Location (Responder)',
+            snippet: _isOnDuty ? '🟢 On Duty' : 'Off Duty',
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          // Avatar circle
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _isOnDuty ? const Color(0xFF10B981).withValues(alpha: 0.15) : const Color(0xFF334155),
-              border: Border.all(
-                color: _isOnDuty ? const Color(0xFF10B981) : const Color(0xFF475569),
-                width: 1.5,
-              ),
-            ),
-            child: Center(
-              child: Icon(
-                Icons.person_rounded,
-                color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
-                size: 24,
-              ),
+      );
+    }
+    if (_activeAlert != null) {
+      final victimLat = double.tryParse(_activeAlert!['latitude']?.toString() ?? '');
+      final victimLng = double.tryParse(_activeAlert!['longitude']?.toString() ?? '');
+      if (victimLat != null && victimLng != null) {
+        final victimName = _activeAlert!['user']?['name'] ?? _activeAlert!['userName'] ?? 'Emergency Victim';
+        final locationText = _activeAlert!['location'] ?? 'Emergency Scene';
+        markers.add(
+          Marker(
+            markerId: const MarkerId('victim_emergency_loc'),
+            position: LatLng(victimLat, victimLng),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            infoWindow: InfoWindow(
+              title: '🚨 $victimName',
+              snippet: locationText,
             ),
           ),
-          const SizedBox(width: 14),
+        );
+      }
+    }
+    return markers;
+  }
 
-          // Name and info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _agentName ?? 'Field Agent',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 5),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_agentArea != null && _agentArea!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.location_on, size: 12, color: Color(0xFF38BDF8)),
-                              const SizedBox(width: 3),
-                              Flexible(
-                                child: Text(
-                                  _agentArea!,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Color(0xFFE2E8F0),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    if (_agentPhone != null)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.phone_outlined, size: 11, color: Color(0xFF94A3B8)),
-                          const SizedBox(width: 3),
-                          Text(
-                            '+91 $_agentPhone',
-                            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-              ],
-            ),
+  Set<Polyline> _buildMapPolylines() {
+    final polylines = <Polyline>{};
+    if (_roadRoutePoints != null && _roadRoutePoints!.isNotEmpty) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('roadway_route'),
+          points: _roadRoutePoints!,
+          color: const Color(0xFF10B981), // Solid Emerald Green
+          width: 6,
+        ),
+      );
+    } else if (_activeAlert != null && _latitude != null && _longitude != null) {
+      final victimLat = double.tryParse(_activeAlert!['latitude']?.toString() ?? '');
+      final victimLng = double.tryParse(_activeAlert!['longitude']?.toString() ?? '');
+      if (victimLat != null && victimLng != null) {
+        polylines.add(
+          Polyline(
+            polylineId: const PolylineId('direct_line'),
+            points: [LatLng(_latitude!, _longitude!), LatLng(victimLat, victimLng)],
+            color: const Color(0xFF10B981).withValues(alpha: 0.8),
+            width: 4,
+            patterns: [PatternItem.dash(15), PatternItem.gap(10)],
           ),
+        );
+      }
+    }
+    return polylines;
+  }
 
-          // Status Badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: _isOnDuty
-                  ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                  : const Color(0xFF64748B).withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: _isOnDuty ? const Color(0xFF10B981) : const Color(0xFF64748B),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
-                  ),
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  _isOnDuty ? 'ON DUTY' : 'OFFLINE',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                    color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
-                  ),
-                ),
-              ],
-            ),
+  Set<Circle> _buildMapCircles() {
+    final circles = <Circle>{};
+    if (_latitude != null && _longitude != null) {
+      circles.add(
+        Circle(
+          circleId: const CircleId('agent_accuracy_circle'),
+          center: LatLng(_latitude!, _longitude!),
+          radius: (_accuracy ?? 15.0).clamp(5.0, 80.0),
+          fillColor: const Color(0xFF0284C7).withValues(alpha: 0.15),
+          strokeColor: const Color(0xFF38BDF8).withValues(alpha: 0.5),
+          strokeWidth: 1,
+        ),
+      );
+    }
+    return circles;
+  }
+
+  void _fitMapBounds() {
+    if (_mapController == null) return;
+    final victimLat = double.tryParse(_activeAlert?['latitude']?.toString() ?? '');
+    final victimLng = double.tryParse(_activeAlert?['longitude']?.toString() ?? '');
+
+    if (_latitude != null && _longitude != null && victimLat != null && victimLng != null) {
+      final latDiff = (_latitude! - victimLat).abs();
+      final lngDiff = (_longitude! - victimLng).abs();
+      if (latDiff < 0.0003 && lngDiff < 0.0003) {
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng((_latitude! + victimLat) / 2, (_longitude! + victimLng) / 2),
+            17.5,
           ),
-        ],
-      ),
+        );
+        return;
+      }
+      final bounds = LatLngBounds(
+        southwest: LatLng(
+          _latitude! < victimLat ? _latitude! : victimLat,
+          _longitude! < victimLng ? _longitude! : victimLng,
+        ),
+        northeast: LatLng(
+          _latitude! > victimLat ? _latitude! : victimLat,
+          _longitude! > victimLng ? _longitude! : victimLng,
+        ),
+      );
+      _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 70));
+    } else if (_latitude != null && _longitude != null) {
+      _mapController!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(_latitude!, _longitude!), 16.5));
+    }
+  }
+
+  void _recenterToAgent() {
+    if (_mapController == null || _latitude == null || _longitude == null) return;
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngZoom(LatLng(_latitude!, _longitude!), 16.5),
     );
   }
 
-  Widget _buildEmergencyCard() {
-    final victimName = _activeAlert!['user']?['name'] ?? _activeAlert!['userName'] ?? 'Emergency Victim';
-    final victimPhone = _activeAlert!['user']?['phone'] ?? _activeAlert!['userPhone'] ?? '';
-    final locationText = _activeAlert!['location'] ?? 'Live coordinates';
-    final isEnRoute = _activeAlert!['responderStatus'] == 'EN_ROUTE';
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF991B1B), Color(0xFF7F1D1D)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+  Widget _buildFloatingMapControls() {
+    final hasMission = _activeAlert != null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Map Type Toggle (Satellite / Normal)
+        FloatingActionButton.small(
+          heroTag: 'fab_map_type',
+          backgroundColor: const Color(0xFF1E293B),
+          foregroundColor: _currentMapType == MapType.satellite ? const Color(0xFF38BDF8) : Colors.white70,
+          elevation: 4,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFF334155), width: 1),
+          ),
+          onPressed: () {
+            setState(() {
+              _currentMapType = _currentMapType == MapType.normal ? MapType.satellite : MapType.normal;
+            });
+          },
+          tooltip: 'Toggle Satellite',
+          child: const Icon(Icons.layers_rounded, size: 20),
         ),
+        const SizedBox(height: 10),
+
+        // Fit Route Button (if active mission exists)
+        if (hasMission) ...[
+          FloatingActionButton.small(
+            heroTag: 'fab_fit_route',
+            backgroundColor: const Color(0xFF10B981),
+            foregroundColor: Colors.white,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onPressed: _fitMapBounds,
+            tooltip: 'Fit Route to Screen',
+            child: const Icon(Icons.alt_route_rounded, size: 20),
+          ),
+          const SizedBox(height: 10),
+        ],
+
+        // Recenter to My Location Button
+        FloatingActionButton.small(
+          heroTag: 'fab_recenter',
+          backgroundColor: const Color(0xFF1E293B),
+          foregroundColor: const Color(0xFF38BDF8),
+          elevation: 4,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFF334155), width: 1),
+          ),
+          onPressed: _recenterToAgent,
+          tooltip: 'My Location',
+          child: const Icon(Icons.my_location_rounded, size: 20),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFloatingTopBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A).withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEF4444), width: 1.2),
+        border: Border.all(color: const Color(0xFF334155).withValues(alpha: 0.8)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFEF4444).withValues(alpha: 0.25),
+            color: Colors.black.withValues(alpha: 0.4),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          // Banner row
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+          // Back button
+          InkWell(
+            onTap: () => Navigator.pop(context),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
               ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Emergency Mission Assigned',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-              ),
-              if (isEnRoute)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Text(
-                    'En Route',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Victim detail card
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(10),
+              child: const Icon(Icons.arrow_back_ios_new_rounded, size: 16, color: Colors.white),
             ),
+          ),
+          const SizedBox(width: 10),
+
+          // Agent name & duty indicator
+          Expanded(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.person_pin, size: 16, color: Colors.white70),
-                    const SizedBox(width: 8),
-                    Expanded(
+                    Flexible(
                       child: Text(
-                        victimName,
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
-                      ),
-                    ),
-                    if (victimPhone.isNotEmpty)
-                      InkWell(
-                        onTap: () => launchUrl(Uri.parse('tel:$victimPhone')),
-                        borderRadius: BorderRadius.circular(6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.call, size: 14, color: Colors.white),
-                              SizedBox(width: 4),
-                              Text('Call', style: TextStyle(fontSize: 12, color: Colors.white)),
-                            ],
-                          ),
+                        _agentName ?? 'DEVI Responder',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(Icons.place_outlined, size: 16, color: Colors.white60),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        locationText,
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _isOnDuty
+                            ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                            : const Color(0xFF64748B).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _isOnDuty ? const Color(0xFF10B981) : const Color(0xFF64748B),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isOnDuty ? 'LIVE' : 'OFFLINE',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    if (_accuracy != null)
+                      Text(
+                        'GPS ±${_accuracy!.round()}m',
+                        style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                      ),
+                    if (_speed != null && _speed! > 0) ...[
+                      const Text(' • ', style: TextStyle(color: Color(0xFF64748B), fontSize: 11)),
+                      Text(
+                        '${(_speed! * 3.6).round()} km/h',
+                        style: const TextStyle(color: Color(0xFF34D399), fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
 
-          // Action buttons
-          Row(
+          // Logout / Off-duty action
+          InkWell(
+            onTap: _logout,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.power_settings_new_rounded, color: Color(0xFFF87171), size: 14),
+                  SizedBox(width: 4),
+                  Text(
+                    'Sign Out',
+                    style: TextStyle(color: Color(0xFFF87171), fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSwiggyZomatoBottomSheet() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border.all(
+          color: _activeAlert != null ? const Color(0xFFEF4444) : const Color(0xFF334155),
+          width: _activeAlert != null ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.6),
+            blurRadius: 20,
+            offset: const Offset(0, -6),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (!isEnRoute) ...[
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _acceptMission,
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10B981),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 11),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      elevation: 0,
-                    ),
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF475569),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(width: 10),
+              ),
+
+              if (_activeAlert != null)
+                _buildActiveMissionContent()
+              else
+                _buildIdleDutyContent(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveMissionContent() {
+    final victimName = _activeAlert!['user']?['name'] ?? _activeAlert!['userName'] ?? 'Emergency Victim';
+    final victimPhone = _activeAlert!['user']?['phone'] ?? _activeAlert!['userPhone'] ?? '';
+    final locationText = _activeAlert!['location'] ?? 'Live GPS Coordinates';
+    final isEnRoute = _activeAlert!['responderStatus'] == 'EN_ROUTE';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Priority Badge Row
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 16),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'EMERGENCY SOS ASSIGNED',
+                  style: TextStyle(
+                    fontFamily: 'Outfit',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFF87171),
+                    letterSpacing: 0.5,
+                  ),
+                ),
               ],
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: isEnRoute ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                isEnRoute ? 'EN ROUTE' : 'PRIORITY P1',
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Victim Information Card
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.person_rounded, color: Color(0xFFF87171), size: 20),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          victimName,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          locationText,
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (victimPhone.isNotEmpty)
+                    InkWell(
+                      onTap: () => launchUrl(Uri.parse('tel:$victimPhone')),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                          border: Border.all(color: const Color(0xFF0284C7)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.phone, size: 14, color: Color(0xFF38BDF8)),
+                            SizedBox(width: 4),
+                            Text('Call', style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Action Buttons
+        if (!isEnRoute)
+          ElevatedButton(
+            onPressed: _acceptMission,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+              elevation: 4,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle_rounded, size: 20),
+                SizedBox(width: 8),
+                Text('ACCEPT MISSION (I AM EN ROUTE)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+              ],
+            ),
+          )
+        else
+          Row(
+            children: [
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () {
                     final lat = _activeAlert!['latitude'];
                     final lng = _activeAlert!['longitude'];
                     if (lat != null && lng != null) {
-                      launchUrl(Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng'));
+                      launchUrl(
+                        Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving'),
+                        mode: LaunchMode.externalApplication,
+                      );
                     }
                   },
-                  icon: const Icon(Icons.navigation_outlined, size: 18),
-                  label: const Text('Navigate', style: TextStyle(fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.navigation_rounded, size: 18),
+                  label: const Text('NAVIGATE IN MAPS', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    backgroundColor: const Color(0xFF0284C7),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 11),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              InkWell(
+                onTap: _fitMapBounds,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF10B981)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.center_focus_strong_rounded, size: 16, color: Color(0xFF34D399)),
+                      SizedBox(width: 6),
+                      Text('Fit View', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF34D399))),
+                    ],
                   ),
                 ),
               ),
             ],
           ),
-        ],
-      ),
+      ],
     );
   }
 
-  Widget _buildMetricsGrid() {
-    return Row(
+  Widget _buildIdleDutyContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        // Duty Status Card
-        Expanded(
-          child: _metricCard(
-            icon: Icons.shield_rounded,
-            iconColor: const Color(0xFF10B981),
-            label: 'Duty Mode',
-            value: _isOnDuty ? 'Active' : 'Offline',
-          ),
+        // Duty Status Header
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                    border: Border.all(color: const Color(0xFF10B981), width: 1.5),
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.shield_rounded, color: Color(0xFF34D399), size: 18),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _agentName ?? 'Field Responder',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    Text(
+                      'Sector: ${_agentArea ?? 'Active Zone'}${_agentPhone != null ? ' • +91 $_agentPhone' : ''}',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF10B981)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.radar_rounded, size: 12, color: Color(0xFF34D399)),
+                  SizedBox(width: 5),
+                  Text('PATROLLING', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF34D399))),
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
+        const SizedBox(height: 12),
 
-        // GPS Accuracy Card
-        Expanded(
-          child: _metricCard(
-            icon: Icons.my_location_rounded,
-            iconColor: const Color(0xFF38BDF8),
-            label: 'GPS Accuracy',
-            value: _accuracy != null ? '±${_accuracy!.round()}m' : 'Locating...',
-          ),
+        // Telemetry Metrics Row
+        Row(
+          children: [
+            Expanded(
+              child: _swiggyMetricPill(
+                icon: Icons.speed_rounded,
+                iconColor: const Color(0xFF34D399),
+                title: 'Speed',
+                value: _speed != null && _speed! > 0 ? '${(_speed! * 3.6).round()} km/h' : '0 km/h',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _swiggyMetricPill(
+                icon: Icons.my_location_rounded,
+                iconColor: const Color(0xFF38BDF8),
+                title: 'Accuracy',
+                value: _accuracy != null ? '±${_accuracy!.round()}m' : 'Acquiring',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _swiggyMetricPill(
+                icon: Icons.sync_rounded,
+                iconColor: const Color(0xFFA78BFA),
+                title: 'Streaming',
+                value: '2s Live',
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
+        const SizedBox(height: 12),
 
-        // Speed Card
-        Expanded(
-          child: _metricCard(
-            icon: Icons.speed_rounded,
-            iconColor: const Color(0xFF34D399),
-            label: 'Speed',
-            value: _speed != null && _speed! > 0 ? '${(_speed! * 3.6).round()} km/h' : '0 km/h',
+        // Reassuring Notice
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.notifications_active_outlined, color: Color(0xFF38BDF8), size: 16),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Emergency dispatch listening in background. You will receive an instant sound & route alert when an SOS occurs.',
+                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11, height: 1.3),
+                ),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _metricCard({
+  Widget _swiggyMetricPill({
     required IconData icon,
     required Color iconColor,
-    required String label,
+    required String title,
     required String value,
-    bool isMonospace = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Column(
         children: [
-          Icon(icon, color: iconColor, size: 18),
-          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 12, color: iconColor),
+              const SizedBox(width: 4),
+              Text(title, style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+            ],
+          ),
+          const SizedBox(height: 3),
           Text(
             value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              fontFamily: isMonospace ? 'monospace' : null,
-            ),
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGpsStatusBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: _isOnDuty
-            ? const Color(0xFF0284C7).withValues(alpha: 0.08)
-            : const Color(0xFF334155).withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: _isOnDuty ? const Color(0xFF0284C7).withValues(alpha: 0.25) : const Color(0xFF334155),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _isOnDuty ? Icons.radar_rounded : Icons.location_off_outlined,
-            size: 16,
-            color: _isOnDuty ? const Color(0xFF38BDF8) : const Color(0xFF94A3B8),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _isOnDuty ? 'Background GPS Active' : 'GPS Standby (Offline)',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: _isOnDuty ? const Color(0xFF38BDF8) : const Color(0xFF94A3B8),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (_isOnDuty && _latitude != null && _longitude != null)
-                  Text(
-                    '${_latitude!.toStringAsFixed(4)}, ${_longitude!.toStringAsFixed(4)}',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF64748B),
-                      fontFamily: 'monospace',
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (_isOnDuty)
-            Container(
-              width: 7,
-              height: 7,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color(0xFF34D399),
-              ),
-            ),
         ],
       ),
     );

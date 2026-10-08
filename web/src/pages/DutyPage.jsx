@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shield, LogOut, Navigation, Phone, CheckCircle, Radio, Bell, Lock, XCircle, AlertTriangle, ArrowRight, Smartphone, MapPin, Download } from 'lucide-react';
+import L from 'leaflet';
 import { apiUrl, WS_URL } from '../config/api';
+import { createVictimDivIcon, createResponderDivIcon } from '../utils/mapMarkers';
 
 export default function DutyPage() {
   const [authToken, setAuthToken] = useState(localStorage.getItem('devi_responder_token') || '');
@@ -36,6 +38,118 @@ export default function DutyPage() {
   const sirenIntervalRef = useRef(null);
   const wakeLockRef = useRef(null);
   const audioKeepAliveRef = useRef(null);
+
+  // Map References
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const agentMarkerRef = useRef(null);
+  const victimMarkerRef = useRef(null);
+  const routeLineRef = useRef(null);
+
+  // Initialize and update Live Agent Map
+  useEffect(() => {
+    if (!currentAgent || !mapContainerRef.current) return;
+
+    if (!mapInstanceRef.current) {
+      const initialLat = lastCoords?.lat || (activeAlert?.latitude ? parseFloat(activeAlert.latitude) : 10.85);
+      const initialLng = lastCoords?.lng || (activeAlert?.longitude ? parseFloat(activeAlert.longitude) : 78.70);
+
+      const street = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 20,
+        subdomains: 'abcd',
+        attribution: '© OpenStreetMap | DEVI Safety',
+      });
+
+      const satellite = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        maxZoom: 21,
+        subdomains: ['0', '1', '2', '3'],
+        attribution: '© Google Satellite | DEVI Safety',
+      });
+
+      const map = L.map(mapContainerRef.current, {
+        center: [initialLat, initialLng],
+        zoom: 15,
+        zoomControl: false,
+        layers: [street],
+      });
+
+      L.control.layers({ '🗺️ Streets': street, '🛰️ Satellite': satellite }, null, { position: 'topright' }).addTo(map);
+
+      mapInstanceRef.current = map;
+    }
+
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    // Agent Marker
+    if (lastCoords?.lat && lastCoords?.lng) {
+      const agentIcon = createResponderDivIcon(currentAgent, true);
+      if (!agentMarkerRef.current) {
+        agentMarkerRef.current = L.marker([lastCoords.lat, lastCoords.lng], { icon: agentIcon }).addTo(map);
+      } else {
+        agentMarkerRef.current.setLatLng([lastCoords.lat, lastCoords.lng]);
+        agentMarkerRef.current.setIcon(agentIcon);
+      }
+    }
+
+    // Victim Marker & Route line if active emergency
+    if (activeAlert?.latitude && activeAlert?.longitude) {
+      const vLat = parseFloat(activeAlert.latitude);
+      const vLng = parseFloat(activeAlert.longitude);
+      const victimIcon = createVictimDivIcon({
+        id: activeAlert.id,
+        userName: activeAlert.userName || activeAlert.victimName || 'Emergency Victim',
+        status: 'ACTIVE',
+      }, true);
+
+      if (!victimMarkerRef.current) {
+        victimMarkerRef.current = L.marker([vLat, vLng], { icon: victimIcon }).addTo(map);
+      } else {
+        victimMarkerRef.current.setLatLng([vLat, vLng]);
+        victimMarkerRef.current.setIcon(victimIcon);
+      }
+
+      if (lastCoords?.lat && lastCoords?.lng) {
+        const points = [[lastCoords.lat, lastCoords.lng], [vLat, vLng]];
+        if (!routeLineRef.current) {
+          routeLineRef.current = L.polyline(points, {
+            color: '#10B981',
+            weight: 5,
+            opacity: 0.85,
+            dashArray: '8, 8',
+          }).addTo(map);
+        } else {
+          routeLineRef.current.setLatLngs(points);
+        }
+
+        const bounds = L.latLngBounds(points);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+      } else {
+        map.panTo([vLat, vLng]);
+      }
+    } else {
+      if (victimMarkerRef.current) {
+        map.removeLayer(victimMarkerRef.current);
+        victimMarkerRef.current = null;
+      }
+      if (routeLineRef.current) {
+        map.removeLayer(routeLineRef.current);
+        routeLineRef.current = null;
+      }
+      if (lastCoords?.lat && lastCoords?.lng) {
+        map.panTo([lastCoords.lat, lastCoords.lng]);
+      }
+    }
+  }, [currentAgent, lastCoords, activeAlert]);
+
+  const recenterMap = () => {
+    if (!mapInstanceRef.current) return;
+    if (lastCoords?.lat && lastCoords?.lng) {
+      mapInstanceRef.current.setView([lastCoords.lat, lastCoords.lng], 16);
+    } else if (activeAlert?.latitude && activeAlert?.longitude) {
+      mapInstanceRef.current.setView([parseFloat(activeAlert.latitude), parseFloat(activeAlert.longitude)], 16);
+    }
+  };
 
   // Check Auth
   const checkAuth = async () => {
@@ -720,6 +834,71 @@ export default function DutyPage() {
       ) : (
         /* AUTHENTICATED ON-DUTY ACTIVE SCREEN (MINIMAL & RUNNING IN BACKGROUND) */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* SWIGGY / ZOMATO STYLE HERO LIVE MAP */}
+          <div
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: '350px',
+              borderRadius: '20px',
+              overflow: 'hidden',
+              border: '2px solid rgba(16, 185, 129, 0.4)',
+              boxShadow: '0 12px 35px rgba(0, 0, 0, 0.5)',
+              background: '#0F172A',
+            }}
+          >
+            <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
+
+            {/* Floating Map Overlay Pill (Swiggy / Zomato style) */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '12px',
+                left: '12px',
+                zIndex: 1000,
+                background: 'rgba(15, 23, 42, 0.88)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                padding: '6px 12px',
+                borderRadius: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: '#FFF',
+              }}
+            >
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', animation: 'pulse 1.5s infinite' }} />
+              <span>{activeAlert ? '🚨 EN ROUTE TO RESCUE' : '🟢 LIVE PATROL RADAR'}</span>
+            </div>
+
+            {/* Floating Recenter Button */}
+            <button
+              onClick={recenterMap}
+              style={{
+                position: 'absolute',
+                bottom: '12px',
+                right: '12px',
+                zIndex: 1000,
+                background: 'rgba(15, 23, 42, 0.92)',
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                color: '#38BDF8',
+                borderRadius: '12px',
+                padding: '8px 12px',
+                fontSize: '11px',
+                fontWeight: '800',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+              }}
+            >
+              <Navigation size={13} /> Recenter
+            </button>
+          </div>
+
           {/* ACTIVE SOS DISPATCH CARD (POPS UP IF EMERGENCY SOS OCCURS) */}
           {activeAlert && (
             <div style={{ background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.22) 0%, rgba(185, 28, 28, 0.18) 100%)', border: '2px solid var(--red)', borderRadius: '18px', padding: '18px 16px', animation: 'pulse 1.4s infinite ease-in-out' }}>
