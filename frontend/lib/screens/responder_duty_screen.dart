@@ -1119,31 +1119,37 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
       children: [
         // Priority Badge Row
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(6),
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 16),
                   ),
-                  child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 16),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'EMERGENCY SOS ASSIGNED',
-                  style: TextStyle(
-                    fontFamily: 'Outfit',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFFF87171),
-                    letterSpacing: 0.5,
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'EMERGENCY SOS ASSIGNED',
+                      style: TextStyle(
+                        fontFamily: 'Outfit',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFF87171),
+                        letterSpacing: 0.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
@@ -1167,64 +1173,63 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: const Color(0xFF334155)),
           ),
-          child: Column(
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 38,
-                    height: 38,
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Icon(Icons.person_rounded, color: Color(0xFFF87171), size: 20),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      victimName,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      locationText,
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (victimPhone.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: () => launchUrl(Uri.parse('tel:$victimPhone')),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
+                      color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                      border: Border.all(color: const Color(0xFF0284C7)),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Center(
-                      child: Icon(Icons.person_rounded, color: Color(0xFFF87171), size: 20),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          victimName,
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          locationText,
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        Icon(Icons.phone, size: 14, color: Color(0xFF38BDF8)),
+                        SizedBox(width: 4),
+                        Text('Call', style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 12)),
                       ],
                     ),
                   ),
-                  if (victimPhone.isNotEmpty)
-                    InkWell(
-                      onTap: () => launchUrl(Uri.parse('tel:$victimPhone')),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0284C7).withValues(alpha: 0.2),
-                          border: Border.all(color: const Color(0xFF0284C7)),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.phone, size: 14, color: Color(0xFF38BDF8)),
-                            SizedBox(width: 4),
-                            Text('Call', style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1246,7 +1251,13 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
               children: [
                 Icon(Icons.check_circle_rounded, size: 20),
                 SizedBox(width: 8),
-                Text('ACCEPT MISSION (I AM EN ROUTE)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                Flexible(
+                  child: Text(
+                    'ACCEPT MISSION (I AM EN ROUTE)',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           )
@@ -1266,7 +1277,10 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
                     }
                   },
                   icon: const Icon(Icons.navigation_rounded, size: 18),
-                  label: const Text('NAVIGATE IN MAPS', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('NAVIGATE IN MAPS', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0284C7),
                     foregroundColor: Colors.white,
@@ -1309,38 +1323,47 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
       children: [
         // Duty Status Header
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                    border: Border.all(color: const Color(0xFF10B981), width: 1.5),
-                  ),
-                  child: const Center(
-                    child: Icon(Icons.shield_rounded, color: Color(0xFF34D399), size: 18),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _agentName ?? 'Field Responder',
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                      border: Border.all(color: const Color(0xFF10B981), width: 1.5),
                     ),
-                    Text(
-                      'Sector: ${_agentArea ?? 'Active Zone'}${_agentPhone != null ? ' • +91 $_agentPhone' : ''}',
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                    child: const Center(
+                      child: Icon(Icons.shield_rounded, color: Color(0xFF34D399), size: 18),
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _agentName ?? 'Field Responder',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Sector: ${_agentArea ?? 'Active Zone'}${_agentPhone != null ? ' • +91 $_agentPhone' : ''}',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
@@ -1426,28 +1449,38 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
     required String value,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFF334155)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, size: 12, color: iconColor),
               const SizedBox(width: 4),
-              Text(title, style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+              Flexible(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 3),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+              maxLines: 1,
+            ),
           ),
         ],
       ),
