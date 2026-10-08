@@ -399,6 +399,115 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
 
+                if (isGuest) ...[
+                  const SizedBox(height: 20),
+
+                  // Guest Registration & Account Upgrade Card
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF0F172A).withValues(alpha: 0.2),
+                          blurRadius: 14,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D9488).withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.shield_outlined, color: Color(0xFF2DD4BF), size: 20),
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                'Unlock Full Safety Network',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Register with your mobile number to add personal emergency contacts (family & friends), enable automatic WhatsApp dispatches, and save home address details.',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Color(0xFF94A3B8),
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) => const ProfileScreen(isEditing: false),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.person_add_rounded, size: 16),
+                                label: const Text(
+                                  'Register (Sign Up)',
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0D9488),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            OutlinedButton(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => const LoginScreen(),
+                                  ),
+                                );
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Color(0xFF475569)),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
+                              child: const Text(
+                                'Log In',
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 if (!isGuest) ...[
                   const SizedBox(height: 24),
 
