@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
@@ -19,6 +20,9 @@ class ResponderDutyScreen extends StatefulWidget {
 }
 
 class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsBindingObserver {
+  // Navigation Tabs (0: Home Overview, 1: Full Map View)
+  int _selectedTabIndex = 0;
+
   // Auth & Profile
   bool _isLoading = false;
   bool _isOnDuty = false;
@@ -455,11 +459,26 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
   @override
   Widget build(BuildContext context) {
     if (_agentId != null) {
-      // Swiggy / Zomato style full-screen hero map view for on-duty responder
-      return Scaffold(
-        backgroundColor: const Color(0xFF0F172A),
-        body: SafeArea(
-          child: _buildSwiggyZomatoDutyView(),
+      // Split UX: Static Top Navbar, Home Tab, Full Map View Tab, and Bottom Navigation Bar
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Color(0xFF0F172A),
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+          systemNavigationBarColor: Color(0xFF0F172A),
+          systemNavigationBarIconBrightness: Brightness.light,
+        ),
+        child: Scaffold(
+          backgroundColor: const Color(0xFF0F172A),
+          appBar: _buildStaticTopAppBar(),
+          body: IndexedStack(
+            index: _selectedTabIndex,
+            children: [
+              _buildHomeTabView(),
+              _buildFullMapTabView(),
+            ],
+          ),
+          bottomNavigationBar: _buildBottomNavBar(),
         ),
       );
     }
@@ -624,10 +643,695 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
     );
   }
 
-  Widget _buildSwiggyZomatoDutyView() {
+  PreferredSizeWidget _buildStaticTopAppBar() {
+    return AppBar(
+      backgroundColor: const Color(0xFF0F172A),
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      automaticallyImplyLeading: false,
+      titleSpacing: 14,
+      title: Row(
+        children: [
+          // Back button
+          InkWell(
+            onTap: () => Navigator.pop(context),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF334155)),
+              ),
+              child: const Icon(Icons.arrow_back_ios_new_rounded, size: 16, color: Colors.white),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Agent details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _agentName ?? 'DEVI Responder',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: _isOnDuty
+                            ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                            : const Color(0xFF64748B).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _isOnDuty ? const Color(0xFF10B981) : const Color(0xFF64748B),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isOnDuty ? 'LIVE' : 'OFFLINE',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    if (_accuracy != null)
+                      Text(
+                        'GPS ±${_accuracy!.round()}m',
+                        style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                      ),
+                    if (_speed != null && _speed! > 0) ...[
+                      const Text(' • ', style: TextStyle(color: Color(0xFF64748B), fontSize: 11)),
+                      Text(
+                        '${(_speed! * 3.6).round()} km/h',
+                        style: const TextStyle(color: Color(0xFF34D399), fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 14),
+          child: InkWell(
+            onTap: _logout,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.power_settings_new_rounded, color: Color(0xFFF87171), size: 14),
+                  SizedBox(width: 4),
+                  Text(
+                    'Sign Out',
+                    style: TextStyle(color: Color(0xFFF87171), fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(
+          color: const Color(0xFF1E293B),
+          height: 1,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomNavBar() {
+    final hasActiveAlert = _activeAlert != null;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF0F172A),
+        border: Border(
+          top: BorderSide(color: Color(0xFF1E293B), width: 1),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Container(
+          height: 60,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+          child: Row(
+            children: [
+              // Tab 0: Home
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _selectedTabIndex = 0),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _selectedTabIndex == 0 ? const Color(0xFF1E293B) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _selectedTabIndex == 0 ? Icons.home_rounded : Icons.home_outlined,
+                          size: 22,
+                          color: _selectedTabIndex == 0 ? const Color(0xFF38BDF8) : const Color(0xFF64748B),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Home',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: _selectedTabIndex == 0 ? FontWeight.bold : FontWeight.w500,
+                            color: _selectedTabIndex == 0 ? const Color(0xFF38BDF8) : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              // Tab 1: Live Map
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    setState(() => _selectedTabIndex = 1);
+                    if (_activeAlert != null) {
+                      Future.delayed(const Duration(milliseconds: 250), () => _fitMapBounds());
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _selectedTabIndex == 1 ? const Color(0xFF1E293B) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Icon(
+                              _selectedTabIndex == 1 ? Icons.map_rounded : Icons.map_outlined,
+                              size: 22,
+                              color: _selectedTabIndex == 1 ? const Color(0xFF38BDF8) : const Color(0xFF64748B),
+                            ),
+                            if (hasActiveAlert)
+                              Positioned(
+                                top: -2,
+                                right: -4,
+                                child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFEF4444),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Map',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: _selectedTabIndex == 1 ? FontWeight.bold : FontWeight.w500,
+                            color: _selectedTabIndex == 1 ? const Color(0xFF38BDF8) : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeTabView() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 1. GPS Disabled Warning (if any)
+          if (_isGpsDisabled) ...[
+            InkWell(
+              onTap: () => Geolocator.openLocationSettings(),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8),
+                  ],
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.location_off_rounded, color: Colors.white, size: 18),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Device Location is OFF. Tap to enable GPS.',
+                        style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: Colors.white, size: 20),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // 2. Active SOS Emergency Card (If activeAlert != null)
+          if (_activeAlert != null) ...[
+            _buildHomeActiveEmergencyCard(),
+            const SizedBox(height: 16),
+          ],
+
+          // 3. Patrol / Sector Status Card
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                        border: Border.all(color: const Color(0xFF10B981), width: 1.5),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.shield_rounded, color: Color(0xFF34D399), size: 22),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _agentName ?? 'Field Responder',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Sector: ${_agentArea ?? 'Active Safety Zone'}',
+                            style: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFF10B981)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.radar_rounded, size: 12, color: Color(0xFF34D399)),
+                          SizedBox(width: 5),
+                          Text('PATROLLING', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF34D399))),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (_agentPhone != null && _agentPhone!.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Registered Mobile: +91 $_agentPhone',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // 4. Telemetry Metrics Row (Speed, Accuracy, Streaming)
+          Row(
+            children: [
+              Expanded(
+                child: _swiggyMetricPill(
+                  icon: Icons.speed_rounded,
+                  iconColor: const Color(0xFF34D399),
+                  title: 'Speed',
+                  value: _speed != null && _speed! > 0 ? '${(_speed! * 3.6).round()} km/h' : '0 km/h',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _swiggyMetricPill(
+                  icon: Icons.my_location_rounded,
+                  iconColor: const Color(0xFF38BDF8),
+                  title: 'Accuracy',
+                  value: _accuracy != null ? '±${_accuracy!.round()}m' : 'Acquiring',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _swiggyMetricPill(
+                  icon: Icons.sync_rounded,
+                  iconColor: const Color(0xFFA78BFA),
+                  title: 'Streaming',
+                  value: '2s Live',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // 5. Quick Map Shortcut Button
+          InkWell(
+            onTap: () {
+              setState(() => _selectedTabIndex = 1);
+              if (_activeAlert != null) {
+                Future.delayed(const Duration(milliseconds: 200), () => _fitMapBounds());
+              }
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.map_rounded, color: Color(0xFF38BDF8), size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'View Full Live Map Radar',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Inspect your patrol perimeter & live location',
+                          style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF94A3B8), size: 16),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // 6. Background Listening Info Banner
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.notifications_active_outlined, color: Color(0xFF38BDF8), size: 18),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Emergency dispatch listening in background. You will receive an instant sound & route alert when an SOS occurs.',
+                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11.5, height: 1.35),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeActiveEmergencyCard() {
+    final victimName = _activeAlert!['user']?['name'] ?? _activeAlert!['userName'] ?? 'Emergency Victim';
+    final victimPhone = _activeAlert!['user']?['phone'] ?? _activeAlert!['userPhone'] ?? '';
+    final locationText = _activeAlert!['location'] ?? 'Live GPS Coordinates';
+    final isEnRoute = _activeAlert!['responderStatus'] == 'EN_ROUTE';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFEF4444), width: 1.8),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header Row
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 18),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'EMERGENCY SOS ASSIGNED',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFFF87171),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isEnRoute ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  isEnRoute ? 'EN ROUTE' : 'PRIORITY P1',
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Victim Box
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.person_rounded, color: Color(0xFFF87171), size: 22),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        victimName,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        locationText,
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                if (victimPhone.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => launchUrl(Uri.parse('tel:$victimPhone')),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+                        border: Border.all(color: const Color(0xFF0284C7)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.phone, size: 14, color: Color(0xFF38BDF8)),
+                          SizedBox(width: 4),
+                          Text('Call', style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Primary "GO TO MAP" Button (Requested by User!)
+          ElevatedButton.icon(
+            onPressed: () {
+              setState(() => _selectedTabIndex = 1);
+              _fetchRoadRoute();
+              Future.delayed(const Duration(milliseconds: 250), () => _fitMapBounds());
+            },
+            icon: const Icon(Icons.map_rounded, size: 20),
+            label: const Text(
+              'GO TO MAP',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0284C7),
+              foregroundColor: Colors.white,
+              elevation: 4,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // Secondary Action Buttons Row
+          Row(
+            children: [
+              if (!isEnRoute)
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _acceptMission,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      elevation: 2,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text(
+                      'ACCEPT (EN ROUTE)',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              if (!isEnRoute) const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    final lat = _activeAlert!['latitude'];
+                    final lng = _activeAlert!['longitude'];
+                    if (lat != null && lng != null) {
+                      launchUrl(
+                        Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving'),
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.navigation_outlined, size: 16),
+                  label: const Text(
+                    'External GPS',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF38BDF8),
+                    side: const BorderSide(color: Color(0xFF0284C7)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFullMapTabView() {
     return Stack(
       children: [
-        // 1. HERO FULL-SCREEN GOOGLE MAP
+        // 1. FULL-SCREEN GOOGLE MAP
         Positioned.fill(
           child: GoogleMap(
             initialCameraPosition: CameraPosition(
@@ -647,31 +1351,23 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
             zoomControlsEnabled: false,
             mapToolbarEnabled: false,
             padding: EdgeInsets.only(
-              bottom: _activeAlert != null ? 310 : 230,
-              top: 75,
+              bottom: _activeAlert != null ? 105 : 20,
+              top: 10,
             ),
           ),
         ),
 
-        // 2. FLOATING MAP CONTROLS (RIGHT EDGE, ABOVE BOTTOM SHEET)
+        // 2. FLOATING MAP CONTROLS (RIGHT EDGE)
         Positioned(
           right: 14,
-          bottom: _activeAlert != null ? 320 : 240,
+          bottom: _activeAlert != null ? 115 : 24,
           child: _buildFloatingMapControls(),
         ),
 
-        // 3. FLOATING TOP BAR (AGENT & STATUS OVERLAY)
-        Positioned(
-          top: 12,
-          left: 14,
-          right: 14,
-          child: _buildFloatingTopBar(),
-        ),
-
-        // 4. GPS DISABLED WARNING BANNER (IF OFF)
+        // 3. GPS DISABLED WARNING BANNER (IF OFF)
         if (_isGpsDisabled)
           Positioned(
-            top: 78,
+            top: 12,
             left: 14,
             right: 14,
             child: InkWell(
@@ -703,14 +1399,139 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
             ),
           ),
 
-        // 5. SWIGGY / ZOMATO STYLE BOTTOM SHEET CARD
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: _buildSwiggyZomatoBottomSheet(),
-        ),
+        // 4. MINIMALIST FLOATING HUD (ONLY WHEN SOS IS ACTIVE)
+        if (_activeAlert != null)
+          Positioned(
+            bottom: 12,
+            left: 14,
+            right: 14,
+            child: _buildMapActiveMissionHud(),
+          ),
       ],
+    );
+  }
+
+  Widget _buildMapActiveMissionHud() {
+    final victimName = _activeAlert!['user']?['name'] ?? _activeAlert!['userName'] ?? 'Emergency Victim';
+    final locationText = _activeAlert!['location'] ?? 'Emergency Scene';
+    final victimPhone = _activeAlert!['user']?['phone'] ?? _activeAlert!['userPhone'] ?? '';
+    final isEnRoute = _activeAlert!['responderStatus'] == 'EN_ROUTE';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A).withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEF4444), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                ),
+                child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFF87171), size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '🚨 $victimName',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.5),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      locationText,
+                      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (victimPhone.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.phone, color: Color(0xFF38BDF8), size: 20),
+                  onPressed: () => launchUrl(Uri.parse('tel:$victimPhone')),
+                  tooltip: 'Call Victim',
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (!isEnRoute)
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _acceptMission,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('ACCEPT (EN ROUTE)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              if (!isEnRoute) const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    final lat = _activeAlert!['latitude'];
+                    final lng = _activeAlert!['longitude'];
+                    if (lat != null && lng != null) {
+                      launchUrl(
+                        Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving'),
+                        mode: LaunchMode.externalApplication,
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.navigation_rounded, size: 14),
+                  label: const Text('Turn-by-Turn', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0284C7),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: _fitMapBounds,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: const Icon(Icons.center_focus_strong_rounded, size: 16, color: Color(0xFF34D399)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -918,529 +1739,6 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
     );
   }
 
-  Widget _buildFloatingTopBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A).withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF334155).withValues(alpha: 0.8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Back button
-          InkWell(
-            onTap: () => Navigator.pop(context),
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.arrow_back_ios_new_rounded, size: 16, color: Colors.white),
-            ),
-          ),
-          const SizedBox(width: 10),
-
-          // Agent name & duty indicator
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        _agentName ?? 'DEVI Responder',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: _isOnDuty
-                            ? const Color(0xFF10B981).withValues(alpha: 0.2)
-                            : const Color(0xFF64748B).withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: _isOnDuty ? const Color(0xFF10B981) : const Color(0xFF64748B),
-                          width: 0.8,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _isOnDuty ? 'LIVE' : 'OFFLINE',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: _isOnDuty ? const Color(0xFF34D399) : const Color(0xFF94A3B8),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    if (_accuracy != null)
-                      Text(
-                        'GPS ±${_accuracy!.round()}m',
-                        style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
-                      ),
-                    if (_speed != null && _speed! > 0) ...[
-                      const Text(' • ', style: TextStyle(color: Color(0xFF64748B), fontSize: 11)),
-                      Text(
-                        '${(_speed! * 3.6).round()} km/h',
-                        style: const TextStyle(color: Color(0xFF34D399), fontSize: 11, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Logout / Off-duty action
-          InkWell(
-            onTap: _logout,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.3)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.power_settings_new_rounded, color: Color(0xFFF87171), size: 14),
-                  SizedBox(width: 4),
-                  Text(
-                    'Sign Out',
-                    style: TextStyle(color: Color(0xFFF87171), fontSize: 11, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSwiggyZomatoBottomSheet() {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border.all(
-          color: _activeAlert != null ? const Color(0xFFEF4444) : const Color(0xFF334155),
-          width: _activeAlert != null ? 1.5 : 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
-            blurRadius: 20,
-            offset: const Offset(0, -6),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Drag handle
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF475569),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-
-              if (_activeAlert != null)
-                _buildActiveMissionContent()
-              else
-                _buildIdleDutyContent(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActiveMissionContent() {
-    final victimName = _activeAlert!['user']?['name'] ?? _activeAlert!['userName'] ?? 'Emergency Victim';
-    final victimPhone = _activeAlert!['user']?['phone'] ?? _activeAlert!['userPhone'] ?? '';
-    final locationText = _activeAlert!['location'] ?? 'Live GPS Coordinates';
-    final isEnRoute = _activeAlert!['responderStatus'] == 'EN_ROUTE';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Priority Badge Row
-        Row(
-          children: [
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 16),
-                  ),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'EMERGENCY SOS ASSIGNED',
-                      style: TextStyle(
-                        fontFamily: 'Outfit',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFFF87171),
-                        letterSpacing: 0.5,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: isEnRoute ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                isEnRoute ? 'EN ROUTE' : 'PRIORITY P1',
-                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-
-        // Victim Information Card
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0F172A),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF334155)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Icon(Icons.person_rounded, color: Color(0xFFF87171), size: 20),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      victimName,
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      locationText,
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              if (victimPhone.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () => launchUrl(Uri.parse('tel:$victimPhone')),
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0284C7).withValues(alpha: 0.2),
-                      border: Border.all(color: const Color(0xFF0284C7)),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.phone, size: 14, color: Color(0xFF38BDF8)),
-                        SizedBox(width: 4),
-                        Text('Call', style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        // Action Buttons
-        if (!isEnRoute)
-          ElevatedButton(
-            onPressed: _acceptMission,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-              foregroundColor: Colors.white,
-              elevation: 4,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.check_circle_rounded, size: 20),
-                SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    'ACCEPT MISSION (I AM EN ROUTE)',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    final lat = _activeAlert!['latitude'];
-                    final lng = _activeAlert!['longitude'];
-                    if (lat != null && lng != null) {
-                      launchUrl(
-                        Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving'),
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.navigation_rounded, size: 18),
-                  label: const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('NAVIGATE IN MAPS', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0284C7),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              InkWell(
-                onTap: _fitMapBounds,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF10B981)),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.center_focus_strong_rounded, size: 16, color: Color(0xFF34D399)),
-                      SizedBox(width: 6),
-                      Text('Fit View', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF34D399))),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-      ],
-    );
-  }
-
-  Widget _buildIdleDutyContent() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Duty Status Header
-        Row(
-          children: [
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                      border: Border.all(color: const Color(0xFF10B981), width: 1.5),
-                    ),
-                    child: const Center(
-                      child: Icon(Icons.shield_rounded, color: Color(0xFF34D399), size: 18),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _agentName ?? 'Field Responder',
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Sector: ${_agentArea ?? 'Active Zone'}${_agentPhone != null ? ' • +91 $_agentPhone' : ''}',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF10B981)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.radar_rounded, size: 12, color: Color(0xFF34D399)),
-                  SizedBox(width: 5),
-                  Text('PATROLLING', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF34D399))),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Telemetry Metrics Row
-        Row(
-          children: [
-            Expanded(
-              child: _swiggyMetricPill(
-                icon: Icons.speed_rounded,
-                iconColor: const Color(0xFF34D399),
-                title: 'Speed',
-                value: _speed != null && _speed! > 0 ? '${(_speed! * 3.6).round()} km/h' : '0 km/h',
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _swiggyMetricPill(
-                icon: Icons.my_location_rounded,
-                iconColor: const Color(0xFF38BDF8),
-                title: 'Accuracy',
-                value: _accuracy != null ? '±${_accuracy!.round()}m' : 'Acquiring',
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _swiggyMetricPill(
-                icon: Icons.sync_rounded,
-                iconColor: const Color(0xFFA78BFA),
-                title: 'Streaming',
-                value: '2s Live',
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Reassuring Notice
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0F172A),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFF334155)),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.notifications_active_outlined, color: Color(0xFF38BDF8), size: 16),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Emergency dispatch listening in background. You will receive an instant sound & route alert when an SOS occurs.',
-                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11, height: 1.3),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _swiggyMetricPill({
     required IconData icon,

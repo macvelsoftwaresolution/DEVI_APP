@@ -166,68 +166,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         centerTitle: false,
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: isGuest
-                ? Center(
-                    child: InkWell(
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => const ProfileScreen(isEditing: false),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0D9488),
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF0D9488).withValues(alpha: 0.25),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.person_add_rounded, color: Colors.white, size: 15),
-                            SizedBox(width: 4),
-                            Text(
-                              'Sign Up',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                : InkWell(
-                    onTap: _onLogout,
+          if (!isGuest)
+            Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: InkWell(
+                onTap: _onLogout,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEE2E2),
                     borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEE2E2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.logout_rounded,
-                        color: Color(0xFFEF4444),
-                        size: 20,
-                      ),
-                    ),
                   ),
-          ),
+                  child: const Icon(
+                    Icons.logout_rounded,
+                    color: Color(0xFFEF4444),
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
       body: SafeArea(
@@ -324,41 +283,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
 
                       final buttonWidget = InkWell(
-                        onTap: () {
-                          Navigator.of(context).push(
+                        onTap: () async {
+                          await Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (context) => ProfileScreen(isEditing: !isGuest),
                             ),
                           );
+                          if (mounted) setState(() {});
                         },
                         borderRadius: BorderRadius.circular(18),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                           decoration: BoxDecoration(
                             color: isGuest
-                                ? const Color(0xFF0D9488).withValues(alpha: 0.1)
+                                ? const Color(0xFF0D9488)
                                 : const Color(0xFFFFF1F2),
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
                               color: isGuest ? const Color(0xFF0D9488) : const Color(0xFFFECDD3),
                               width: 1,
                             ),
+                            boxShadow: isGuest
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(0xFF0D9488).withValues(alpha: 0.25),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                isGuest ? Icons.person_add_alt_1 : Icons.edit_outlined,
-                                size: 13,
-                                color: isGuest ? const Color(0xFF0D9488) : const Color(0xFFE11D48),
+                                isGuest ? Icons.person_add_rounded : Icons.edit_outlined,
+                                size: 14,
+                                color: isGuest ? Colors.white : const Color(0xFFE11D48),
                               ),
-                              const SizedBox(width: 4),
+                              const SizedBox(width: 5),
                               Text(
                                 isGuest ? 'Sign Up' : 'Edit',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 12.5,
                                   fontWeight: FontWeight.w700,
-                                  color: isGuest ? const Color(0xFF0D9488) : const Color(0xFFE11D48),
+                                  color: isGuest ? Colors.white : const Color(0xFFE11D48),
                                 ),
                               ),
                             ],
@@ -398,115 +367,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     },
                   ),
                 ),
-
-                if (isGuest) ...[
-                  const SizedBox(height: 20),
-
-                  // Guest Registration & Account Upgrade Card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF0F172A).withValues(alpha: 0.2),
-                          blurRadius: 14,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0D9488).withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(Icons.shield_outlined, color: Color(0xFF2DD4BF), size: 20),
-                            ),
-                            const SizedBox(width: 10),
-                            const Expanded(
-                              child: Text(
-                                'Unlock Full Safety Network',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Register with your mobile number to add personal emergency contacts (family & friends), enable automatic WhatsApp dispatches, and save home address details.',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: Color(0xFF94A3B8),
-                            height: 1.4,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (context) => const ProfileScreen(isEditing: false),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.person_add_rounded, size: 16),
-                                label: const Text(
-                                  'Register (Sign Up)',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF0D9488),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            OutlinedButton(
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (context) => const LoginScreen(),
-                                  ),
-                                );
-                              },
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                side: const BorderSide(color: Color(0xFF475569)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              ),
-                              child: const Text(
-                                'Log In',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
 
                 if (!isGuest) ...[
                   const SizedBox(height: 24),

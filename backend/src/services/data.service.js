@@ -844,11 +844,18 @@ export const DataService = {
           timeAgo = `${elapsedSec}s ago`;
         }
 
-        const hours = createdDate.getHours();
-        const minutes = createdDate.getMinutes().toString().padStart(2, '0');
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        const formattedHour = hours % 12 || 12;
-        const displayTime = `${createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}, ${formattedHour}:${minutes} ${ampm}`;
+        const istTime = createdDate.toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Kolkata',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+        const istDate = createdDate.toLocaleDateString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit',
+          month: 'short',
+        });
+        const displayTime = `${istDate}, ${istTime}`;
 
         return {
           id: alert.id.toString(),
@@ -1423,7 +1430,12 @@ export const DataService = {
     if (!alertId || !noteText) return null;
     const key = alertId.toString();
     let session = liveTrackSessions.get(key);
-    const timeFormatted = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const timeFormatted = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
     const formattedNote = `[${timeFormatted}] ${noteText}`;
 
     if (session) {
