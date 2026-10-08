@@ -401,6 +401,14 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
     // Attach to active live session and persist to Supabase
     const session = await DataService.attachEvidenceUrl(alertId, evidenceUrl);
 
+    try {
+      socketService.broadcastToRoom('dashboard', {
+        type: 'incident:evidence',
+        alertId,
+        evidenceUrl,
+      });
+    } catch (_) { }
+
     res.status(200).json({
       success: true,
       message: 'Emergency evidence video/audio uploaded and attached to SOS alert successfully',

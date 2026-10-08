@@ -605,6 +605,13 @@ router.post('/resolve/:alertId', async (req, res, next) => {
   try {
     const { alertId } = req.params;
     const session = await DataService.resolveSosAlert(alertId);
+    try {
+      socketService.broadcastToRoom('dashboard', {
+        type: 'incident:resolved',
+        alertId,
+        session,
+      });
+    } catch (_) { }
     res.json({
       success: true,
       message: `Incident #${alertId} marked as RESOLVED`,

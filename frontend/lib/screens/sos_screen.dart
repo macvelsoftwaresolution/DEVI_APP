@@ -8,7 +8,6 @@ import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/emergency_recording_banner.dart';
 import '../widgets/emergency_sound_card.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -91,28 +90,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     }
 
     if (_isEmergencyActive) {
-      setState(() {
-        _isEmergencyActive = false;
-        _activeIdempotencyKey = null;
-        _activeAlertId = null;
-      });
-      LocationService.stopLiveTracking(resolveBackend: true);
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Text('SOS Deactivated. Live tracking stopped.', style: TextStyle(fontWeight: FontWeight.w600)),
-            ],
-          ),
-          backgroundColor: AppColors.primaryNavy,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      _handleDeactivateSos();
       return;
     }
 
@@ -187,6 +165,107 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       _countdownSeconds = _defaultCountdownSeconds;
     });
     _triggerSosAlert();
+  }
+
+  // --- Deactivate SOS / Mark as Safe Resolution ---
+  Future<void> _handleDeactivateSos({bool showConfirmation = true}) async {
+    if (!_isEmergencyActive && _activeAlertId == null) return;
+
+    if (showConfirmation) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.verified_user_rounded, color: Color(0xFF10B981), size: 24),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Are you safe now?',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'This will stop live GPS tracking, finalize emergency evidence, and mark your alert as RESOLVED for helpers & safety desk.',
+            style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.4),
+          ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10B981),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Yes, I Am Safe', style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+    }
+
+    final alertId = _activeAlertId;
+
+    setState(() {
+      _isEmergencyActive = false;
+      _activeIdempotencyKey = null;
+      _activeAlertId = null;
+    });
+
+    // 1. Stop live GPS tracking and resolve in backend
+    await LocationService.stopLiveTracking(resolveBackend: true);
+
+    // 2. Stop 2-minute emergency recording and finalize evidence upload
+    await EmergencyMediaService.instance.stopEmergencyRecording();
+
+    // 3. Directly call backend resolve if alertId was tracked
+    if (alertId != null && alertId.isNotEmpty) {
+      await ApiService.instance.resolveEmergencyAlert(alertId);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.verified_rounded, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '🛡️ Alert Resolved • You are Safe. Live tracking ended.',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF059669),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'History',
+            textColor: Colors.white,
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const HistoryScreen()),
+              );
+            },
+          ),
+        ),
+      );
+    }
   }
 
   // --- Complete Press-and-Hold: Smooth 1.5s Hold with Circular Progress Feedback ---
@@ -744,7 +823,80 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
 
 
-                  SizedBox(height: isShortScreen ? 8 : 14),
+                  SizedBox(height: isShortScreen ? 6 : 10),
+
+                  // Prominent "I Am Safe" Deactivation Banner when SOS is Active
+                  if (_isEmergencyActive) ...[
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFECFDF5),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF10B981), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.shield_rounded, color: Colors.white, size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'SOS Active • Tracking On',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF065F46),
+                                  ),
+                                ),
+                                Text(
+                                  'Safe now? Tap to resolve alert',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF047857),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () => _handleDeactivateSos(showConfirmation: true),
+                            icon: const Icon(Icons.check_circle_rounded, size: 16),
+                            label: const Text(
+                              'I Am Safe',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF059669),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
 
                   // SOS Home Card (Presented for both Registered and Guest User)
                   Expanded(
@@ -769,7 +921,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: _isEmergencyActive
-                                ? [const Color(0xFFF05252), const Color(0xFFE04444)]
+                                ? [const Color(0xFF059669), const Color(0xFF047857)]
                                 : _isCountingDown
                                     ? [const Color(0xFFFF3366), const Color(0xFFCC0826)]
                                     : [const Color(0xFFE80B1E), const Color(0xFFD60719)],
@@ -779,9 +931,11 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                           borderRadius: BorderRadius.circular(isSmallScreen ? 24 : 32),
                           boxShadow: [
                             BoxShadow(
-                              color: (_isEmergencyActive || _isCountingDown
-                                      ? const Color(0xFFF05252)
-                                      : AppColors.emergencyRed)
+                              color: (_isEmergencyActive
+                                      ? const Color(0xFF059669)
+                                      : _isCountingDown
+                                          ? const Color(0xFFF05252)
+                                          : AppColors.emergencyRed)
                                   .withValues(alpha: 0.35),
                               blurRadius: 24,
                               offset: const Offset(0, 8),
@@ -805,7 +959,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                   children: [
                                     AnimatedScale(
                                       scale: (_isEmergencyActive || _isCountingDown)
-                                          ? 1.15
+                                          ? 1.10
                                           : _isHolding
                                               ? 0.94
                                               : 1.0,
@@ -834,7 +988,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                             height: circleSize,
                                             decoration: BoxDecoration(
                                               color: _isEmergencyActive
-                                                  ? const Color(0xFFD83A3A)
+                                                  ? const Color(0xFF064E3B)
                                                   : _isCountingDown
                                                       ? Colors.white
                                                       : const Color(0xFFBF0818),
@@ -858,7 +1012,9 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                                       ),
                                                     )
                                                   : Icon(
-                                                      Icons.crisis_alert,
+                                                      _isEmergencyActive
+                                                          ? Icons.verified_user_rounded
+                                                          : Icons.crisis_alert,
                                                       color: Colors.white,
                                                       size: iconSize,
                                                     ),
@@ -875,9 +1031,11 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                           ? 'HOLDING FOR SOS'
                                           : _isCountingDown
                                               ? 'ALERT IN ${_countdownSeconds}S'
-                                              : 'SOS',
+                                              : _isEmergencyActive
+                                                  ? 'I AM SAFE'
+                                                  : 'SOS',
                                       style: TextStyle(
-                                        fontSize: (_isHolding || _isCountingDown)
+                                        fontSize: (_isHolding || _isCountingDown || _isEmergencyActive)
                                             ? (titleSize * 0.72).clamp(24.0, 34.0)
                                             : titleSize,
                                         fontWeight: FontWeight.w900,
@@ -896,7 +1054,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                                             : _isCountingDown
                                                 ? 'Auto-dispatching alert in ${_countdownSeconds}s\nTap anywhere or press Cancel'
                                                 : _isEmergencyActive
-                                                    ? 'EMERGENCY ALERT ACTIVE\nTap to deactivate'
+                                                    ? 'Alert is Active • Tap here\nif you have reached safety'
                                                     : 'Tap for 5s countdown or hold to trigger\nemergency contacts',
                                         textAlign: TextAlign.center,
                                         style: TextStyle(

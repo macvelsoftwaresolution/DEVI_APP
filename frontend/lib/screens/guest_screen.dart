@@ -8,7 +8,6 @@ import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/emergency_recording_banner.dart';
 import '../widgets/emergency_sound_card.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -189,6 +188,106 @@ class _GuestScreenState extends State<GuestScreen> {
     _isSendingSos = false;
   }
 }
+
+  // --- Deactivate SOS / Mark as Safe Resolution ---
+  Future<void> _handleDeactivateSos({bool showConfirmation = true}) async {
+    if (_activeAlertId == null) return;
+
+    if (showConfirmation) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.verified_user_rounded, color: Color(0xFF10B981), size: 24),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Are you safe now?',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'This will stop live GPS tracking, finalize emergency evidence, and mark your alert as RESOLVED.',
+            style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.4),
+          ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10B981),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Yes, I Am Safe', style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+    }
+
+    final alertId = _activeAlertId;
+
+    setState(() {
+      _activeIdempotencyKey = null;
+      _activeAlertId = null;
+    });
+
+    // 1. Stop live GPS tracking and resolve in backend
+    await LocationService.stopLiveTracking(resolveBackend: true);
+
+    // 2. Stop 2-minute emergency recording and finalize evidence upload
+    await EmergencyMediaService.instance.stopEmergencyRecording();
+
+    // 3. Directly call backend resolve if alertId was tracked
+    if (alertId != null && alertId.isNotEmpty) {
+      await ApiService.instance.resolveEmergencyAlert(alertId);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.verified_rounded, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '🛡️ Alert Resolved • You are Safe. Live tracking ended.',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF059669),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'History',
+            textColor: Colors.white,
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const HistoryScreen()),
+              );
+            },
+          ),
+        ),
+      );
+    }
+  }
 
   void _triggerCall112Dialog() async {
     _guestCountdownTimer?.cancel();
@@ -622,7 +721,80 @@ class _GuestScreenState extends State<GuestScreen> {
                     ),
                   ),
 
-                  SizedBox(height: isShortScreen ? 8 : 14),
+                  SizedBox(height: isShortScreen ? 6 : 10),
+
+                  // Prominent "I Am Safe" Deactivation Banner when SOS is Active
+                  if (_activeAlertId != null) ...[
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFECFDF5),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF10B981), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.shield_rounded, color: Colors.white, size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'SOS Active • Tracking On',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF065F46),
+                                  ),
+                                ),
+                                Text(
+                                  'Safe now? Tap to resolve alert',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF047857),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () => _handleDeactivateSos(showConfirmation: true),
+                            icon: const Icon(Icons.check_circle_rounded, size: 16),
+                            label: const Text(
+                              'I Am Safe',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF059669),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
 
                   // Main Peach Card: "No Contacts Added" (Matches Image 4)
                   Expanded(

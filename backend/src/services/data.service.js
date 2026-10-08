@@ -511,14 +511,43 @@ export const DataService = {
 
       return (data || []).map((alert) => {
         const d = new Date(alert.created_at);
-        const hours = d.getHours();
-        const minutes = d.getMinutes().toString().padStart(2, '0');
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        const formattedHour = hours % 12 || 12;
-        const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        const istTime = d.toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Kolkata',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+        const istDate = d.toLocaleDateString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+        const displayTime = `${istDate}, ${istTime}`;
 
         const key = alert.id.toString();
         const liveSession = liveTrackSessions.get(key);
+
+        const currentStatus = liveSession?.status || alert.status || 'ACTIVE';
+        const assignedAgent = liveSession?.assignedAgent || alert.assigned_agent || null;
+
+        const formatIsoTime = (iso) => {
+          if (!iso) return null;
+          try {
+            const dt = new Date(iso);
+            return dt.toLocaleTimeString('en-US', {
+              timeZone: 'Asia/Kolkata',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            });
+          } catch (_) {
+            return null;
+          }
+        };
+
+        const assignedTime = liveSession?.assignedTime || (assignedAgent ? alert.created_at : null);
+        const resolvedTime = liveSession?.resolvedTime || (currentStatus === 'RESOLVED' ? (alert.updated_at || alert.created_at) : null);
 
         return {
           id: alert.id,
@@ -528,9 +557,13 @@ export const DataService = {
           location: alert.location_address || `GPS: ${alert.latitude}, ${alert.longitude}`,
           latitude: liveSession?.latitude ?? alert.latitude,
           longitude: liveSession?.longitude ?? alert.longitude,
-          status: liveSession?.status || alert.status || 'ACTIVE',
-          assignedAgent: liveSession?.assignedAgent || alert.assigned_agent || null,
-          responderStatus: liveSession?.responderStatus || alert.responder_status || (liveSession?.assignedAgent ? 'EN_ROUTE' : null),
+          status: currentStatus,
+          assignedAgent: assignedAgent,
+          assignedTime: assignedTime,
+          displayAssignedTime: formatIsoTime(assignedTime),
+          resolvedTime: resolvedTime,
+          displayResolvedTime: formatIsoTime(resolvedTime),
+          responderStatus: liveSession?.responderStatus || alert.responder_status || (assignedAgent ? 'EN_ROUTE' : null),
           evidenceUrl: alert.evidence_url || alert.audio_url || null,
         };
       });
@@ -711,7 +744,11 @@ export const DataService = {
 
     if (session) {
       session.status = 'RESOLVED';
+      session.resolvedTime = nowIso;
       session.lastUpdated = nowIso;
+    } else {
+      session = { id: key, status: 'RESOLVED', resolvedTime: nowIso, lastUpdated: nowIso };
+      liveTrackSessions.set(key, session);
     }
 
     try {
@@ -723,7 +760,7 @@ export const DataService = {
       console.error('Supabase resolve alert error:', e);
     }
 
-    return session || { id: key, status: 'RESOLVED', lastUpdated: nowIso };
+    return session;
   },
 
   // --- DASHBOARD: GET ALL INCIDENTS WITH USER & GUARDIAN DETAILS ---
@@ -849,19 +886,22 @@ export const DataService = {
 
     const displayName = agentPhone ? `${agentName} (${agentPhone})` : agentName;
 
+    const nowIso = new Date().toISOString();
     if (!session) {
       session = {
         id: key,
         assignedAgent: displayName,
+        assignedTime: nowIso,
         status: 'DISPATCHED',
         responderStatus: 'ASSIGNED',
-        lastUpdated: new Date().toISOString()
+        lastUpdated: nowIso
       };
     } else {
       session.assignedAgent = displayName;
+      session.assignedTime = session.assignedTime || nowIso;
       session.status = 'DISPATCHED';
       session.responderStatus = 'ASSIGNED';
-      session.lastUpdated = new Date().toISOString();
+      session.lastUpdated = nowIso;
     }
     liveTrackSessions.set(key, session);
 

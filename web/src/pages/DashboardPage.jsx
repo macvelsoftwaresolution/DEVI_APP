@@ -440,6 +440,15 @@ export default function DashboardPage() {
               }
               fetchIncidents(true);
               fetchResponders();
+            } else if (msg.type === 'incident:evidence' && msg.alertId) {
+              setIncidents((prev) =>
+                prev.map((inc) =>
+                  String(inc.id) === String(msg.alertId)
+                    ? { ...inc, evidenceUrl: msg.evidenceUrl }
+                    : inc
+                )
+              );
+              fetchIncidents(false);
             } else if (msg.type === 'incident:assigned') {
               fetchIncidents(true);
               fetchResponders();
