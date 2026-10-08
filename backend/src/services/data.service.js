@@ -553,7 +553,7 @@ export const DataService = {
           id: alert.id,
           userId: alert.user_id,
           timestamp: alert.created_at,
-          displayTime: `${dateStr}, ${formattedHour}:${minutes} ${ampm}`,
+          displayTime: displayTime,
           location: alert.location_address || `GPS: ${alert.latitude}, ${alert.longitude}`,
           latitude: liveSession?.latitude ?? alert.latitude,
           longitude: liveSession?.longitude ?? alert.longitude,

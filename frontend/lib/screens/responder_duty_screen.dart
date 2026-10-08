@@ -752,6 +752,15 @@ class _ResponderDutyScreenState extends State<ResponderDutyScreen> with WidgetsB
               accuracy: _accuracy,
               victimLatitude: _activeAlert?['latitude'] != null ? double.tryParse(_activeAlert!['latitude'].toString()) : null,
               victimLongitude: _activeAlert?['longitude'] != null ? double.tryParse(_activeAlert!['longitude'].toString()) : null,
+              victimBreadcrumbs: (_activeAlert?['breadcrumbs'] as List?)
+                  ?.map((b) {
+                    final lat = double.tryParse(b['latitude']?.toString() ?? '');
+                    final lng = double.tryParse(b['longitude']?.toString() ?? '');
+                    if (lat != null && lng != null) return LatLng(lat, lng);
+                    return null;
+                  })
+                  .whereType<LatLng>()
+                  .toList(),
               routePoints: (_roadRoutePoints != null && _roadRoutePoints!.isNotEmpty)
                   ? _roadRoutePoints
                   : ((_activeAlert?['latitude'] != null && _latitude != null) 
