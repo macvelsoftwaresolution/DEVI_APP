@@ -1,11 +1,16 @@
 package com.devi.devi
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -14,7 +19,10 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.devi.app/sms"
     private val RECORDER_CHANNEL = "com.devi.app/recorder"
+    private val NOTIFICATION_CHANNEL = "com.devi.app/notifications"
     private val SMS_PERMISSION_CODE = 101
+    private val DISGUISE_NOTIFICATION_ID = 991
+    private val DISGUISE_CHANNEL_ID = "devi_disguise_offers"
     private var pendingPermissionResult: MethodChannel.Result? = null
 
     private var mediaRecorder: android.media.MediaRecorder? = null
@@ -76,12 +84,16 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "requestAllSafetyPermissions" -> {
-                    val required = arrayOf(
+                    val permissionsList = mutableListOf(
                         Manifest.permission.CALL_PHONE,
                         Manifest.permission.CAMERA,
                         Manifest.permission.RECORD_AUDIO,
                         Manifest.permission.ACCESS_FINE_LOCATION
                     )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permissionsList.add(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    val required = permissionsList.toTypedArray()
                     val allGranted = required.all {
                         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
                     }
@@ -129,6 +141,21 @@ class MainActivity : FlutterActivity() {
                     } catch (e: Exception) {
                         result.error("CALL_ERROR", e.localizedMessage ?: "Failed to make call", null)
                     }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        // Disguise Heads-Up Notification Channel (Flipkart Stealth Mode)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "showFlipkartNotification" -> {
+                    showFlipkartDisguiseNotification()
+                    result.success(true)
+                }
+                "cancelNotification" -> {
+                    cancelDisguiseNotification()
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }
@@ -199,5 +226,64 @@ class MainActivity : FlutterActivity() {
             mediaRecorder = null
         }
         return path
+    }
+
+    private fun showFlipkartDisguiseNotification() {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    DISGUISE_CHANNEL_ID,
+                    "Promotions & Special Deals",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Special shopping discounts and order updates"
+                    enableVibration(true)
+                    setShowBadge(true)
+                    lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, MainActivity::class.java)
+            launchIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                launchIntent,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+            )
+
+            val builder = NotificationCompat.Builder(this, DISGUISE_CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle("Flipkart")
+                .setContentText("⚡ Big Billion Days Deal! Flat 60% OFF on items in your wishlist.")
+                .setStyle(
+                    NotificationCompat.BigTextStyle()
+                        .bigText("⚡ Big Billion Days Deal! Flat 60% OFF on items saved in your wishlist. Order before stocks run out!")
+                )
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_PROMO)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .setAutoCancel(false)
+
+            notificationManager.notify(DISGUISE_NOTIFICATION_ID, builder.build())
+            android.util.Log.d("DEVI_DISGUISE", "Flipkart disguise notification posted successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("DEVI_DISGUISE", "Failed to show Flipkart notification", e)
+        }
+    }
+
+    private fun cancelDisguiseNotification() {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(DISGUISE_NOTIFICATION_ID)
+            android.util.Log.d("DEVI_DISGUISE", "Flipkart disguise notification cancelled")
+        } catch (e: Exception) {
+            android.util.Log.e("DEVI_DISGUISE", "Failed to cancel disguise notification", e)
+        }
     }
 }

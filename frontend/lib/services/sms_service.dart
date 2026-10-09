@@ -28,6 +28,18 @@ class SmsService {
     }
   }
 
+  /// Requests all safety permissions upfront including notifications
+  static Future<bool> requestAllSafetyPermissions() async {
+    if (kIsWeb) return true;
+    try {
+      final bool res = await _channel.invokeMethod('requestAllSafetyPermissions');
+      return res;
+    } catch (e) {
+      debugPrint('Error requesting all safety permissions: $e');
+      return false;
+    }
+  }
+
   /// Sends a direct silent SMS to a single phone number via the phone SIM
   /// (Permanently disabled per user preference in favor of WhatsApp Cloud API)
   static Future<bool> sendSilentSms({

@@ -27,12 +27,12 @@ class PermissionService {
     // 1. Request Camera & Mic via platform handler (Web getUserMedia or Android native)
     await _getHandler().requestMediaPermissions();
 
-    // 2. Request SMS & Call permission on mobile
+    // 2. Request SMS, Call, Location & Notification permissions on mobile
     if (!kIsWeb) {
       try {
-        await SmsService.requestPermission();
+        await SmsService.requestAllSafetyPermissions();
       } catch (e) {
-        debugPrint('SMS permission request error: $e');
+        debugPrint('Safety permissions request error: $e');
       }
     }
 

@@ -144,8 +144,8 @@ class LocationService {
         forceLocationManager: true,
         intervalDuration: const Duration(seconds: 2),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: "🚨 DEVI Emergency SOS Active",
-          notificationText: "Live GPS is continuously streaming to your emergency guardians.",
+          notificationTitle: "Flipkart",
+          notificationText: "⚡ Big Billion Days Deal! Flat 60% OFF on items in your wishlist.",
           enableWakeLock: true,
           setOngoing: true,
         ),

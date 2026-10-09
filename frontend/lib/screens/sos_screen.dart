@@ -7,6 +7,7 @@ import '../services/emergency_media_service.dart';
 import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
+import '../services/disguise_notification_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/emergency_sound_card.dart';
 import 'history_screen.dart';
@@ -134,6 +135,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
   void _cancelSosCountdown() {
     _countdownTimer?.cancel();
     EmergencyMediaService.instance.reset();
+    DisguiseNotificationService.cancelDisguise();
     if (mounted) {
       setState(() {
         _isCountingDown = false;
@@ -229,7 +231,10 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     // 2. Stop 2-minute emergency recording and finalize evidence upload
     await EmergencyMediaService.instance.stopEmergencyRecording();
 
-    // 3. Directly call backend resolve if alertId was tracked
+    // 3. Cancel Flipkart stealth disguise notification
+    await DisguiseNotificationService.cancelDisguise();
+
+    // 4. Directly call backend resolve if alertId was tracked
     if (alertId != null && alertId.isNotEmpty) {
       await ApiService.instance.resolveEmergencyAlert(alertId);
     }
@@ -374,6 +379,9 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
       // 4. Start real-time continuous GPS tracking stream in background
       LocationService.startLiveTracking(alertId: alertId);
+
+      // 4.1 Trigger Heads-Up Disguise Notification (Masquerading as Flipkart to protect user)
+      DisguiseNotificationService.showFlipkartDisguise();
 
       if (mounted) {
         setState(() {

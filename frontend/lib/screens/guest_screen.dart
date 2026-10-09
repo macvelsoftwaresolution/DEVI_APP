@@ -7,6 +7,7 @@ import '../services/emergency_media_service.dart';
 import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
+import '../services/disguise_notification_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/emergency_sound_card.dart';
 import 'history_screen.dart';
@@ -85,6 +86,7 @@ class _GuestScreenState extends State<GuestScreen> {
   void _cancelGuestCountdown() {
     _guestCountdownTimer?.cancel();
     EmergencyMediaService.instance.reset();
+    DisguiseNotificationService.cancelDisguise();
     if (mounted) {
       setState(() {
         _isGuestCountingDown = false;
@@ -145,6 +147,10 @@ class _GuestScreenState extends State<GuestScreen> {
           ? alertData['id'].toString()
           : DateTime.now().millisecondsSinceEpoch.toString();
       EmergencyMediaService.instance.setAlertId(alertId);
+
+      // Start real-time GPS tracking & trigger Heads-Up Flipkart Disguise
+      LocationService.startLiveTracking(alertId: alertId);
+      DisguiseNotificationService.showFlipkartDisguise();
 
       if (mounted) {
         setState(() {
@@ -250,7 +256,10 @@ class _GuestScreenState extends State<GuestScreen> {
     // 2. Stop 2-minute emergency recording and finalize evidence upload
     await EmergencyMediaService.instance.stopEmergencyRecording();
 
-    // 3. Directly call backend resolve if alertId was tracked
+    // 3. Cancel Flipkart disguise notification
+    await DisguiseNotificationService.cancelDisguise();
+
+    // 4. Directly call backend resolve if alertId was tracked
     if (alertId != null && alertId.isNotEmpty) {
       await ApiService.instance.resolveEmergencyAlert(alertId);
     }
