@@ -28,6 +28,7 @@ export default function TrackPage() {
   const victimMarkerRef = useRef(null);
   const guardianMarkerRef = useRef(null);
   const trailRef = useRef(null);
+  const accuracyCircleRef = useRef(null);
   const routeLayersRef = useRef([]);
   const wsRef = useRef(null);
   const hasFitBoundsRef = useRef(false);
@@ -67,6 +68,17 @@ export default function TrackPage() {
     const vMarker = L.marker([victimLocation.lat, victimLocation.lng], { icon: victimIcon }).addTo(map);
     victimMarkerRef.current = vMarker;
 
+    // GPS Accuracy Radius Circle
+    const accuracyCircle = L.circle([victimLocation.lat, victimLocation.lng], {
+      radius: session?.accuracy ? Math.max(6, Math.min(45, parseFloat(session.accuracy))) : 12,
+      color: '#EF4444',
+      weight: 1.5,
+      opacity: 0.55,
+      fillColor: '#EF4444',
+      fillOpacity: 0.12,
+    }).addTo(map);
+    accuracyCircleRef.current = accuracyCircle;
+
     // Trail
     const trail = L.polyline([[victimLocation.lat, victimLocation.lng]], {
       color: '#EF4444',
@@ -81,6 +93,7 @@ export default function TrackPage() {
     return () => {
       map.remove();
       mapInstanceRef.current = null;
+      accuracyCircleRef.current = null;
     };
   }, []);
 
@@ -267,8 +280,37 @@ export default function TrackPage() {
         }, true));
       }
       if (mapInstanceRef.current) mapInstanceRef.current.panTo([lat, lng]);
+      if (accuracyCircleRef.current) {
+        accuracyCircleRef.current.setLatLng([lat, lng]);
+        if (data.accuracy != null && !isNaN(data.accuracy)) {
+          accuracyCircleRef.current.setRadius(Math.max(6, Math.min(45, parseFloat(data.accuracy))));
+        }
+      }
       if (data.breadcrumbs && data.breadcrumbs.length > 0 && trailRef.current) {
-        trailRef.current.setLatLngs(data.breadcrumbs.map((b) => [b.latitude, b.longitude]));
+        const clean = [];
+        data.breadcrumbs.forEach((b) => {
+          const bLat = parseFloat(b.latitude);
+          const bLng = parseFloat(b.longitude);
+          if (isNaN(bLat) || isNaN(bLng)) return;
+          const last = clean[clean.length - 1];
+          if (!last) {
+            clean.push([bLat, bLng]);
+          } else {
+            const dLat = ((bLat - last[0]) * Math.PI) / 180;
+            const dLng = ((bLng - last[1]) * Math.PI) / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos((last[0] * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+            const distMeters = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            if (distMeters >= 3.5 && distMeters <= 600) {
+              clean.push([bLat, bLng]);
+            }
+          }
+        });
+        if (clean.length > 0) {
+          clean.push([lat, lng]);
+          trailRef.current.setLatLngs(clean);
+        }
       }
       reverseGeocode(lat, lng);
       setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -428,7 +470,12 @@ export default function TrackPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
           <div style={{ flex: 1, paddingRight: '10px' }}>
             <div style={{ fontSize: '15px', fontWeight: '800', color: '#FFF', lineHeight: '1.2' }}>{areaTitle}</div>
-            <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>{areaSub}</div>
+            <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>{areaSub}</span>
+              <span style={{ fontSize: '10px', color: '#34D399', background: 'rgba(16, 185, 129, 0.15)', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                GPS: ±${Math.round(session?.accuracy || 8)}m
+              </span>
+            </div>
           </div>
           <div style={{ textAlign: 'right', minWidth: '120px' }}>
             <div style={{ fontSize: '10px', color: '#38BDF8', fontFamily: 'JetBrains Mono, monospace' }}>

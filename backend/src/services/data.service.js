@@ -553,7 +553,7 @@ export const DataService = {
           id: alert.id,
           userId: alert.user_id,
           timestamp: alert.created_at,
-          displayTime: `${dateStr}, ${formattedHour}:${minutes} ${ampm}`,
+          displayTime: displayTime,
           location: alert.location_address || `GPS: ${alert.latitude}, ${alert.longitude}`,
           latitude: liveSession?.latitude ?? alert.latitude,
           longitude: liveSession?.longitude ?? alert.longitude,
@@ -574,11 +574,12 @@ export const DataService = {
   },
 
   // --- LIVE LOCATION TRACKING ---
-  async updateLiveLocation({ alertId, latitude, longitude, address, status = 'ACTIVE' }) {
+  async updateLiveLocation({ alertId, latitude, longitude, accuracy, address, status = 'ACTIVE' }) {
     if (!alertId) return null;
     const key = alertId.toString();
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
+    const acc = accuracy != null && !isNaN(parseFloat(accuracy)) ? parseFloat(accuracy) : null;
 
     let session = liveTrackSessions.get(key);
     const nowIso = new Date().toISOString();
@@ -588,6 +589,7 @@ export const DataService = {
         id: key,
         latitude: lat,
         longitude: lng,
+        accuracy: acc,
         status,
         lastUpdated: nowIso,
         breadcrumbs: [],
@@ -596,6 +598,7 @@ export const DataService = {
     } else {
       session.latitude = lat;
       session.longitude = lng;
+      if (acc != null) session.accuracy = acc;
       session.status = status;
       session.lastUpdated = nowIso;
     }
@@ -613,10 +616,14 @@ export const DataService = {
           Math.cos((lastPt.latitude * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) *
           Math.sin(dLng / 2) * Math.sin(dLng / 2);
         const distMeters = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        // Ignore minor stationary GPS drift < 8 meters to keep trail accurate without false zig-zags
-        if (distMeters < 8) {
+        
+        // Smart jitter filter:
+        // When GPS precision is high (< 10m), record movements >= 3.5m; otherwise >= 7m to avoid false indoor zig-zags
+        const minMoveDist = (acc && acc < 10) ? 3.5 : 7.0;
+        if (distMeters < minMoveDist) {
           shouldAppend = false;
           lastPt.timestamp = nowIso;
+          if (acc != null) lastPt.accuracy = acc;
         }
       }
 
@@ -624,6 +631,7 @@ export const DataService = {
         session.breadcrumbs.push({
           latitude: lat,
           longitude: lng,
+          accuracy: acc,
           timestamp: nowIso,
         });
         // Keep up to 1000 breadcrumb points (~33+ mins of live trail) while preserving origin point #0
@@ -836,11 +844,18 @@ export const DataService = {
           timeAgo = `${elapsedSec}s ago`;
         }
 
-        const hours = createdDate.getHours();
-        const minutes = createdDate.getMinutes().toString().padStart(2, '0');
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        const formattedHour = hours % 12 || 12;
-        const displayTime = `${createdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}, ${formattedHour}:${minutes} ${ampm}`;
+        const istTime = createdDate.toLocaleTimeString('en-US', {
+          timeZone: 'Asia/Kolkata',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+        const istDate = createdDate.toLocaleDateString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit',
+          month: 'short',
+        });
+        const displayTime = `${istDate}, ${istTime}`;
 
         return {
           id: alert.id.toString(),
@@ -850,6 +865,7 @@ export const DataService = {
           timeAgo,
           latitude: liveSession?.latitude ?? alert.latitude ?? 13.0827,
           longitude: liveSession?.longitude ?? alert.longitude ?? 80.2707,
+          accuracy: liveSession?.accuracy ?? alert.accuracy ?? null,
           location: alert.location_address || `GPS (${alert.latitude}, ${alert.longitude})`,
           status: liveSession?.status || alert.status || 'DISPATCHED',
           evidenceUrl: alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null,
@@ -1414,7 +1430,12 @@ export const DataService = {
     if (!alertId || !noteText) return null;
     const key = alertId.toString();
     let session = liveTrackSessions.get(key);
-    const timeFormatted = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const timeFormatted = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
     const formattedNote = `[${timeFormatted}] ${noteText}`;
 
     if (session) {

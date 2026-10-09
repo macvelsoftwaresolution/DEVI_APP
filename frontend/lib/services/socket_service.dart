@@ -158,6 +158,7 @@ class SocketService {
     required String alertId,
     required double latitude,
     required double longitude,
+    double? accuracy,
     double? speed,
     double? heading,
     String status = 'ACTIVE',
@@ -171,6 +172,10 @@ class SocketService {
       'status': status,
       'seq': seq,
     };
+    if (accuracy != null) {
+      plainPacket['acc'] = accuracy;
+      plainPacket['accuracy'] = accuracy;
+    }
     if (speed != null) plainPacket['spd'] = speed;
     if (heading != null) plainPacket['hd'] = heading;
 
@@ -185,7 +190,7 @@ class SocketService {
       try {
         final encoded = jsonEncode(packet);
         _channel!.sink.add(encoded);
-        debugPrint('🔒 [AES-256 WS LOCATION PUSHED] Seq #$seq Lat: $latitude, Lng: $longitude');
+        debugPrint('🔒 [AES-256 WS LOCATION PUSHED] Seq #$seq Lat: $latitude, Lng: $longitude, Acc: $accuracy');
         return;
       } catch (e) {
         debugPrint('⚠️ [WS SEND FAILED] Falling back to offline buffer & HTTP: $e');
@@ -203,6 +208,7 @@ class SocketService {
       alertId: alertId,
       latitude: latitude,
       longitude: longitude,
+      accuracy: accuracy,
       status: status,
     );
   }

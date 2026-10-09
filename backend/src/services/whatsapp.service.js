@@ -66,7 +66,12 @@ export const WhatsAppService = {
     messageText += `🛡️ *Immediate Action:* Please call them immediately or dial Police *112* / Women Helpline *1091*.`;
 
     const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
-    const alertTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const alertTime = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
 
     // Send via Meta Approved Utility Template: devi_safety
     try {
@@ -212,6 +217,7 @@ export const WhatsAppService = {
 
       // 1. First Dispatch: devi_agent_welcome (Duty Link & Station Details)
       let welcomeSuccess = false;
+      let welcomeData = null;
       try {
         const welcomePayload = {
           messaging_product: 'whatsapp',
@@ -243,18 +249,77 @@ export const WhatsAppService = {
           },
           body: JSON.stringify(welcomePayload),
         });
-        const welcomeData = await welcomeRes.json();
+        welcomeData = await welcomeRes.json();
         if (welcomeRes.ok) {
           welcomeSuccess = true;
           console.log(`✅ [APPROVED WELCOME TEMPLATE DISPATCHED] ID: ${welcomeData.messages?.[0]?.id} to +${clean}`);
         } else {
           console.warn(`ℹ️ [WELCOME TEMPLATE PENDING/NOTE]:`, welcomeData?.error?.message || welcomeData);
         }
-        return { success: welcomeSuccess, messageText, welcomeData };
       } catch (wErr) {
         console.warn(`⚠️ [WELCOME TEMPLATE ERROR]:`, wErr.message);
-        return { success: false, error: wErr.message, messageText };
       }
+
+      // 2. Second Dispatch: devi_agent_pin (Official Meta Authentication Template with Copy-Code Button for the 4-Digit Security PIN)
+      let pinSuccess = false;
+      let pinData = null;
+      if (pin) {
+        try {
+          const pinPayload = {
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: clean,
+            type: 'template',
+            template: {
+              name: 'devi_agent_pin',
+              language: { code: 'en_US' },
+              components: [
+                {
+                  type: 'body',
+                  parameters: [
+                    { type: 'text', text: String(pin) },
+                  ],
+                },
+                {
+                  type: 'button',
+                  sub_type: 'url',
+                  index: '0',
+                  parameters: [
+                    { type: 'text', text: String(pin) },
+                  ],
+                },
+              ],
+            },
+          };
+
+          const pinRes = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(pinPayload),
+          });
+          pinData = await pinRes.json();
+          if (pinRes.ok) {
+            pinSuccess = true;
+            console.log(`✅ [ACTIVE AUTHENTICATION PIN DISPATCHED: devi_agent_pin] ID: ${pinData.messages?.[0]?.id} to +${clean}`);
+          } else {
+            console.warn(`ℹ️ [PIN TEMPLATE DISPATCH NOTE]:`, pinData?.error?.message || pinData);
+          }
+        } catch (pErr) {
+          console.warn(`⚠️ [PIN TEMPLATE DISPATCH ERROR]:`, pErr.message);
+        }
+      }
+
+      return {
+        success: welcomeSuccess || pinSuccess,
+        welcomeSuccess,
+        pinSuccess,
+        messageText,
+        welcomeData,
+        pinData,
+      };
     } catch (e) {
       console.warn('⚠️ [WHATSAPP CREDENTIALS DISPATCH ERROR]:', e.message);
       return { success: false, error: e.message, messageText };
@@ -370,7 +435,12 @@ export const WhatsAppService = {
     if (clean.length === 10) clean = '91' + clean;
 
     const { location, latitude, longitude } = locationData || {};
-    const alertTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const alertTime = new Date().toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
 
     let googleMapsUrl = '';
     if (latitude && longitude) {
