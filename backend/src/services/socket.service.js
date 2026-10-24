@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { DataService } from './data.service.js';
 import { Encryption } from '../utils/encryption.js';
+import { decodeAdminToken } from '../middlewares/auth.middleware.js';
 
 class SocketService {
   constructor() {
@@ -99,7 +100,7 @@ class SocketService {
   }
 
   /**
-   * Joins a client to a room (e.g., 'alert:123', 'dashboard', 'agent:AGENT_1')
+   * Joins a client to a room (e.g., 'alert:123', 'dashboard')
    */
   joinRoom(ws, room) {
     if (!room) return;
@@ -184,6 +185,11 @@ class SocketService {
 
     switch (type) {
       case 'join': {
+        // The dashboard room carries every incident, so only signed-in admins may join it
+        if (msg.room === 'dashboard' && !decodeAdminToken(msg.token)) {
+          this.sendToClient(ws, { type: 'error', code: 'ADMIN_AUTH_REQUIRED', room: msg.room });
+          break;
+        }
         this.joinRoom(ws, msg.room);
         this.sendToClient(ws, { type: 'joined', room: msg.room });
         break;
@@ -237,33 +243,6 @@ class SocketService {
         break;
       }
 
-      // Live location update from Field Agent / Responder on duty
-      case 'agent_loc': {
-        const { agentId, lat, lng, heading, speed } = msg;
-        if (!agentId || lat == null || lng == null) return;
-
-        await DataService.updateAgentLiveLocation(agentId, {
-          latitude: lat,
-          longitude: lng,
-          heading,
-          speed,
-        });
-
-        const agentPayload = {
-          type: 'agent_loc',
-          agentId: String(agentId),
-          latitude: Number(lat),
-          longitude: Number(lng),
-          heading,
-          speed,
-          timestamp: new Date().toISOString(),
-        };
-
-        // Broadcast to dashboard
-        this.broadcastToRoom('dashboard', agentPayload);
-        break;
-      }
-
       case 'ping': {
         this.sendToClient(ws, { type: 'pong' });
         break;
@@ -291,7 +270,7 @@ class SocketService {
   }
 
   /**
-   * Broadcasts new emergency SOS event to operator dashboard and active responder rooms
+   * Broadcasts new emergency SOS event to operator dashboard
    */
   broadcastNewSosAlert(alertData) {
     const payload = {
@@ -299,8 +278,8 @@ class SocketService {
       data: alertData,
       timestamp: new Date().toISOString(),
     };
+    // Dashboard only: victim details must not reach other connected clients
     this.broadcastToRoom('dashboard', payload);
-    this.broadcastAll(payload);
   }
 
   /**
@@ -314,19 +293,6 @@ class SocketService {
       timestamp: new Date().toISOString(),
     };
     this.broadcastToRoom(`alert:${alertId}`, payload);
-    this.broadcastToRoom('dashboard', payload);
-  }
-
-  /**
-   * Broadcasts agent location update
-   */
-  broadcastAgentLocation(agentId, data) {
-    const payload = {
-      type: 'agent_loc',
-      agentId: String(agentId),
-      ...data,
-      timestamp: new Date().toISOString(),
-    };
     this.broadcastToRoom('dashboard', payload);
   }
 }

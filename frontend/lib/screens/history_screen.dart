@@ -163,14 +163,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
                               // Status determination:
                               // 1. RESOLVED
-                              // 2. HELPER ON THE WAY (Assigned / En Route)
-                              // 3. DISPATCHED (Triggered)
+                              // 2. ACTIVE (Triggered, admin monitoring)
                               final rawStatus = (item['status'] ?? 'ACTIVE').toString().toUpperCase();
-                              final responderStatus = (item['responderStatus'] ?? '').toString().toUpperCase();
                               final isResolved = rawStatus == 'RESOLVED';
-                              final hasHelper = item['assignedAgent'] != null &&
-                                  item['assignedAgent'].toString().trim().isNotEmpty;
-                              final isHelperAssigned = !isResolved && (hasHelper || rawStatus == 'ASSIGNED' || rawStatus == 'EN_ROUTE' || responderStatus == 'EN_ROUTE');
 
                               // Badge configuration
                               final Color badgeBg;
@@ -185,17 +180,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 badgeText = const Color(0xFF15803D);
                                 badgeLabel = 'RESOLVED';
                                 statusIcon = Icons.check_circle_rounded;
-                              } else if (isHelperAssigned) {
-                                badgeBg = const Color(0xFFFEF3C7);
-                                badgeBorder = const Color(0xFFFCD34D);
-                                badgeText = const Color(0xFFB45309);
-                                badgeLabel = 'HELPER ON THE WAY';
-                                statusIcon = Icons.directions_run_rounded;
                               } else {
                                 badgeBg = const Color(0xFFE0F2FE);
                                 badgeBorder = const Color(0xFF7DD3FC);
                                 badgeText = const Color(0xFF0369A1);
-                                badgeLabel = 'DISPATCHED';
+                                badgeLabel = 'ACTIVE';
                                 statusIcon = Icons.crisis_alert_rounded;
                               }
 
@@ -207,7 +196,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   border: Border.all(
                                     color: isResolved
                                         ? const Color(0xFFE2E8F0)
-                                        : (isHelperAssigned ? const Color(0xFFFDE68A) : AppColors.emergencyRed.withValues(alpha: 0.3)),
+                                        : AppColors.emergencyRed.withValues(alpha: 0.3),
                                     width: 1.2,
                                   ),
                                   boxShadow: [
@@ -257,11 +246,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                                   Text(
                                                     isResolved
                                                         ? 'Incident Closed'
-                                                        : (isHelperAssigned ? 'Assistance en route' : 'Emergency dispatched'),
+                                                        : 'Alert sent to safety desk',
                                                     style: TextStyle(
                                                       fontSize: 11,
                                                       fontWeight: FontWeight.w500,
-                                                      color: isResolved ? const Color(0xFF16A34A) : (isHelperAssigned ? const Color(0xFFD97706) : const Color(0xFF0284C7)),
+                                                      color: isResolved ? const Color(0xFF16A34A) : const Color(0xFF0284C7),
                                                     ),
                                                   ),
                                                 ],
@@ -316,26 +305,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                                   color: const Color(0xFFEF4444),
                                                   title: 'SOS Triggered',
                                                   time: _formatLocalTimeOnly(item['timestamp'], item['displayTime'] ?? 'Initiated'),
-                                                  subtitle: 'Alert broadcast to safety network',
-                                                ),
-                                                _buildTimelineLine(isDone: isHelperAssigned || isResolved),
-
-                                                // TIMELINE STEP 2: HELPER ASSIGNED
-                                                _buildTimelineStep(
-                                                  isDone: isHelperAssigned || isResolved,
-                                                  icon: Icons.shield_rounded,
-                                                  color: (isHelperAssigned || isResolved) ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
-                                                  title: 'Helper Assigned',
-                                                  time: item['assignedTime'] != null
-                                                      ? _formatLocalTimeOnly(item['assignedTime'], item['displayAssignedTime'])
-                                                      : (isHelperAssigned || isResolved ? 'Assigned' : 'Pending'),
-                                                  subtitle: hasHelper
-                                                      ? item['assignedAgent'].toString()
-                                                      : (isResolved ? 'Patrol Agent Dispatched' : 'Assigning nearest responder...'),
+                                                  subtitle: 'Alert sent to safety desk',
                                                 ),
                                                 _buildTimelineLine(isDone: isResolved),
 
-                                                // TIMELINE STEP 3: RESOLVED
+                                                // TIMELINE STEP 2: RESOLVED
                                                 _buildTimelineStep(
                                                   isDone: isResolved,
                                                   icon: Icons.verified_rounded,

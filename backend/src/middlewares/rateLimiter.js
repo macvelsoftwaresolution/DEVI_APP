@@ -34,6 +34,18 @@ export const authLimiter = rateLimit({
 });
 
 /**
+ * Admin login rate limiter: Prevents password guessing on the dashboard
+ * Max 10 attempts per 15 minutes per IP
+ */
+export const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler('Too many admin login attempts. Please wait 15 minutes before trying again.'),
+});
+
+/**
  * SOS Trigger rate limiter: Prevents spamming emergency alerts
  * Max 10 trigger calls per minute per IP
  */

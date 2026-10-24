@@ -76,19 +76,6 @@ class ApiService {
     return headers;
   }
 
-  // --- Check API Server Health ---
-  Future<bool> checkHealth() async {
-    try {
-      final res = await http
-          .get(Uri.parse('$baseUrl/health'))
-          .timeout(const Duration(seconds: 5));
-      return res.statusCode == 200;
-    } catch (e) {
-      debugPrint('API Health Check Error: $e');
-      return false;
-    }
-  }
-
   // --- Auth: Login by Mobile ---
   Future<Map<String, dynamic>> login(String phone) async {
     try {
@@ -120,23 +107,6 @@ class ApiService {
         'success': false,
         'message': 'Unable to reach server. Please ensure backend is running.',
       };
-    }
-  }
-
-  // --- Auth: Verify active JWT token ---
-  Future<bool> verifyToken() async {
-    if (_authToken == null || _authToken!.isEmpty) return false;
-    try {
-      final res = await http
-          .get(
-            Uri.parse('$baseUrl/auth/verify'),
-            headers: _headers,
-          )
-          .timeout(const Duration(seconds: 5));
-      return res.statusCode == 200;
-    } catch (e) {
-      debugPrint('Token verification error: $e');
-      return false;
     }
   }
 

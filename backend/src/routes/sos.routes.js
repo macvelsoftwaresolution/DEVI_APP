@@ -3,8 +3,7 @@ import multer from 'multer';
 import { DataService } from '../services/data.service.js';
 import { uploadMediaToCloudinary } from '../config/cloudinary.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
-import { verifyAdminKey, optionalToken } from '../middlewares/auth.middleware.js';
-import { SmsService } from '../services/sms.service.js';
+import { verifyAdmin, optionalToken } from '../middlewares/auth.middleware.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { socketService } from '../services/socket.service.js';
 import { Encryption } from '../utils/encryption.js';
@@ -118,116 +117,7 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       );
     }
 
-    // STEP 3.5: Auto-Assign Nearest Responder (Rank 1 from Admin Dashboard) & WhatsApp Dispatch
-    let autoAssignedAgent = null;
-
-    try {
-      const allResponders = await DataService.getResponders();
-      if (allResponders && allResponders.length > 0) {
-        const vLat = parseFloat(latitude);
-        const vLng = parseFloat(longitude);
-
-        const calcDistKm = (lat1, lon1, lat2, lon2) => {
-          if (isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) return 999;
-          const R = 6371;
-          const dLat = ((lat2 - lat1) * Math.PI) / 180;
-          const dLon = ((lon2 - lon1) * Math.PI) / 180;
-          const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-          return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        };
-
-        // Strictly consider ONLY responders who are currently ON_DUTY
-        const rankedResponders = allResponders
-          .filter(a => a.is_active !== false && (a.duty_status === 'ON_DUTY' || a.duty_status === 'AVAILABLE') && a.duty_status !== 'OFF_DUTY')
-          .map(agent => {
-            const rLat = parseFloat(agent.latitude);
-            const rLng = parseFloat(agent.longitude);
-            const distKm = (!isNaN(vLat) && !isNaN(vLng) && !isNaN(rLat) && !isNaN(rLng))
-              ? Math.round(calcDistKm(vLat, vLng, rLat, rLng) * 10) / 10
-              : 999;
-            return { ...agent, distKm, isOnDuty: true };
-          })
-          .sort((a, b) => a.distKm - b.distKm);
-
-        // Progressive Proximity Tiers (Check 500m -> 1.0km -> 1.5km -> Active Patrol Sector)
-        const tier500m = rankedResponders.filter(a => a.distKm <= 0.5 && a.phone);
-        const tier1km = rankedResponders.filter(a => a.distKm <= 1.0 && a.phone);
-        const tier15km = rankedResponders.filter(a => a.distKm <= 1.5 && a.phone);
-
-        let targetHelpersToAlert = [];
-        let proximityTierLabel = '';
-
-        if (tier500m.length > 0) {
-          targetHelpersToAlert = tier500m;
-          proximityTierLabel = '500m Immediate Zone';
-        } else if (tier1km.length > 0) {
-          targetHelpersToAlert = tier1km;
-          proximityTierLabel = '1.0 km Sector Zone';
-        } else if (tier15km.length > 0) {
-          targetHelpersToAlert = tier15km;
-          proximityTierLabel = '1.5 km Extended Zone';
-        } else if (rankedResponders.length > 0) {
-          targetHelpersToAlert = rankedResponders.filter(a => a.phone && a.distKm < 10);
-          proximityTierLabel = 'Active Patrol Sector';
-        }
-
-        console.log(`🚨 [PROGRESSIVE PROXIMITY DISPATCH] Found ${targetHelpersToAlert.length} ON-DUTY helper(s) within ${proximityTierLabel || 'N/A'}.`);
-
-        // Designate the 1st Nearest ON-DUTY Person as Primary Assignee
-        if (targetHelpersToAlert.length > 0) {
-          autoAssignedAgent = targetHelpersToAlert[0];
-        } else if (rankedResponders.length > 0) {
-          autoAssignedAgent = rankedResponders[0];
-        }
-
-        if (autoAssignedAgent) {
-          const distStr = autoAssignedAgent.distKm < 900 ? `~${autoAssignedAgent.distKm} km` : 'Standby Sector';
-          console.log(`🤖 [AUTO-ASSIGN NEAREST RESPONDER] Auto-assigning 1st Agent: ${autoAssignedAgent.name} (Phone: ${autoAssignedAgent.phone || 'N/A'}, Dist: ${distStr})`);
-          await DataService.assignAgent(alert.id, autoAssignedAgent.name, autoAssignedAgent.phone);
-        }
-
-        // WhatsApp emergency alerts dispatch to ALL matched helpers in this proximity tier
-        // 1. Dispatch official mission to 1st Primary Helper
-        if (autoAssignedAgent && autoAssignedAgent.phone) {
-          const metersAway = autoAssignedAgent.distKm < 900 ? Math.round(autoAssignedAgent.distKm * 1000) : null;
-          const proxStr = metersAway != null ? (metersAway < 1000 ? `[~${metersAway}m Away] ` : `[~${autoAssignedAgent.distKm} KM Away] `) : '';
-          console.log(`📲 [WHATSAPP DISPATCH] Alerting Primary Helper ${autoAssignedAgent.name} (+91 ${autoAssignedAgent.phone}) ${proxStr}`);
-          WhatsAppService.sendEmergencyAlert(
-            autoAssignedAgent.phone,
-            trackingUrl,
-            victimName,
-            { latitude, longitude, location: `🚨 [PRIMARY MISSION ASSIGNED TO YOU - ${proximityTierLabel}] ${proxStr}${location || 'Live GPS Coordinates'}` }
-          );
-        }
-
-        // 2. Alert EVERY OTHER helper within this zone (500m / 1km / 1.5km) so none is left out!
-        const additionalHelpers = targetHelpersToAlert.filter(a => a.id !== autoAssignedAgent?.id);
-        console.log(`📢 [MULTI-HELPER BROADCAST] Alerting ${additionalHelpers.length} additional helper(s) within ${proximityTierLabel}.`);
-        for (const helper of additionalHelpers) {
-          if (helper.phone) {
-            const metersAway = helper.distKm < 900 ? Math.round(helper.distKm * 1000) : null;
-            const proxStr = metersAway != null ? (metersAway < 1000 ? `[~${metersAway}m Away] ` : `[~${helper.distKm} KM Away] `) : '';
-            console.log(`📲 [WHATSAPP DISPATCH] Alerting Nearby Helper ${helper.name} (+91 ${helper.phone}) ${proxStr}`);
-            WhatsAppService.sendEmergencyAlert(
-              helper.phone,
-              trackingUrl,
-              victimName,
-              { latitude, longitude, location: `⚠️ [NEARBY EMERGENCY ALERT - ${proximityTierLabel}] ${proxStr}${location || 'Live GPS Coordinates'}` }
-            );
-          }
-        }
-      }
-    } catch (autoAssignErr) {
-      console.warn('⚠️ [AUTO-ASSIGN / AGENT DISPATCH ERROR]:', autoAssignErr.message);
-    }
-
-    const assignedAgentDisplayName = autoAssignedAgent
-      ? (autoAssignedAgent.phone ? `${autoAssignedAgent.name} (${autoAssignedAgent.phone})` : autoAssignedAgent.name)
-      : null;
-
-    // Broadcast real-time emergency alert via WebSockets to operator dashboard & responders
+    // Broadcast real-time emergency alert via WebSockets to operator dashboard
     socketService.broadcastNewSosAlert({
       id: alert.id,
       userPhone,
@@ -237,33 +127,16 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       location,
       trackingUrl,
       timestamp: alert.timestamp || new Date().toISOString(),
-      status: autoAssignedAgent ? 'DISPATCHED' : 'ACTIVE',
-      assignedAgent: assignedAgentDisplayName,
-      responderStatus: autoAssignedAgent ? 'ASSIGNED' : null,
+      status: 'ACTIVE',
     });
-
-    if (autoAssignedAgent) {
-      socketService.broadcastToRoom('dashboard', {
-        type: 'incident:assigned',
-        alertId: alert.id,
-        assignedAgent: assignedAgentDisplayName,
-        status: 'DISPATCHED',
-        responderStatus: 'ASSIGNED',
-      });
-      socketService.broadcastToRoom('dashboard', { type: 'agent_update' });
-    }
 
     res.status(201).json({
       success: true,
       duplicate: false,
-      message: autoAssignedAgent
-        ? `Emergency SOS alert recorded and automatically assigned to nearest responder ${autoAssignedAgent.name}`
-        : 'Emergency SOS alert recorded and live tracking initiated',
+      message: 'Emergency SOS alert recorded and live tracking initiated',
       data: {
         ...alert,
-        assignedAgent: assignedAgentDisplayName,
-        status: autoAssignedAgent ? 'DISPATCHED' : 'ACTIVE',
-        responderStatus: autoAssignedAgent ? 'ASSIGNED' : null,
+        status: 'ACTIVE',
         trackingUrl,
       },
     });
@@ -481,7 +354,7 @@ router.get('/history/:phone', optionalToken, async (req, res, next) => {
 });
 
 // GET /api/sos/history - Returns all SOS history (Protected: Operator / Admin only)
-router.get('/history', verifyAdminKey, async (req, res, next) => {
+router.get('/history', verifyAdmin, async (req, res, next) => {
   try {
     const history = await DataService.getSosHistory();
 

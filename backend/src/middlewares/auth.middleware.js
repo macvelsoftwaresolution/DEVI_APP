@@ -1,5 +1,6 @@
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { JWT_SECRET, ADMIN_SECRET_KEY } from '../config/security.js';
+import { JWT_SECRET, ADMIN_SECRET_KEY, ADMIN_TOKEN_EXPIRY } from '../config/security.js';
 
 /**
  * Signs a 30-day JWT for an app user (used by login & first-time sign up)
@@ -63,68 +64,54 @@ export const optionalToken = (req, res, next) => {
 };
 
 /**
- * Middleware: Verify Admin Secret Key for Operator / Emergency Management routes
+ * Constant-time string comparison (prevents timing attacks on secrets)
  */
-export const verifyAdminKey = (req, res, next) => {
-  // Public Duty Portal, Agent Invite acceptance, Agent Location Streaming, & Duty Settings do NOT require admin secret
-  if (
-    req.path.includes('/duty') ||
-    req.path.includes('/location') ||
-    req.path.includes('/accept-assignment') ||
-    req.path.includes('/status') ||
-    req.path.includes('/end-duty') ||
-    req.path.startsWith('/settings/duty')
-  ) {
-    return next();
-  }
-
-  const adminKey = req.headers['x-admin-key'] || req.query.admin_key;
-
-  // In local development, if no key is configured or provided, allow with warning
-  if (process.env.NODE_ENV === 'development' && !adminKey) {
-    return next();
-  }
-
-  if (!adminKey || adminKey !== ADMIN_SECRET_KEY) {
-    return res.status(403).json({
-      success: false,
-      message: 'Unauthorized. Valid Admin credentials required.',
-    });
-  }
-
-  next();
+export const safeEqual = (a, b) => {
+  const bufA = Buffer.from(String(a ?? ''));
+  const bufB = Buffer.from(String(b ?? ''));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
 };
 
 /**
- * Middleware: Verify Field Responder JWT Token for On-Duty & GPS streaming APIs
+ * Signs a short-lived JWT for the admin dashboard
  */
-export const verifyResponderAuth = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  const token = (authHeader && authHeader.startsWith('Bearer '))
-    ? authHeader.split(' ')[1]
-    : (req.headers['x-responder-token'] || req.query.token);
+export const signAdminToken = (username) =>
+  jwt.sign({ role: 'admin', username }, JWT_SECRET, { expiresIn: ADMIN_TOKEN_EXPIRY });
 
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: 'Access denied. Field responder authentication required.',
-    });
-  }
-
+/**
+ * Returns the decoded admin payload if the token is a valid admin JWT, otherwise null
+ */
+export const decodeAdminToken = (token) => {
+  if (!token) return null;
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'responder' && decoded.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Forbidden. Responder role required.',
-      });
-    }
-    req.responder = decoded;
-    next();
-  } catch (err) {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid or expired session token. Please log in again.',
-    });
+    return decoded.role === 'admin' ? decoded : null;
+  } catch {
+    return null;
   }
+};
+
+/**
+ * Middleware: Admin-only routes (dashboard login token, or x-admin-key for server scripts)
+ */
+export const verifyAdmin = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  const admin = decodeAdminToken(token);
+  if (admin) {
+    req.admin = admin;
+    return next();
+  }
+
+  const adminKey = req.headers['x-admin-key'];
+  if (adminKey && safeEqual(adminKey, ADMIN_SECRET_KEY)) {
+    req.admin = { role: 'admin', username: 'api-key' };
+    return next();
+  }
+
+  return res.status(401).json({
+    success: false,
+    message: 'Admin login required. Please sign in again.',
+  });
 };

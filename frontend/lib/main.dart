@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/history_screen.dart';
 import 'screens/login_screen.dart';
-import 'screens/guest_screen.dart';
 import 'screens/profile_screen.dart';
-import 'screens/responder_duty_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/sos_screen.dart';
 import 'screens/splash_screen.dart';
@@ -56,10 +54,7 @@ class DeviApp extends StatelessWidget {
           '/profile': (context) => const ProfileScreen(),
           '/sos': (context) => const SosScreen(),
           '/settings': (context) => const SettingsScreen(),
-          '/guest': (context) => const GuestScreen(),
-          '/no-contacts': (context) => const GuestScreen(),
           '/history': (context) => const HistoryScreen(),
-          '/responder-duty': (context) => const ResponderDutyScreen(),
         },
       ),
     );

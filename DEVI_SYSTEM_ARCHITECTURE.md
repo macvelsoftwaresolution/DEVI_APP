@@ -1,382 +1,364 @@
 # 🛡️ DEVI (Digital Emergency Verification Interface)
-## Complete System Architecture & End-to-End Workflow Documentation
+## System Architecture & End-to-End Workflow
 
 ---
 
 ## 📑 Table of Contents
-1. [Executive Overview](#1-executive-overview)
-2. [High-Level System Architecture](#2-high-level-system-architecture)
-3. [Repository File & Directory Structure](#3-repository-file--directory-structure)
-4. [Frontend Architecture (Flutter)](#4-frontend-architecture-flutter)
-   - Dual User Modes (Registered vs. ⚡ Instant SOS)
-   - SOS Trigger Mechanisms (Hold vs. Tap 5s Countdown)
-   - Background Evidence & Hardware Services
-5. [Backend Architecture (Node.js + Express + Socket.io)](#5-backend-architecture-nodejs--express--socketio)
-   - Core Modules & Security
-   - REST API Endpoints & Webhooks
-   - WebSocket Real-Time Event System
-   - WhatsApp Cloud API / Automated Emergency Dispatch
-6. [Web Control Room Dashboard (React + Vite)](#6-web-control-room-dashboard-react--vite)
-7. [Database & Data Models](#7-database--data-models)
-8. [End-to-End Emergency Sequence Flow](#8-end-to-end-emergency-sequence-flow)
-9. [Safety & Testing Safeguards](#9-safety--testing-safeguards)
-10. [Local Development & Environment Setup](#10-local-development--environment-setup)
+1. [Overview](#1-overview)
+2. [High-Level Architecture](#2-high-level-architecture)
+3. [Repository Structure](#3-repository-structure)
+4. [Mobile App (Flutter)](#4-mobile-app-flutter)
+5. [Backend (Node.js + Express + WebSocket)](#5-backend-nodejs--express--websocket)
+6. [Admin Control Room Dashboard (React + Vite)](#6-admin-control-room-dashboard-react--vite)
+7. [Database (Supabase)](#7-database-supabase)
+8. [End-to-End SOS Flow](#8-end-to-end-sos-flow)
+9. [Security](#9-security)
+10. [Local Development](#10-local-development)
 
 ---
 
-## 1. Executive Overview
+## 1. Overview
 
-**DEVI (Digital Emergency Verification Interface)** is a production-grade, multi-platform Emergency Response and Women's Safety System. It bridges citizens in distress directly with **Family Guardians**, **Police / PCR Responders**, and **Central Control Rooms** within seconds.
+**DEVI** is a women's safety system with two sides:
 
-### Key Pillars:
-- **Instantaneous Activation:** Zero-setup emergency mode ("⚡ Instant SOS") allows immediate trigger without prior registration or login forms.
-- **Fail-Safe Dispatch:** Multi-channel alerting combining WhatsApp messages, live GPS breadcrumb streams, continuous audio recording, and WebSocket broadcast.
-- **False-Alarm Mitigation:** 5-second cancelable countdown timer + 1.5s press-and-hold tactile confirmation.
-- **Real-Time Control Room Operations:** Dedicated Web Command Portal featuring interactive maps, audible priority sirens, and responder dispatch duty logs.
+- **User side (Flutter app):** The user presses SOS. Their live location, details and evidence are sent to the backend.
+- **Admin side (React web dashboard):** The control room sees every SOS on a live map with the victim's details and live movement, and resolves the incident.
+
+> **Phase 1 scope:** User SOS → Admin dashboard (location, details, live tracking).
+> The field agent / responder module (agent portal, duty page, auto-assign, dispatch) has been **removed**.
+
+### Key Features
+- **Instant SOS:** A guest can trigger SOS without registering.
+- **False-alarm protection:** Tap → 5-second cancelable countdown. Hold for ~1.5s → instant alert.
+- **Live tracking:** GPS updates stream to the dashboard and the public track page in real time.
+- **Evidence:** A 2-minute recording is uploaded to Cloudinary and attached to the incident.
+- **WhatsApp alert:** Guardians (or the admin control number for guests) receive a WhatsApp message with the live tracking link.
 
 ---
 
-## 2. High-Level System Architecture
+## 2. High-Level Architecture
 
 ```mermaid
 flowchart TD
-    subgraph ClientLayer ["Client Layer (Citizen)"]
-        MobileApp["📱 Flutter Mobile App<br/>(Android / iOS / Web)"]
-        InstantSOS["⚡ Instant SOS Mode<br/>(Zero-Setup)"]
-        RegUser["👤 Registered User Mode<br/>(With Guardians List)"]
-        MobileApp --> InstantSOS
-        MobileApp --> RegUser
+    subgraph UserSide ["User Side"]
+        App["📱 Flutter App<br/>(Android / iOS / Web)"]
     end
 
-    subgraph BackendLayer ["Backend Layer (Node.js / Express / Socket.io :5005)"]
-        APIGateway["Express API Gateway & Security<br/>(Helmet, Rate-Limiting, CORS)"]
-        SocketServer["Socket.io Server<br/>(Live Room Broadcasting)"]
-        DataService["Data & Storage Service<br/>(Supabase / PostgreSQL / Cloudinary)"]
-        WhatsAppService["Meta WhatsApp Cloud API<br/>(Template & Text Dispatch)"]
-
-        APIGateway <--> DataService
-        APIGateway <--> SocketServer
-        APIGateway --> WhatsAppService
+    subgraph Backend ["Backend (Node.js / Express :5005)"]
+        API["REST API<br/>(Helmet, CORS, Rate Limits, JWT)"]
+        WS["WebSocket Server (/ws)<br/>(ws library, rooms)"]
+        Data["DataService<br/>(Supabase + in-memory live sessions)"]
+        WA["WhatsApp Cloud API Service"]
+        API <--> Data
+        API --> WS
+        API --> WA
+        WS <--> Data
     end
 
-    subgraph AuthorityLayer ["Control Room & Responder Layer"]
-        WebDashboard["💻 React Police Control Room<br/>(Live Map, Active Siren, Alerts List)"]
-        TrackPortal["📍 Public Live Tracking Webpage<br/>(/track/:alertId)"]
-        PCRUnits["🚔 Police Responders / Duty Page<br/>(/duty)"]
-        WebDashboard <--> SocketServer
-        TrackPortal <--> SocketServer
-        PCRUnits <--> SocketServer
+    subgraph AdminSide ["Admin Side"]
+        Dash["💻 Admin Dashboard<br/>(/dashboard)"]
+        Track["📍 Public Track Page<br/>(/track/:alertId)"]
     end
 
-    subgraph ContactLayer ["Emergency Contacts Layer"]
-        Guardians["👨‍👩‍👧 Family Guardians WhatsApp"]
-        DefaultControl["🚨 Emergency Dispatch WhatsApp<br/>(+91 63815 92501)"]
-        WhatsAppService --> Guardians
-        WhatsAppService --> DefaultControl
+    subgraph Contacts ["Contacts"]
+        Guardians["👨‍👩‍👧 Guardians (WhatsApp)"]
+        AdminWA["🚨 Admin Control Number (WhatsApp)<br/>(used when no guardians)"]
     end
 
-    ClientLayer -->|"1. POST /api/sos/trigger"| APIGateway
-    ClientLayer -->|"2. Continuous GPS Stream (3s)"| SocketServer
+    App -->|"POST /api/sos/trigger"| API
+    App -->|"Live GPS (WebSocket 'loc')"| WS
+    App -->|"Evidence upload"| API
+    WS --> Dash
+    WS --> Track
+    Dash -->|"GET incidents / notes / resolve"| API
+    WA --> Guardians
+    WA --> AdminWA
 ```
 
 ---
 
-## 3. Repository File & Directory Structure
+## 3. Repository Structure
 
 ```text
 DEVI_APP/
-├── backend/                     # Node.js Express REST API & WebSockets
+├── backend/                         # Node.js Express REST API + WebSocket
 │   ├── src/
-│   │   ├── config/              # Cloudinary, Supabase & DB configurations
-│   │   │   ├── cloudinary.js
-│   │   │   └── supabase.js
-│   │   ├── middlewares/         # Security, JWT auth, rate limiters, error handlers
-│   │   │   ├── auth.middleware.js
+│   │   ├── config/
+│   │   │   ├── cloudinary.js        # Evidence media storage
+│   │   │   ├── security.js          # Secrets, production checks, CORS allow-list
+│   │   │   └── supabase.js          # Database client
+│   │   ├── middlewares/
+│   │   │   ├── auth.middleware.js   # User JWT, admin key
 │   │   │   ├── error.js
-│   │   │   └── rateLimiter.js
-│   │   ├── routes/              # Express API Routes
-│   │   │   ├── auth.routes.js       # Phone login & OTP verification
-│   │   │   ├── dashboard.routes.js  # Control room stats & active alerts
-│   │   │   ├── health.routes.js     # Health probe
+│   │   │   └── rateLimiter.js       # Global, login, SOS trigger limits
+│   │   ├── routes/
+│   │   │   ├── admin.routes.js      # Admin dashboard login & token verify
+│   │   │   ├── auth.routes.js       # Phone login, token verify
+│   │   │   ├── dashboard.routes.js  # Admin: incidents, notes, resolve
+│   │   │   ├── health.routes.js
 │   │   │   ├── index.js             # Route aggregator
-│   │   │   ├── sos.routes.js        # Core SOS trigger, stream & resolve
-│   │   │   └── user.routes.js       # User profile & guardian management
-│   │   ├── services/            # Business Logic & Integrations
-│   │   │   ├── data.service.js      # In-memory + Supabase DB persistence
-│   │   │   ├── sms.service.js       # SMS fallback service
-│   │   │   ├── socket.service.js    # Socket.io room management & broadcast
-│   │   │   └── whatsapp.service.js  # WhatsApp Cloud API automated dispatch
-│   │   ├── server.js            # Server entrypoint (Port 5005)
-│   │   └── utils/
-│   ├── package.json
-│   └── .env
+│   │   │   ├── sos.routes.js        # SOS trigger, live location, evidence, history
+│   │   │   └── user.routes.js       # Profile, guardians, guest users
+│   │   ├── services/
+│   │   │   ├── data.service.js      # Supabase persistence + live session cache
+│   │   │   ├── socket.service.js    # WebSocket rooms & broadcasts
+│   │   │   └── whatsapp.service.js  # Emergency alert dispatch
+│   │   ├── utils/encryption.js      # AES-256 payload decryption
+│   │   └── server.js                # Entry point (port 5005)
+│   ├── *.nginx.conf                 # Hostinger NGINX configs (API + web)
+│   ├── .env.example
+│   └── package.json
 │
-├── frontend/                    # Flutter Multi-Platform Client (Mobile/Web)
-│   ├── lib/
-│   │   ├── main.dart            # Flutter entrypoint & Theme initialization
-│   │   ├── screens/             # UI Views
-│   │   │   ├── splash_screen.dart        # Session verification & animated splash
-│   │   │   ├── login_screen.dart         # Phone login & '⚡ Instant SOS' entry
-│   │   │   ├── sos_screen.dart           # Core SOS radar screen, timer & triggers
-│   │   │   ├── settings_screen.dart      # Profile, Responsive Guardians & Sign Up
-│   │   │   ├── profile_screen.dart       # Edit user name, phone & details
-│   │   │   ├── history_screen.dart       # Past SOS incident history
-│   │   │   ├── guest_screen.dart         # Lightweight guest view
-│   │   │   └── responder_duty_screen.dart# Police responder mobile duty screen
-│   │   ├── services/            # Hardware & Background Services
-│   │   │   ├── api_service.dart          # HTTP client for Backend APIs
-│   │   │   ├── app_state.dart            # Central ChangeNotifier global state
-│   │   │   ├── emergency_media_service.dart # Background audio & camera capture
-│   │   │   ├── location_service.dart     # High-accuracy GPS & live streaming
-│   │   │   ├── sms_service.dart          # Native phone call (112) & SMS trigger
-│   │   │   ├── socket_service.dart       # Socket.io client for real-time stream
-│   │   │   ├── sound_service.dart        # Tactical sirens & countdown audio
-│   │   │   └── permission_service.dart   # Camera, mic & location permissions
-│   │   ├── theme/               # DEVI design tokens, crimson accents & typography
-│   │   └── widgets/             # Reusable UI widgets (DEVI Button, radar circles)
-│   └── pubspec.yaml
+├── frontend/                        # Flutter user app
+│   └── lib/
+│       ├── main.dart
+│       ├── screens/
+│       │   ├── splash_screen.dart   # Auto-login check
+│       │   ├── login_screen.dart    # Phone login, Sign Up, Instant SOS
+│       │   ├── profile_screen.dart  # Sign up / edit profile & guardians
+│       │   ├── sos_screen.dart      # SOS button, countdown, Demo Mode note
+│       │   ├── history_screen.dart  # Past SOS alerts
+│       │   └── settings_screen.dart # Profile, guardians, logout
+│       ├── services/
+│       │   ├── api_service.dart     # HTTP client (+ silent token refresh)
+│       │   ├── app_state.dart       # Global state, session (token in secure storage)
+│       │   ├── location_service.dart# GPS fix + live tracking stream
+│       │   ├── socket_service.dart  # WebSocket client
+│       │   ├── emergency_media_service.dart # 2-min evidence recording
+│       │   ├── encryption_service.dart
+│       │   ├── disguise_notification_service.dart
+│       │   ├── sms_service.dart     # Guardian phone call
+│       │   ├── sound_service.dart   # Siren
+│       │   ├── permission_service.dart
+│       │   └── *_mobile / *_web / *_stub.dart  # Platform implementations
+│       ├── theme/                   # Colors & theme
+│       ├── utils/map_utils.dart     # Google Maps link for SOS
+│       └── widgets/                 # Buttons, logo, inputs, siren card, guardian dialog
 │
-└── web/                         # React Control Room Web Dashboard (Vite)
-    ├── src/
-    │   ├── pages/
-    │   │   ├── DashboardPage.jsx# Central Police Monitoring Console
-    │   │   ├── TrackPage.jsx    # Real-time incident live tracking map
-    │   │   └── DutyPage.jsx     # Responder officer roster & dispatch
-    │   ├── App.jsx              # React Router setup
-    │   ├── index.css            # Control room styling & pulsing animations
-    │   └── main.jsx
-    ├── package.json
-    └── vite.config.js
+└── web/                             # React admin dashboard (Vite)
+    └── src/
+        ├── pages/
+        │   ├── LoginPage.jsx        # Admin sign in
+        │   ├── DashboardPage.jsx    # Admin control room (login required)
+        │   └── TrackPage.jsx        # Public live tracking page
+        ├── config/api.js            # API & WebSocket URLs
+        ├── utils/mapMarkers.js      # Victim & guardian map markers
+        ├── App.jsx                  # Routes: /login, /, /dashboard, /track/:alertId
+        └── index.css
 ```
 
 ---
 
-## 4. Frontend Architecture (Flutter)
+## 4. Mobile App (Flutter)
 
-### 4.1 Dual User Modes
+### 4.1 User Modes
 
-| Feature | 👤 Registered User Mode | ⚡ Instant SOS (Guest Mode) |
+| | 👤 Registered User | ⚡ Instant SOS (Guest) |
 |---|---|---|
-| **Entry Point** | Phone OTP Authentication | Single-tap direct bypass button |
-| **Setup Required** | Name, Phone, Guardians list | **Zero Setup** (100% instant) |
-| **Guardian Alerts** | WhatsApp to personal saved contacts | WhatsApp to central emergency line (+91 63815 92501) |
-| **Settings Screen** | Full guardian management & profile | Distraction-free (Guardians card hidden, "Sign Up" button) |
-| **Target Use Case** | Everyday commuters, students, workers | Immediate danger, stranger in distress, zero time to register |
+| **Entry** | Phone number login (no OTP) | One tap from login screen |
+| **Setup** | Name, phone, address, guardians (up to 5) | None |
+| **WhatsApp alert goes to** | Saved guardians | Admin control number |
+| **Session** | JWT stored in secure storage, auto-login | Local guest ID (`GUEST_xxx`) |
 
-### 4.2 SOS Triggering System (`sos_screen.dart`)
-To eliminate accidental triggers while guaranteeing instantaneous activation in genuine danger, DEVI uses a **dual-trigger mechanism**:
+### 4.2 SOS Trigger (`sos_screen.dart`)
+1. **Tap:** Starts a 5-second countdown. The user can **Cancel** or **Send Now**.
+2. **Hold (~1.5s):** Sends the alert instantly.
+3. **Demo Mode card:** Shows a preview of the alert message only. Nothing is sent.
+4. **I Am Safe:** Stops live tracking, finalizes evidence and resolves the alert.
 
-1. **Tactile Press & Hold (1.5 seconds):**
-   - User holds the large circular emergency button.
-   - Haptic vibration builds up with dynamic radar wave scaling.
-   - At 1500ms, the SOS is instantly fired without countdown.
-2. **Single Tap (5-Second Safety Countdown):**
-   - Tapping the button launches an audible **5-second cancelable countdown**.
-   - Large animated countdown timer overlays the button.
-   - User can tap again at any time to cancel false alarms.
-   - If not cancelled, the emergency triggers automatically at `0s`.
-
-### 4.3 Background Hardware Services
-- **`LocationService`:**
-  - Requests `LocationPermission.always` / `whileInUse`.
-  - Captures initial high-accuracy fix (`LocationAccuracy.high`).
-  - Periodically streams GPS breadcrumbs (`lat`, `lng`, `speed`, `heading`, `accuracy`) every 3 seconds to the backend via WebSocket room.
-- **`EmergencyMediaService`:**
-  - Silently initializes audio recording in background.
-  - Takes evidence camera snapshots when supported.
-  - Uploads evidence payloads securely to the server/Cloudinary.
-- **`SmsService`:**
-  - Native integration for direct telephone dispatch.
-  - **Testing Safety Mode:** Direct call to `112` is kept commented on safe HOLD during test sessions.
+### 4.3 Background Services
+- **LocationService:** Takes a high-accuracy GPS fix, then streams live location (about every 2s / 2m) over WebSocket.
+- **EmergencyMediaService:** Records 2 minutes of evidence and uploads it to the backend (Cloudinary).
+- **DisguiseNotificationService:** Shows a disguised notification while SOS is active.
+- **SmsService:** Calls the first guardian. The direct `112` call is on hold during testing.
 
 ---
 
-## 5. Backend Architecture (Node.js + Express + Socket.io)
+## 5. Backend (Node.js + Express + WebSocket)
 
-### 5.1 Security & Infrastructure
-- **Port:** `5005` (Default)
-- **Helmet:** HTTP header protection with custom cross-origin policy for embedded Leaflet/OpenStreetMap tiles.
-- **Rate Limiting:** `express-rate-limit` prevents DDoS and API spam on public endpoints.
-- **Idempotency Key Verification:** Every SOS trigger payload includes a client-generated UUID idempotency key to prevent double alerts during poor network re-tries.
+### 5.1 REST API
 
-### 5.2 Key REST API Routes
+All routes are under `/api`.
 
-#### Authentication (`/api/auth`)
-- `POST /api/auth/send-otp`: Sends SMS verification code.
-- `POST /api/auth/verify-otp`: Validates OTP and returns JWT bearer token.
+#### Auth (`/api/auth`), rate-limited: 15 requests / 15 min
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `/auth/login` | Login with a registered phone number. Returns a 30-day JWT |
+| GET | `/auth/verify` | Check that a token is valid |
 
-#### Emergency SOS (`/api/sos`)
-- `POST /api/sos/trigger`:
-  - Validates victim data, coordinates, and battery level.
-  - Stores incident in database with status `ACTIVE`.
-  - Emits real-time `sos:alert` to Police Control Room via WebSockets.
-  - Dispatches automated WhatsApp messages with Live Tracking URLs.
-- `POST /api/sos/location`: Appends live GPS breadcrumbs for an ongoing alert.
-- `POST /api/sos/resolve`: Marks incident as `RESOLVED`, archiving tracking data and stopping sirens.
-- `GET /api/sos/:alertId`: Returns complete alert status, breadcrumb trail, and media.
+#### User (`/api/user`)
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/user/profile/:phone` | Own profile + guardians (**token required**) |
+| PUT | `/user/profile` | Sign up (new numbers only, returns a token) or update own profile |
+| POST | `/user/guest` | Track a guest session |
 
-#### Control Room Dashboard (`/api/dashboard`)
-- `GET /api/dashboard/stats`: Returns count of active alerts, resolved alerts, and online responders.
-- `GET /api/dashboard/active-alerts`: List of all currently active SOS emergencies.
+#### SOS (`/api/sos`)
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `/sos/trigger` | Create alert (idempotent), send WhatsApp, notify dashboard. Rate-limited: 10 / min |
+| POST | `/sos/live-update` | Live location update (HTTP fallback) |
+| GET | `/sos/live/:alertId` | Current live session (used by the track page) |
+| POST | `/sos/upload-evidence` | Upload evidence file to Cloudinary |
+| POST | `/sos/resolve/:alertId` | Resolve alert from the app ("I Am Safe") |
+| GET | `/sos/history/:phone` | User's own history (token required, except guests) |
+| GET | `/sos/history` | All history (admin key) |
+| GET | `/sos/geocode` | Reverse geocode lat/lng to an address |
 
-### 5.3 WebSockets Real-Time Communication (`socket.service.js`)
-- Clients join rooms:
-  - `control_room`: Police dashboard receives all new incidents.
-  - `sos_${alertId}`: Dedicated incident channel for continuous live GPS tracking.
-- Events:
-  - `sos:trigger` -> Broadcasts new emergency to control room with audio siren trigger.
-  - `location:update` -> Streams user movement every 3s to live tracking map.
-  - `sos:resolve` -> Notifies dashboard to close live alert tracking.
+#### Admin Auth (`/api/admin`)
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `/admin/login` | Username + password (`ADMIN_USERNAME` / `ADMIN_PASSWORD` in `.env`). Returns a 12-hour admin token. Rate-limited: 10 / 15 min |
+| GET | `/admin/verify` | Check that the admin token is valid |
 
-### 5.4 WhatsApp Emergency Alert Integration (`whatsapp.service.js`)
-When an SOS is triggered, an automated emergency message is fired via Meta WhatsApp Cloud API:
-```text
-🚨 *EMERGENCY SOS ALERT - DEVI SAFETY SYSTEM* 🚨
+#### Admin Dashboard (`/api/dashboard`), requires admin token (or `x-admin-key` header for scripts)
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/dashboard/incidents` | Latest 100 incidents with user + guardian details and live trail |
+| POST | `/dashboard/add-note` | Add an operator note to an incident |
+| POST | `/dashboard/resolve/:alertId` | Mark an incident resolved |
 
-Victim Name: [Name / Instant SOS User]
-Phone: [Phone Number]
-Time: [Current Timestamp]
-Battery Level: [Battery %]
+### 5.2 WebSocket (`/ws`)
+Plain WebSocket (`ws` library), JSON messages.
 
-📍 Google Maps Location:
-https://maps.google.com/?q=[lat],[lng]
+**Client → Server**
+| Type | Purpose |
+|---|---|
+| `join` / `leave` | Join a room: `dashboard` (needs `token` = admin token) or `alert:<alertId>` |
+| `loc` | Live GPS packet from the app (`alertId`, `lat`, `lng`, `accuracy`, `speed`, `heading`, `seq`) |
+| `ping` | Keep-alive |
 
-🔴 LIVE REAL-TIME RADAR TRACKING:
-https://devi.macvelsoftware.com/track/[alertId]
+**Server → Client**
+| Type | Sent to | Purpose |
+|---|---|---|
+| `sos:new` | `dashboard` | New SOS: dashboard plays the siren and zooms to the victim |
+| `loc` | `dashboard`, `alert:<id>` | Live location update |
+| `incident:evidence` | `dashboard` | Evidence video uploaded |
+| `incident:resolved` / `status` | `dashboard`, `alert:<id>` | Alert resolved |
+| `ack` | sender | Confirms a `loc` packet was received |
 
-Please take immediate protective action or contact local police!
-```
-
----
-
-## 6. Web Control Room Dashboard (React + Vite)
-
-Running on Port `5173`, the Control Room is designed for emergency dispatchers:
-1. **Interactive Multi-Incident Map:** Leaflet/OpenStreetMap with custom animated red markers for active victims and blue markers for police patrol vehicles.
-2. **Audible & Visual Priority Sirens:** Automatically sounds an emergency siren upon `sos:trigger` socket event until acknowledged.
-3. **Live Track Page (`/track/:alertId`):**
-   - Accessible by guardians and police responders.
-   - Renders live breadcrumb path showing travel speed, battery discharge rate, and heading.
-   - Includes quick-dial buttons to call the victim or nearest police station.
-4. **Duty Roster (`/duty`):** Assigns nearby patrol officers to active emergencies.
-
----
-
-## 7. Database & Data Models
-
-### Incident Entity (`sos_alert`)
-```json
-{
-  "alertId": "sos_1741164920000_abc123",
-  "idempotencyKey": "uuid-v4-string",
-  "userId": "usr_9876543210",
-  "userName": "Instant SOS User",
-  "userPhone": "9876543210",
-  "isGuest": true,
-  "status": "ACTIVE",
-  "createdAt": "2026-10-05T12:00:00.000Z",
-  "resolvedAt": null,
-  "initialLocation": {
-    "latitude": 13.0827,
-    "longitude": 80.2707,
-    "accuracy": 8.5
-  },
-  "batteryLevel": 84,
-  "breadcrumbs": [
-    {
-      "latitude": 13.0827,
-      "longitude": 80.2707,
-      "timestamp": "2026-10-05T12:00:00.000Z"
-    }
-  ],
-  "evidenceMedia": {
-    "audioUrl": "https://res.cloudinary.com/.../audio.m4a",
-    "photoUrl": "https://res.cloudinary.com/.../photo.jpg"
-  }
-}
-```
+### 5.3 WhatsApp Alert (`whatsapp.service.js`)
+- Sent through the Meta approved template **`devi_safety`** with the victim's name, live tracking link and time.
+- A WhatsApp location pin is also sent when the coordinates are valid.
+- **Recipients:** the user's guardians. If there are none (guest), the admin control number (`ADMIN_WHATSAPP`) receives it.
 
 ---
 
-## 8. End-to-End Emergency Sequence Flow
+## 6. Admin Control Room Dashboard (React + Vite)
+
+Runs at `https://devi.macvelsoftware.com` (local: `http://localhost:5173`). Uses **Google Maps** (`@react-google-maps/api`).
+
+0. **Admin login (`/login`):** Username + password. The token is kept in the browser for 12 hours. When it expires, or when Logout is pressed, the admin is sent back to the login page.
+
+1. **Incident list:** Search, stats (Total / Active / Resolved) and filter tabs (All / Active / Resolved).
+2. **Live map:** Victim markers, the live movement trail with direction arrows, the SOS start point and a GPS accuracy circle.
+3. **New SOS alert:** Siren sound, spoken announcement, a pop-up banner and auto-zoom to the victim.
+4. **Incident drawer:** Evidence video, victim details (name, phone, location, GPS accuracy), Call Victim / Call 112, operator notes and Mark Resolved.
+5. **Public track page (`/track/:alertId`):** The link sent on WhatsApp. Shows the victim's live location and trail.
+
+---
+
+## 7. Database (Supabase)
+
+| Table | Key columns |
+|---|---|
+| `users` | `id`, `mobile_number`, `full_name`, `address_1`, `address_2`, `is_guest`, `created_at` |
+| `guardians` | `id`, `user_id`, `name`, `mobile_number`, `created_at` |
+| `sos_history` | `id`, `user_id`, `latitude`, `longitude`, `accuracy`, `location_address`, `status` (`ACTIVE` / `RESOLVED`), `idempotency_key`, `evidence_url` / `audio_url`, `operator_notes`, `created_at` |
+
+- Live breadcrumbs (the movement trail) are kept in backend memory per active alert. They are not stored in the database.
+- Older rows may have status `DISPATCHED`. The dashboard treats these as active.
+
+---
+
+## 8. End-to-End SOS Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Victim as 👩 Citizen (Mobile App)
-    participant Flutter as 📱 Flutter Client
-    participant Backend as 🖥️ Node.js Backend (:5005)
-    participant WhatsApp as 📲 Meta WhatsApp API
-    participant Police as 💻 Control Room Dashboard
-    actor Guardian as 👨‍👩‍👧 Guardian / Patrol
+    actor User as 👩 User
+    participant App as 📱 Flutter App
+    participant API as 🖥️ Backend (:5005)
+    participant WA as 📲 WhatsApp API
+    participant Admin as 💻 Admin Dashboard
+    actor Guardian as 👨‍👩‍👧 Guardian
 
-    Victim->>Flutter: Press & Hold (1.5s) OR Single Tap (5s Timer)
-    Note over Flutter: GPS Fix Captured + Audio Recorder Started
-    Flutter->>Backend: POST /api/sos/trigger (Coords, IdempotencyKey)
-    Backend->>Backend: Store incident in DB (Status: ACTIVE)
-    Backend-->>Police: Socket.io Emit 'sos:trigger'
-    Note over Police: 🚨 Siren Sounds & Red Radar Marker Appears on Map
-    Backend->>WhatsApp: Send SOS Template + Live Track Link
-    WhatsApp-->>Guardian: WhatsApp Emergency Alert Delivered
-    
-    loop Every 3 Seconds
-        Flutter->>Backend: POST /api/sos/location (Lat, Lng, Speed)
-        Backend-->>Police: Socket.io Emit 'location:update'
-        Note over Police: Blue breadcrumb trail updates live
+    User->>App: Hold SOS (1.5s) or Tap (5s countdown)
+    App->>API: POST /api/sos/trigger (location, idempotency key)
+    API->>API: Save alert in Supabase (ACTIVE)
+    API-->>Admin: WebSocket 'sos:new'
+    Note over Admin: Siren + popup + map zooms to victim
+    API->>WA: devi_safety template + track link
+    WA-->>Guardian: WhatsApp alert (or admin number for guests)
+
+    loop Live tracking
+        App->>API: WebSocket 'loc'
+        API-->>Admin: WebSocket 'loc' (trail updates)
     end
 
-    Victim->>Flutter: Tap 'Deactivate / Safe' Button
-    Flutter->>Backend: POST /api/sos/resolve (alertId)
-    Backend->>Backend: Update Status to RESOLVED
-    Backend-->>Police: Socket.io Emit 'sos:resolve'
-    Note over Police: Incident marked safe, live sirens stop
+    App->>API: POST /api/sos/upload-evidence (2-min recording)
+    API-->>Admin: WebSocket 'incident:evidence'
+
+    alt User is safe
+        User->>App: Tap "I Am Safe"
+        App->>API: POST /api/sos/resolve/:alertId
+    else Admin closes it
+        Admin->>API: POST /api/dashboard/resolve/:alertId
+    end
+    API-->>Admin: 'incident:resolved' / 'status'
 ```
 
 ---
 
-## 9. Safety & Testing Safeguards
+## 9. Security
 
-1. **Real Police Call (112) On Hold:**
-   - Direct phone dialing to emergency number `112` is kept commented in `sos_screen.dart` during development to prevent false emergency service dispatches.
-2. **Demo Mode Pill:**
-   - Visual toggle in Flutter SOS Screen allowing mock testing without triggering live production alerts.
-3. **Responsive UI Overflow Protection:**
-   - Profile Card and Guardian headers are built with `LayoutBuilder` and `Wrap` widgets to guarantee zero `RenderFlex` overflow errors across arbitrary screen widths.
+### In place
+- **HTTPS** for the live API (`https://devi-api.macvelsoftware.com`).
+- **JWT auth:** Users can read and update only their own profile and history.
+- **Sign up protection:** A registered number cannot be overwritten without login.
+- **Secure token storage:** Android Keystore / iOS Keychain (`flutter_secure_storage`).
+- **Rate limits:** Global 5000 / 15 min, login 15 / 15 min, SOS trigger 10 / min.
+- **Helmet** security headers.
+- **CORS allow-list:** `devi.macvelsoftware.com`, plus `CORS_ORIGINS`. Localhost is allowed only in development.
+- **Production secret check:** The server refuses to start without `JWT_SECRET`, `ADMIN_SECRET_KEY` and `ENCRYPTION_KEY` when `NODE_ENV=production`.
+- **Idempotency key** on SOS trigger, to prevent duplicate alerts.
+- **Admin login:** All dashboard APIs and the WebSocket `dashboard` room require an admin token (12h). Credentials are compared in constant time. New SOS events go to the dashboard room only.
+
+### Pending (next security phase)
+- **Alert ownership checks** on `/sos/resolve`, `/sos/live-update`, `/sos/upload-evidence` and WebSocket `loc` packets.
+- **Replace the hardcoded app AES key** (switch to AES-GCM or rely on TLS) and encrypt sensitive database fields.
+- Login has no OTP (product decision for easy login).
 
 ---
 
-## 10. Local Development & Environment Setup
+## 10. Local Development
 
 ### Prerequisites
-- Node.js >= 18.x
-- Flutter SDK >= 3.x
-- Google Chrome / Edge for web preview
+- Node.js ≥ 18, Flutter SDK ≥ 3.x, Chrome
 
-### Running All 3 Services Concurrently
-
-#### 1. Backend Server
+### 1. Backend
 ```bash
 cd backend
 npm install
-npm start
-# Runs on http://localhost:5005
+npm run dev        # http://localhost:5005
 ```
+Key `.env` values: `NODE_ENV`, `PORT`, `SUPABASE_URL`, `SUPABASE_KEY`, `JWT_SECRET`, `ADMIN_SECRET_KEY`, `ENCRYPTION_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`, `ADMIN_WHATSAPP`, `CLOUDINARY_*`, `GOOGLE_MAPS_API_KEY`, `WEB_BASE_URL`, `CORS_ORIGINS` (optional).
 
-#### 2. Control Room Web Dashboard
+### 2. Admin Dashboard
 ```bash
 cd web
 npm install
-npm run dev
-# Runs on http://localhost:5173
+npm run dev        # http://localhost:5173
 ```
+Needs `VITE_GOOGLE_MAPS_API_KEY`.
 
-#### 3. Frontend App (Flutter Web / Android)
+### 3. Flutter App
 ```bash
 cd frontend
 flutter pub get
-flutter run -d chrome
-# Runs on dynamically assigned local port (e.g. http://localhost:60314)
+flutter run -d chrome                        # web debug → local backend
+flutter run --dart-define=SERVER=live        # force live server
 ```
 
 ---
-*Documentation compiled and maintained for the DEVI Women & Citizen Safety Project.*
+*Maintained for the DEVI Women Safety Project.*

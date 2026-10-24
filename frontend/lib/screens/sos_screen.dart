@@ -191,7 +191,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
             ],
           ),
           content: const Text(
-            'This will stop live GPS tracking, finalize emergency evidence, and mark your alert as RESOLVED for helpers & safety desk.',
+            'This will stop live GPS tracking, finalize emergency evidence, and mark your alert as RESOLVED for the safety desk.',
             style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.4),
           ),
           actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -700,12 +700,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                     ],
                   ),
 
-                  SizedBox(height: isShortScreen ? 4 : 6),
-
-                  // Emergency 2-Minute Recording Live Banner & Evidence Player
-                  // const EmergencyRecordingBanner(),
-
-                  SizedBox(height: isShortScreen ? 6 : 10),
+                  SizedBox(height: isShortScreen ? 10 : 16),
 
                   // Prominent "I Am Safe" Deactivation Banner when SOS is Active
                   if (_isEmergencyActive) ...[

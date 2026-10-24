@@ -5,7 +5,7 @@ dotenv.config();
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Secrets that must come from .env in production (dev falls back to local defaults)
-const REQUIRED_SECRETS = ['JWT_SECRET', 'ADMIN_SECRET_KEY', 'ENCRYPTION_KEY'];
+const REQUIRED_SECRETS = ['JWT_SECRET', 'ADMIN_SECRET_KEY', 'ENCRYPTION_KEY', 'ADMIN_PASSWORD'];
 
 const missing = REQUIRED_SECRETS.filter((key) => !process.env[key] || !process.env[key].trim());
 if (isProduction && missing.length > 0) {
@@ -35,3 +35,8 @@ export const isAllowedOrigin = (origin) => {
 export const JWT_SECRET = process.env.JWT_SECRET || 'devi_secret_key_change_in_production';
 export const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || 'devi_admin_secret_2026';
 export const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'devi_aes_256_military_grade_secret_key_2026';
+
+// Admin dashboard login credentials
+export const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'admin').trim();
+export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devi_admin_dev_password';
+export const ADMIN_TOKEN_EXPIRY = '12h';

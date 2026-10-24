@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/sound_service.dart';
 
 /// Independent, reusable Emergency Siren & Sound Card.
-/// Can be embedded in SOS Screen, Responder Screen, or any Safety Screen.
+/// Can be embedded in SOS Screen or any Safety Screen.
 class EmergencySoundCard extends StatefulWidget {
   final VoidCallback? onToggle;
 

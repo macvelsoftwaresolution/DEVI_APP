@@ -8,7 +8,6 @@ import { isAllowedOrigin } from './config/security.js';
 import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
-import { verifyAdminKey } from './middlewares/auth.middleware.js';
 import { DataService } from './services/data.service.js';
 import { socketService } from './services/socket.service.js';
 
@@ -82,7 +81,7 @@ app.get('/favicon.ico', (req, res) => {
 
 // Redirect frontend portal routes to Web Domain (devi.macvelsoftware.com)
 const WEB_PORTAL_URL = process.env.WEB_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://devi.macvelsoftware.com';
-app.get(['/track/:alertId', '/duty', '/dashboard'], (req, res) => {
+app.get(['/track/:alertId', '/dashboard'], (req, res) => {
   return res.redirect(302, `${WEB_PORTAL_URL}${req.originalUrl}`);
 });
 

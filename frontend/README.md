@@ -1,17 +1,14 @@
-# devi
+# DEVI – User App (Flutter)
 
-A new Flutter project.
+Women safety app: login / Instant SOS, SOS with 5s countdown or hold, 2-minute evidence recording, live location tracking and guardian alerts.
 
-## Getting Started
+## Run
 
-This project is a starting point for a Flutter application.
+```bash
+flutter pub get
+flutter run -d chrome                     # web debug → local backend (localhost:5005)
+flutter run --dart-define=SERVER=live     # use live server
+flutter run --dart-define=SERVER=local    # force local backend
+```
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+See [../DEVI_SYSTEM_ARCHITECTURE.md](../DEVI_SYSTEM_ARCHITECTURE.md) for the full system flow.
