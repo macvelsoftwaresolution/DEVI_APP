@@ -74,6 +74,16 @@ export const safeEqual = (a, b) => {
 };
 
 /**
+ * Per-alert control token: only the device that created the SOS receives it.
+ * Stateless HMAC of the alert ID, so it survives server restarts without DB storage.
+ */
+export const signSosControlToken = (alertId) =>
+  crypto.createHmac('sha256', JWT_SECRET).update(`sos-control:${alertId}`).digest('base64url');
+
+export const verifySosControlToken = (alertId, token) =>
+  !!alertId && !!token && safeEqual(token, signSosControlToken(alertId));
+
+/**
  * Signs a short-lived JWT for the admin dashboard
  */
 export const signAdminToken = (username) =>

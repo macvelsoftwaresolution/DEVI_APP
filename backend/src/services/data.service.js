@@ -1,4 +1,10 @@
 import { supabase } from '../config/supabase.js';
+import { Encryption } from '../utils/encryption.js';
+
+// Sensitive columns are stored AES-256-GCM encrypted (names, addresses, guardian numbers,
+// SOS address & operator notes). mobile_number of users stays plain because it is the login lookup key.
+const enc = (value) => Encryption.encrypt(value);
+const dec = (value) => Encryption.decrypt(value);
 
 export const DataService = {
   // --- USERS ---
@@ -34,14 +40,14 @@ export const DataService = {
       return {
         id: user.id,
         phone: user.mobile_number,
-        name: user.full_name || '',
-        address1: user.address_1 || '',
-        address2: user.address_2 || '',
+        name: dec(user.full_name) || '',
+        address1: dec(user.address_1) || '',
+        address2: dec(user.address_2) || '',
         isGuest: user.is_guest || false,
         guardians: (guardians || []).map((g) => ({
           id: g.id,
-          name: g.name,
-          phone: g.mobile_number,
+          name: dec(g.name),
+          phone: dec(g.mobile_number),
         })),
         createdAt: user.created_at,
       };
@@ -83,9 +89,9 @@ export const DataService = {
       return {
         id: newUser.id,
         phone: newUser.mobile_number,
-        name: newUser.full_name || '',
-        address1: newUser.address_1 || '',
-        address2: newUser.address_2 || '',
+        name: dec(newUser.full_name) || '',
+        address1: dec(newUser.address_1) || '',
+        address2: dec(newUser.address_2) || '',
         isGuest: newUser.is_guest || false,
         guardians: [],
         createdAt: newUser.created_at,
@@ -111,9 +117,9 @@ export const DataService = {
           .insert([
             {
               mobile_number: cleanId,
-              full_name: 'Guest User',
-              address_1: 'Guest Session',
-              address_2: 'Unregistered',
+              full_name: enc('Guest User'),
+              address_1: enc('Guest Session'),
+              address_2: enc('Unregistered'),
               is_guest: true,
             },
           ])
@@ -128,9 +134,9 @@ export const DataService = {
         user = {
           id: newUser.id,
           phone: newUser.mobile_number,
-          name: newUser.full_name,
-          address1: newUser.address_1,
-          address2: newUser.address_2,
+          name: dec(newUser.full_name),
+          address1: dec(newUser.address_1),
+          address2: dec(newUser.address_2),
           isGuest: true,
           guardians: [],
           createdAt: newUser.created_at,
@@ -144,8 +150,8 @@ export const DataService = {
           .filter((g) => g.phone && g.phone.trim() !== '')
           .map((g) => ({
             user_id: user.id,
-            name: g.name || 'Guardian',
-            mobile_number: g.phone.trim(),
+            name: enc(g.name || 'Guardian'),
+            mobile_number: enc(g.phone.trim()),
           }));
         if (rows.length > 0) {
           await supabase.from('guardians').insert(rows);
@@ -175,9 +181,9 @@ export const DataService = {
       const updatePayload = {
         is_guest: false,
       };
-      if (name !== undefined) updatePayload.full_name = name;
-      if (address1 !== undefined) updatePayload.address_1 = address1;
-      if (address2 !== undefined) updatePayload.address_2 = address2;
+      if (name !== undefined) updatePayload.full_name = enc(name);
+      if (address1 !== undefined) updatePayload.address_1 = enc(address1);
+      if (address2 !== undefined) updatePayload.address_2 = enc(address2);
 
       const { data: updatedUser, error: uError } = await supabase
         .from('users')
@@ -209,8 +215,8 @@ export const DataService = {
             .filter((g) => g.phone && g.phone.trim() !== '')
             .map((g) => ({
               user_id: user.id,
-              name: g.name || 'Guardian',
-              mobile_number: g.phone.trim(),
+              name: enc(g.name || 'Guardian'),
+              mobile_number: enc(g.phone.trim()),
             }));
 
           if (rows.length > 0) {
@@ -272,7 +278,7 @@ export const DataService = {
             idempotencyKey,
             timestamp: existingAlert.created_at,
             displayTime: `Today, ${formattedHour}:${minutes} ${ampm}`,
-            location: existingAlert.location_address || `GPS: ${existingAlert.latitude}, ${existingAlert.longitude}`,
+            location: dec(existingAlert.location_address) || `GPS: ${existingAlert.latitude}, ${existingAlert.longitude}`,
             latitude: existingAlert.latitude,
             longitude: existingAlert.longitude,
             accuracy: existingAlert.accuracy || null,
@@ -411,7 +417,7 @@ export const DataService = {
       const alertPayload = {
         latitude: latitude ? parseFloat(latitude) : 13.0827,
         longitude: longitude ? parseFloat(longitude) : 80.2707,
-        location_address: resolvedAddress,
+        location_address: enc(resolvedAddress),
         status: 'ACTIVE',
       };
       if (userId) {
@@ -464,7 +470,7 @@ export const DataService = {
         idempotencyKey: idempotencyKey || null,
         timestamp: alert.created_at,
         displayTime: `Today, ${formattedHour}:${minutes} ${ampm}`,
-        location: alert.location_address || `GPS: ${alert.latitude}, ${alert.longitude}`,
+        location: dec(alert.location_address) || `GPS: ${alert.latitude}, ${alert.longitude}`,
         latitude: alert.latitude,
         longitude: alert.longitude,
         accuracy: accuracy != null ? parseFloat(accuracy) : null,
@@ -549,7 +555,7 @@ export const DataService = {
           userId: alert.user_id,
           timestamp: alert.created_at,
           displayTime: displayTime,
-          location: alert.location_address || `GPS: ${alert.latitude}, ${alert.longitude}`,
+          location: dec(alert.location_address) || `GPS: ${alert.latitude}, ${alert.longitude}`,
           latitude: liveSession?.latitude ?? alert.latitude,
           longitude: liveSession?.longitude ?? alert.longitude,
           status: currentStatus,
@@ -639,7 +645,7 @@ export const DataService = {
         .update({
           latitude: lat,
           longitude: lng,
-          location_address: address || `GPS Location (${lat}, ${lng})`,
+          location_address: enc(address || `GPS Location (${lat}, ${lng})`),
           status,
         })
         .eq('id', alertId)
@@ -806,8 +812,8 @@ export const DataService = {
             }
             guardiansMap.get(g.user_id).push({
               id: g.id,
-              name: g.name,
-              phone: g.mobile_number,
+              name: dec(g.name),
+              phone: dec(g.mobile_number),
             });
           });
         }
@@ -857,14 +863,14 @@ export const DataService = {
           latitude: liveSession?.latitude ?? alert.latitude ?? 13.0827,
           longitude: liveSession?.longitude ?? alert.longitude ?? 80.2707,
           accuracy: liveSession?.accuracy ?? alert.accuracy ?? null,
-          location: alert.location_address || `GPS (${alert.latitude}, ${alert.longitude})`,
+          location: dec(alert.location_address) || `GPS (${alert.latitude}, ${alert.longitude})`,
           status: liveSession?.status || alert.status || 'DISPATCHED',
           evidenceUrl: alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null,
-          operatorNotes: alert.operator_notes || liveSession?.operatorNotes || '',
+          operatorNotes: dec(alert.operator_notes) || liveSession?.operatorNotes || '',
           user: {
-            name: user?.full_name || (user?.is_guest ? 'Guest Victim' : 'DEVI User'),
+            name: dec(user?.full_name) || (user?.is_guest ? 'Guest Victim' : 'DEVI User'),
             phone: user?.mobile_number || alert.user_id || '9500238347',
-            address: user ? [user.address_1, user.address_2].filter(Boolean).join(', ') : 'Location on Map',
+            address: user ? [dec(user.address_1), dec(user.address_2)].filter(Boolean).join(', ') : 'Location on Map',
             isGuest: user?.is_guest || false,
           },
           guardians,
@@ -902,9 +908,9 @@ export const DataService = {
 
     try {
       const { data } = await supabase.from('sos_history').select('operator_notes').eq('id', alertId).maybeSingle();
-      const existing = data?.operator_notes || '';
+      const existing = dec(data?.operator_notes) || '';
       const updatedNotes = existing ? `${existing}\n${formattedNote}` : formattedNote;
-      await supabase.from('sos_history').update({ operator_notes: updatedNotes }).eq('id', alertId);
+      await supabase.from('sos_history').update({ operator_notes: enc(updatedNotes) }).eq('id', alertId);
     } catch (e) {
       console.warn('Note updating operator_notes in Supabase:', e.message);
     }

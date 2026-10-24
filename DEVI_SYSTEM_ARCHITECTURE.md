@@ -103,8 +103,9 @@ DEVI_APP/
 │   │   │   ├── data.service.js      # Supabase persistence + live session cache
 │   │   │   ├── socket.service.js    # WebSocket rooms & broadcasts
 │   │   │   └── whatsapp.service.js  # Emergency alert dispatch
-│   │   ├── utils/encryption.js      # AES-256 payload decryption
+│   │   ├── utils/encryption.js      # AES-256-GCM database field encryption
 │   │   └── server.js                # Entry point (port 5005)
+│   ├── scripts/encrypt-existing-data.js  # One-time DB field encryption migration
 │   ├── *.nginx.conf                 # Hostinger NGINX configs (API + web)
 │   ├── .env.example
 │   └── package.json
@@ -125,7 +126,6 @@ DEVI_APP/
 │       │   ├── location_service.dart# GPS fix + live tracking stream
 │       │   ├── socket_service.dart  # WebSocket client
 │       │   ├── emergency_media_service.dart # 2-min evidence recording
-│       │   ├── encryption_service.dart
 │       │   ├── disguise_notification_service.dart
 │       │   ├── sms_service.dart     # Guardian phone call
 │       │   ├── sound_service.dart   # Siren
@@ -323,11 +323,20 @@ sequenceDiagram
 - **Production secret check:** The server refuses to start without `JWT_SECRET`, `ADMIN_SECRET_KEY` and `ENCRYPTION_KEY` when `NODE_ENV=production`.
 - **Idempotency key** on SOS trigger, to prevent duplicate alerts.
 - **Admin login:** All dashboard APIs and the WebSocket `dashboard` room require an admin token (12h). Credentials are compared in constant time. New SOS events go to the dashboard room only.
+- **Per-alert control token:** `/sos/trigger` returns a `controlToken` (HMAC-SHA256 of the alert ID) to the creating device only. `/sos/resolve`, `/sos/live-update`, `/sos/upload-evidence` (header `X-SOS-Token`) and WebSocket `loc` packets (`controlToken`) are rejected without it. Knowing the alert ID or the WhatsApp track link is not enough to change an alert.
+- **Public responses are trimmed:** the idempotency key and phone are never returned by `/sos/live/:alertId` or the other SOS responses.
 
-### Pending (next security phase)
-- **Alert ownership checks** on `/sos/resolve`, `/sos/live-update`, `/sos/upload-evidence` and WebSocket `loc` packets.
-- **Replace the hardcoded app AES key** (switch to AES-GCM or rely on TLS) and encrypt sensitive database fields.
+- **Database field encryption (AES-256-GCM):** `users.full_name`, `address_1`, `address_2`; `guardians.name`, `mobile_number`; `sos_history.location_address`, `operator_notes` are encrypted by the server before saving. The key (`ENCRYPTION_KEY`, 32+ random chars) lives only in the backend `.env`. GCM detects tampering. Stored format: `enc:v1:<iv>:<tag>:<ciphertext>`. Older plain-text rows are still readable and can be encrypted with `npm run migrate:encrypt -- --apply`.
+- **Transport:** App ↔ server traffic relies on HTTPS / WSS. The old app-side AES with a hardcoded key was removed (it gave no real protection).
+
+### Not encrypted (by design)
+- `users.mobile_number`: used as the login lookup key.
+- `sos_history.latitude` / `longitude`: numeric columns used for the live map.
+
+### Pending
 - Login has no OTP (product decision for easy login).
+- Admin password is a single plain value in `.env` (no hash, no per-operator accounts).
+- Backend uses the Supabase publishable key; switching to the secret key with Row Level Security enabled would limit damage if the key leaks.
 
 ---
 

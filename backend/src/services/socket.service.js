@@ -1,7 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { DataService } from './data.service.js';
-import { Encryption } from '../utils/encryption.js';
-import { decodeAdminToken } from '../middlewares/auth.middleware.js';
+import { decodeAdminToken, verifySosControlToken } from '../middlewares/auth.middleware.js';
 
 class SocketService {
   constructor() {
@@ -173,14 +172,8 @@ class SocketService {
   /**
    * Processes inbound client messages
    */
-  async handleClientMessage(ws, rawMsg) {
-    let msg = rawMsg;
-    // Decrypt AES-256 encrypted payload if present
-    if (msg && msg.encrypted) {
-      const decrypted = Encryption.decryptObject(msg.encrypted);
-      if (decrypted) msg = { ...msg, ...decrypted };
-    }
-
+  async handleClientMessage(ws, msg) {
+    if (!msg || typeof msg !== 'object') return;
     const { type } = msg;
 
     switch (type) {
@@ -205,6 +198,12 @@ class SocketService {
       case 'loc': {
         const { alertId, lat, lng, speed, heading, status, seq, accuracy, acc, spd, hd } = msg;
         if (!alertId || lat == null || lng == null) return;
+
+        // Only the device that created the SOS may move its location
+        if (!verifySosControlToken(String(alertId), msg.controlToken)) {
+          this.sendToClient(ws, { type: 'error', code: 'SOS_CONTROL_REQUIRED', alertId });
+          return;
+        }
         const currentAccuracy = (accuracy != null ? Number(accuracy) : (acc != null ? Number(acc) : null));
         const currentSpeed = speed ?? spd ?? null;
         const currentHeading = heading ?? hd ?? null;

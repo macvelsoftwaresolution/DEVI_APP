@@ -34,7 +34,7 @@ app.use(
   cors({
     origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key', 'x-sos-token'],
   })
 );
 

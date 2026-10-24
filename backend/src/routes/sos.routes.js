@@ -3,10 +3,14 @@ import multer from 'multer';
 import { DataService } from '../services/data.service.js';
 import { uploadMediaToCloudinary } from '../config/cloudinary.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
-import { verifyAdmin, optionalToken } from '../middlewares/auth.middleware.js';
+import {
+  verifyAdmin,
+  optionalToken,
+  signSosControlToken,
+  verifySosControlToken,
+} from '../middlewares/auth.middleware.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { socketService } from '../services/socket.service.js';
-import { Encryption } from '../utils/encryption.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -15,15 +19,29 @@ const upload = multer({
 
 const router = Router();
 
+// Only the device that created the alert may change it (resolve, move location, attach evidence).
+// The token comes from the X-SOS-Token header or a `controlToken` field in the payload.
+const hasSosControl = (req, alertId, payload = {}) =>
+  verifySosControlToken(String(alertId), req.get('x-sos-token') || payload.controlToken);
+
+const rejectSosControl = (res) =>
+  res.status(403).json({
+    success: false,
+    message: 'This device is not allowed to update this SOS alert.',
+  });
+
+// Strips internal fields (idempotency key, phone) before sending a session to clients
+const publicSession = (session) => {
+  if (!session) return session;
+  const { idempotencyKey, userPhone, userId, ...rest } = session;
+  return rest;
+};
+
 // POST /api/sos/trigger - Dispatches emergency alert, starts live tracking, and returns tracking URL
-router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
+router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next) => {
   try {
-    // Decrypt AES-256 payload if client sent encrypted payload
-    let reqData = req.body;
-    if (reqData.encrypted) {
-      const decrypted = Encryption.decryptObject(reqData.encrypted);
-      if (decrypted) reqData = { ...reqData, ...decrypted };
-    }
+    // Transport is protected by HTTPS; the payload is plain JSON
+    const reqData = req.body;
 
     const { userPhone, location, latitude, longitude, accuracy, idempotency_key, idempotencyKey, captured_at } = reqData;
     const finalIdempotencyKey = idempotency_key || idempotencyKey || null;
@@ -48,13 +66,19 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       const trackingUrl = `${baseUrl}/track/${existingSession.id}`;
       console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${userPhone}, Key: ${finalIdempotencyKey || 'N/A'}. 🛑 Skipping duplicate SMS broadcast.`);
 
+      // Hand the control token back only to the original device (same idempotency key)
+      // or the logged-in owner, never to someone who only knows the phone number
+      const isSameDevice = !!finalIdempotencyKey && existingSession.idempotencyKey === finalIdempotencyKey;
+      const isOwner = !!req.user?.phone && req.user.phone === existingSession.userPhone;
+
       return res.status(200).json({
         success: true,
         duplicate: true,
         message: 'Active emergency SOS already exists. Reusing existing session.',
         data: {
-          ...existingSession,
+          ...publicSession(existingSession),
           trackingUrl,
+          ...((isSameDevice || isOwner) && { controlToken: signSosControlToken(existingSession.id) }),
         },
       });
     }
@@ -135,9 +159,10 @@ router.post('/trigger', sosTriggerLimiter, async (req, res, next) => {
       duplicate: false,
       message: 'Emergency SOS alert recorded and live tracking initiated',
       data: {
-        ...alert,
+        ...publicSession(alert),
         status: 'ACTIVE',
         trackingUrl,
+        controlToken: signSosControlToken(alert.id),
       },
     });
   } catch (err) {
@@ -167,11 +192,7 @@ router.get('/geocode', async (req, res, next) => {
 // POST /api/sos/live-update - Updates live GPS coordinates stream from mobile app
 router.post('/live-update', async (req, res, next) => {
   try {
-    let reqData = req.body;
-    if (reqData.encrypted) {
-      const decrypted = Encryption.decryptObject(reqData.encrypted);
-      if (decrypted) reqData = { ...reqData, ...decrypted };
-    }
+    const reqData = req.body;
 
     const { alertId, latitude, longitude, address, status, accuracy, acc } = reqData;
     const finalAccuracy = accuracy != null ? parseFloat(accuracy) : (acc != null ? parseFloat(acc) : null);
@@ -181,6 +202,10 @@ router.post('/live-update', async (req, res, next) => {
         success: false,
         message: 'alertId, latitude, and longitude are required',
       });
+    }
+
+    if (!hasSosControl(req, alertId, reqData)) {
+      return rejectSosControl(res);
     }
 
     const session = await DataService.updateLiveLocation({
@@ -205,7 +230,7 @@ router.post('/live-update', async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: session,
+      data: publicSession(session),
     });
   } catch (err) {
     next(err);
@@ -227,7 +252,7 @@ router.get('/live/:alertId', async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: session,
+      data: publicSession(session),
     });
   } catch (err) {
     next(err);
@@ -243,6 +268,10 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
         success: false,
         message: 'alertId is required in request body',
       });
+    }
+
+    if (!hasSosControl(req, alertId, req.body)) {
+      return rejectSosControl(res);
     }
 
     if (!req.file || !req.file.buffer) {
@@ -291,7 +320,7 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
       data: {
         alertId,
         evidenceUrl,
-        session,
+        session: publicSession(session),
       },
     });
   } catch (err) {
@@ -304,6 +333,10 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
 router.post('/resolve/:alertId', async (req, res, next) => {
   try {
     const { alertId } = req.params;
+    if (!hasSosControl(req, alertId, req.body)) {
+      return rejectSosControl(res);
+    }
+
     const session = await DataService.resolveSosAlert(alertId);
 
     console.log(`✅ [SOS RESOLVED/DEACTIVATED] ID: ${alertId}`);
@@ -314,7 +347,7 @@ router.post('/resolve/:alertId', async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'SOS Alert resolved successfully',
-      data: session,
+      data: publicSession(session),
     });
   } catch (err) {
     next(err);

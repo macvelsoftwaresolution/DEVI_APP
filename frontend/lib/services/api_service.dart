@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'encryption_service.dart';
 
 class ApiService {
   static final ApiService instance = ApiService._internal();
@@ -42,6 +41,19 @@ class ApiService {
 
   // Error message from the last failed profile save (shown to the user)
   String? lastProfileError;
+
+  // Per-alert control tokens from /sos/trigger. Only this device can resolve the alert,
+  // move its live location, or attach evidence.
+  final Map<String, String> _sosControlTokens = {};
+
+  String? sosControlToken(String alertId) => _sosControlTokens[alertId];
+
+  Map<String, String> _sosHeaders(String alertId) {
+    final headers = Map<String, String>.from(_headers);
+    final token = _sosControlTokens[alertId];
+    if (token != null) headers['X-SOS-Token'] = token;
+    return headers;
+  }
 
   // Base URL for all API requests
   static String get baseUrl {
@@ -242,17 +254,12 @@ class ApiService {
         'emergencyContacts': emergencyContacts ?? contactsAlerted,
       };
 
-      // Encrypt payload with AES-256
-      final encryptedToken = EncryptionService.instance.encryptJson(payload);
-
+      // Sent over HTTPS; sensitive fields are encrypted at rest by the server
       final res = await http
           .post(
             Uri.parse('$baseUrl/sos/trigger'),
             headers: _headers,
-            body: jsonEncode({
-              ...payload,
-              'encrypted': encryptedToken,
-            }),
+            body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: 8));
 
@@ -262,6 +269,11 @@ class ApiService {
             ? Map<String, dynamic>.from(body['data'])
             : <String, dynamic>{};
         data['duplicate'] = body['duplicate'] == true;
+        final alertId = data['id']?.toString();
+        final controlToken = data['controlToken'];
+        if (alertId != null && controlToken is String) {
+          _sosControlTokens[alertId] = controlToken;
+        }
         return data;
       }
     } catch (e) {
@@ -291,17 +303,11 @@ class ApiService {
         payload['accuracy'] = accuracy;
       }
 
-      // Encrypt live coordinates with AES-256
-      final encryptedToken = EncryptionService.instance.encryptJson(payload);
-
       final res = await http
           .post(
             Uri.parse('$baseUrl/sos/live-update'),
-            headers: _headers,
-            body: jsonEncode({
-              ...payload,
-              'encrypted': encryptedToken,
-            }),
+            headers: _sosHeaders(alertId),
+            body: jsonEncode(payload),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -318,10 +324,11 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/sos/resolve/$alertId'),
-            headers: _headers,
+            headers: _sosHeaders(alertId),
           )
           .timeout(const Duration(seconds: 5));
 
+      // Token is kept: the evidence upload can still finish after the alert is resolved
       return res.statusCode == 200;
     } catch (e) {
       debugPrint('API SOS Resolve Error: $e');
@@ -376,6 +383,10 @@ class ApiService {
 
       if (_authToken != null && _authToken!.isNotEmpty) {
         request.headers['Authorization'] = 'Bearer $_authToken';
+      }
+      final controlToken = _sosControlTokens[alertId];
+      if (controlToken != null) {
+        request.headers['X-SOS-Token'] = controlToken;
       }
 
       if (fileBytes != null && fileBytes.isNotEmpty) {

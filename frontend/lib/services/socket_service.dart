@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'api_service.dart';
-import 'encryption_service.dart';
 
 /// Low-Bandwidth Real-Time WebSocket Service for DEVI Safety App.
 ///
@@ -179,18 +178,18 @@ class SocketService {
     if (speed != null) plainPacket['spd'] = speed;
     if (heading != null) plainPacket['hd'] = heading;
 
-    // Encrypt coordinates & telemetry with AES-256
-    final cipher = EncryptionService.instance.encryptJson(plainPacket);
-    final packet = <String, dynamic>{
-      'alertId': alertId,
-      'encrypted': cipher,
-    };
+    // Proves to the server that this device created the alert
+    final controlToken = ApiService.instance.sosControlToken(alertId);
+    if (controlToken != null) plainPacket['controlToken'] = controlToken;
+
+    // Sent over WSS (TLS) in production
+    final packet = plainPacket;
 
     if (isConnected.value && _channel != null) {
       try {
         final encoded = jsonEncode(packet);
         _channel!.sink.add(encoded);
-        debugPrint('🔒 [AES-256 WS LOCATION PUSHED] Seq #$seq Lat: $latitude, Lng: $longitude, Acc: $accuracy');
+        debugPrint('🛰️ [WS LOCATION PUSHED] Seq #$seq Lat: $latitude, Lng: $longitude, Acc: $accuracy');
         return;
       } catch (e) {
         debugPrint('⚠️ [WS SEND FAILED] Falling back to offline buffer & HTTP: $e');
