@@ -172,7 +172,7 @@ class _SplashScreenState extends State<SplashScreen>
                           'assets/images/devi-logo.png',
                           width: cardWidth,
                           height: cardHeight,
-                          fit: BoxFit.cover,
+                          fit: BoxFit.contain,
                           errorBuilder: (context, error, stackTrace) =>
                               const Center(
                             child: Icon(

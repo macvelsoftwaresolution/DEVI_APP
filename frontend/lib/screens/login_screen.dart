@@ -172,15 +172,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   SizedBox(height: isShortScreen ? 10 : size.height * 0.04),
 
-                  // Devi Logo Badge
-                  DeviLogoBadge(size: isSmallScreen || isShortScreen ? 64 : 78),
-                  SizedBox(height: isShortScreen ? 12 : 18),
+                  // Devi Logo Badge (enlarged)
+                  DeviLogoBadge(size: isSmallScreen || isShortScreen ? 90 : 112),
+                  SizedBox(height: isShortScreen ? 14 : 20),
 
-                  // "Your Guardian" Title
+                  // "Your Safety Guardian" Title
                   Text(
-                    'Your Guardian',
+                    'Your Safety Guardian',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: isSmallScreen ? 22 : 26,
+                      fontSize: isSmallScreen ? 23 : 27,
                       fontWeight: FontWeight.w800,
                       color: AppColors.primaryNavy,
                       letterSpacing: -0.5,
@@ -337,62 +338,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _continueAsGuest,
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 20),
 
-                  // "New User? Sign Up" Link
-                  GestureDetector(
-                    onTap: _navigateToSignUp,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Text(
-                          'New User? ',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                        Text(
-                          'Sign Up',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.emergencyRed,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // DEVI Responder Duty Portal Access
-                  Center(
-                    child: GestureDetector(
-                      onTap: () => Navigator.pushNamed(context, '/responder-duty'),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0284C7).withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text('🛡️ ', style: TextStyle(fontSize: 13)),
-                            Text(
-                              'Agent Portal',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF0284C7),
-                              ),
-                            ),
-                          ],
-                        ),
+                  // "New User? Sign Up" Button (matching Sign In button color and size)
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16.0 : 22.0),
+                    child: DeviPrimaryButton(
+                      text: 'New User? Sign Up',
+                      height: 50,
+                      backgroundColor: AppColors.primaryNavy,
+                      textColor: Colors.white,
+                      trailing: const Icon(
+                        Icons.arrow_forward,
+                        color: Colors.white,
+                        size: 17,
                       ),
+                      onPressed: _navigateToSignUp,
                     ),
                   ),
 

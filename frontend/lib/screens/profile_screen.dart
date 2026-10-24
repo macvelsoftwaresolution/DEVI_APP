@@ -22,14 +22,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
   late final TextEditingController _address1Controller;
-  late final TextEditingController _address2Controller;
-  late final List<TextEditingController> _guardianControllers;
+  late final List<TextEditingController> _guardianNameControllers;
+  late final List<TextEditingController> _guardianPhoneControllers;
 
   String? _selectedPhotoPath;
   String? _nameError;
   String? _phoneError;
   String? _address1Error;
-  List<String?> _guardianErrors = [];
+  List<String?> _guardianNameErrors = [];
+  List<String?> _guardianPhoneErrors = [];
   bool _isSaving = false;
 
   @override
@@ -42,24 +43,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameController = TextEditingController(text: isEditing ? state.name : '');
     _phoneController = TextEditingController(text: isEditing ? state.phone : '');
     _address1Controller = TextEditingController(text: isEditing ? state.address1 : '');
-    _address2Controller = TextEditingController(text: isEditing ? state.address2 : '');
 
     final existingGuardians = state.rawGuardians;
     if (isEditing && existingGuardians.isNotEmpty) {
-      _guardianControllers = existingGuardians
+      _guardianNameControllers = existingGuardians
+          .map((g) => TextEditingController(text: g.name))
+          .toList();
+      _guardianPhoneControllers = existingGuardians
           .map((g) => TextEditingController(text: g.phone))
           .toList();
     } else {
-      _guardianControllers = [
+      _guardianNameControllers = [
         TextEditingController(),
+      ];
+      _guardianPhoneControllers = [
         TextEditingController(),
       ];
     }
-    if (_guardianControllers.isEmpty) {
-      _guardianControllers.add(TextEditingController());
-      _guardianControllers.add(TextEditingController());
+    if (_guardianPhoneControllers.isEmpty) {
+      _guardianNameControllers.add(TextEditingController());
+      _guardianPhoneControllers.add(TextEditingController());
     }
-    _guardianErrors = List.filled(_guardianControllers.length, null);
+    _guardianNameErrors = List.filled(_guardianPhoneControllers.length, null);
+    _guardianPhoneErrors = List.filled(_guardianPhoneControllers.length, null);
   }
 
   @override
@@ -67,18 +73,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _address1Controller.dispose();
-    _address2Controller.dispose();
-    for (var controller in _guardianControllers) {
+    for (var controller in _guardianNameControllers) {
+      controller.dispose();
+    }
+    for (var controller in _guardianPhoneControllers) {
       controller.dispose();
     }
     super.dispose();
   }
 
   void _addGuardian() {
-    if (_guardianControllers.length < 5) {
+    if (_guardianPhoneControllers.length < 5) {
       setState(() {
-        _guardianControllers.add(TextEditingController());
-        _guardianErrors.add(null);
+        _guardianNameControllers.add(TextEditingController());
+        _guardianPhoneControllers.add(TextEditingController());
+        _guardianNameErrors.add(null);
+        _guardianPhoneErrors.add(null);
+      });
+    }
+  }
+
+  void _removeGuardian(int index) {
+    if (index > 0 && index < _guardianPhoneControllers.length) {
+      setState(() {
+        _guardianNameControllers[index].dispose();
+        _guardianPhoneControllers[index].dispose();
+        _guardianNameControllers.removeAt(index);
+        _guardianPhoneControllers.removeAt(index);
+        _guardianNameErrors.removeAt(index);
+        _guardianPhoneErrors.removeAt(index);
       });
     }
   }
@@ -347,7 +370,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final name = _nameController.text.trim();
     final phone = _phoneController.text.trim();
     final address1 = _address1Controller.text.trim();
-    final address2 = _address2Controller.text.trim();
 
     bool hasError = false;
 
@@ -390,43 +412,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _address1Error = null;
     }
 
-    // 4. Guardians Validation
+    // 4. Guardians Validation (Both Name & Phone)
     final List<GuardianModel> newGuardians = [];
-    final existingGuardians = AppState.instance.rawGuardians;
-    _guardianErrors = List.filled(_guardianControllers.length, null);
+    _guardianNameErrors = List.filled(_guardianPhoneControllers.length, null);
+    _guardianPhoneErrors = List.filled(_guardianPhoneControllers.length, null);
 
     final Set<String> seenPhones = {};
     int validGuardianCount = 0;
 
-    for (int i = 0; i < _guardianControllers.length; i++) {
-      final gPhone = _guardianControllers[i].text.trim();
-      if (gPhone.isNotEmpty) {
-        if (gPhone.length != 10) {
-          _guardianErrors[i] = 'Must be exactly 10 digits';
+    for (int i = 0; i < _guardianPhoneControllers.length; i++) {
+      final gName = _guardianNameControllers[i].text.trim();
+      final gPhone = _guardianPhoneControllers[i].text.trim();
+
+      // If both name and phone are empty and index > 0, skip optional slot
+      if (gName.isEmpty && gPhone.isEmpty) {
+        if (i == 0) {
+          _guardianPhoneErrors[i] = 'At least 1 guardian is required';
           hasError = true;
-        } else if (!RegExp(r'^[6-9]\d{9}$').hasMatch(gPhone)) {
-          _guardianErrors[i] = 'Starts with 6, 7, 8, or 9';
-          hasError = true;
-        } else if (gPhone == phone) {
-          _guardianErrors[i] = 'Cannot be your own number';
-          hasError = true;
-        } else if (seenPhones.contains(gPhone)) {
-          _guardianErrors[i] = 'Duplicate guardian number';
-          hasError = true;
-        } else {
-          seenPhones.add(gPhone);
-          validGuardianCount++;
-          final defaultName = i < existingGuardians.length
-              ? existingGuardians[i].name
-              : 'Guardian ${i + 1}';
-          newGuardians.add(GuardianModel(name: defaultName, phone: gPhone));
         }
+        continue;
+      }
+
+      // If either name or phone is filled, both become required for this guardian
+      if (gName.isEmpty) {
+        _guardianNameErrors[i] = 'Guardian name is required';
+        hasError = true;
+      } else if (gName.length < 2) {
+        _guardianNameErrors[i] = 'Name must be at least 2 characters';
+        hasError = true;
+      }
+
+      if (gPhone.isEmpty) {
+        _guardianPhoneErrors[i] = 'Phone number is required';
+        hasError = true;
+      } else if (gPhone.length != 10) {
+        _guardianPhoneErrors[i] = 'Must be exactly 10 digits';
+        hasError = true;
+      } else if (!RegExp(r'^[6-9]\d{9}$').hasMatch(gPhone)) {
+        _guardianPhoneErrors[i] = 'Starts with 6, 7, 8, or 9';
+        hasError = true;
+      } else if (gPhone == phone) {
+        _guardianPhoneErrors[i] = 'Cannot be your own number';
+        hasError = true;
+      } else if (seenPhones.contains(gPhone)) {
+        _guardianPhoneErrors[i] = 'Duplicate guardian number';
+        hasError = true;
+      }
+
+      if (_guardianNameErrors[i] == null && _guardianPhoneErrors[i] == null) {
+        seenPhones.add(gPhone);
+        validGuardianCount++;
+        newGuardians.add(GuardianModel(name: gName, phone: gPhone));
       }
     }
 
     if (validGuardianCount == 0) {
-      if (_guardianErrors.isNotEmpty) {
-        _guardianErrors[0] = 'At least 1 guardian is required';
+      if (_guardianPhoneErrors.isNotEmpty && _guardianPhoneErrors[0] == null) {
+        _guardianPhoneErrors[0] = 'At least 1 guardian is required';
       }
       hasError = true;
     }
@@ -450,7 +492,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       newName: name,
       newPhone: phone,
       newAddress1: address1,
-      newAddress2: address2.isNotEmpty ? address2 : null,
+      newAddress2: null,
       newGuardians: newGuardians,
     );
 
@@ -693,23 +735,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     },
                   ),
 
-                  const SizedBox(height: 14),
-
-                  CustomTextField(
-                    label: 'Address 2',
-                    labelTrailing: const Text(
-                      'Optional',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.optionalGrey,
-                      ),
-                    ),
-                    hintText: 'Enter address line 2 (optional)',
-                    controller: _address2Controller,
-                    prefixIcon: Icons.location_on_outlined,
-                  ),
-
                   const SizedBox(height: 20),
 
                   // Add Guardians Section
@@ -725,27 +750,127 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   const SizedBox(height: 10),
 
-                  ...List.generate(_guardianControllers.length, (index) {
-                    final error = index < _guardianErrors.length ? _guardianErrors[index] : null;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12.0),
-                      child: CustomTextField(
-                        label: 'Guardian  ${index + 1}',
-                        hintText: 'Enter guardian phone number',
-                        controller: _guardianControllers[index],
-                        prefixIcon: Icons.phone_outlined,
-                        prefixText: '+91',
-                        keyboardType: TextInputType.phone,
-                        errorText: error,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(10),
+                  ...List.generate(_guardianPhoneControllers.length, (index) {
+                    final nameErr = index < _guardianNameErrors.length ? _guardianNameErrors[index] : null;
+                    final phoneErr = index < _guardianPhoneErrors.length ? _guardianPhoneErrors[index] : null;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 14.0),
+                      padding: const EdgeInsets.all(14.0),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: (nameErr != null || phoneErr != null)
+                              ? AppColors.emergencyRed.withValues(alpha: 0.5)
+                              : AppColors.borderCard,
+                          width: 1.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
                         ],
-                        onChanged: (_) {
-                          if (index < _guardianErrors.length && _guardianErrors[index] != null) {
-                            setState(() => _guardianErrors[index] = null);
-                          }
-                        },
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryNavy.withValues(alpha: 0.08),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${index + 1}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.primaryNavy,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Guardian ${index + 1}',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primaryNavy,
+                                    ),
+                                  ),
+                                  if (index == 0) ...[
+                                    const SizedBox(width: 6),
+                                    const Text(
+                                      'Mandatory',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.mandatoryRed,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              if (index > 0)
+                                InkWell(
+                                  onTap: () => _removeGuardian(index),
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(4.0),
+                                    child: Icon(
+                                      Icons.close_rounded,
+                                      size: 18,
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          CustomTextField(
+                            label: 'Name',
+                            hintText: 'Enter guardian name',
+                            controller: _guardianNameControllers[index],
+                            prefixIcon: Icons.person_outline,
+                            errorText: nameErr,
+                            textCapitalization: TextCapitalization.words,
+                            onChanged: (_) {
+                              if (index < _guardianNameErrors.length && _guardianNameErrors[index] != null) {
+                                setState(() => _guardianNameErrors[index] = null);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 10),
+                          CustomTextField(
+                            label: 'Mobile Number',
+                            hintText: 'Enter guardian phone number',
+                            controller: _guardianPhoneControllers[index],
+                            prefixIcon: Icons.phone_outlined,
+                            prefixText: '+91',
+                            keyboardType: TextInputType.phone,
+                            errorText: phoneErr,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(10),
+                            ],
+                            onChanged: (_) {
+                              if (index < _guardianPhoneErrors.length && _guardianPhoneErrors[index] != null) {
+                                setState(() => _guardianPhoneErrors[index] = null);
+                              }
+                            },
+                          ),
+                        ],
                       ),
                     );
                   }),

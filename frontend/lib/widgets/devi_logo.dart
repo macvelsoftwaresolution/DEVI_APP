@@ -74,7 +74,7 @@ class DeviAppBarBadge extends StatelessWidget {
         const SizedBox(width: 8),
         const Flexible(
           child: Text(
-            'Women Safety',
+            'Your Safety Guardian',
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,

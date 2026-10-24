@@ -81,39 +81,34 @@ class GuestUserButton extends StatelessWidget {
           height: 64,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppColors.emergencyRed,
             borderRadius: BorderRadius.circular(32),
-            border: Border.all(
-              color: const Color(0xFFFECDD3),
-              width: 1.4,
-            ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFE11D48).withValues(alpha: 0.08),
-                blurRadius: 14,
-                offset: const Offset(0, 4),
+                color: AppColors.emergencyRed.withValues(alpha: 0.35),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
           child: Row(
             children: [
-              // Flash/Shield icon in soft red badge
+              // Flash icon in badge
               Container(
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFFECEF), Color(0xFFFFD5DC)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  color: Colors.white.withValues(alpha: 0.22),
                   shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFFFDA4AF), width: 1),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    width: 1.2,
+                  ),
                 ),
                 child: const Center(
                   child: Icon(
                     Icons.bolt_rounded,
-                    color: Color(0xFFE11D48),
+                    color: Colors.white,
                     size: 24,
                   ),
                 ),
@@ -129,26 +124,28 @@ class GuestUserButton extends StatelessWidget {
                         Text(
                           title,
                           style: const TextStyle(
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: FontWeight.w800,
-                            color: Color(0xFFBE123C),
+                            color: Colors.white,
                             letterSpacing: -0.2,
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFF1F2),
+                            color: Colors.white.withValues(alpha: 0.25),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFFECDD3)),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.45),
+                            ),
                           ),
                           child: const Text(
                             'FAST',
                             style: TextStyle(
                               fontSize: 9,
                               fontWeight: FontWeight.w800,
-                              color: Color(0xFFE11D48),
+                              color: Colors.white,
                               letterSpacing: 0.4,
                             ),
                           ),
@@ -159,10 +156,10 @@ class GuestUserButton extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
-                          color: AppColors.textMuted,
+                          color: Colors.white.withValues(alpha: 0.85),
                         ),
                       ),
                     ],
@@ -170,16 +167,16 @@ class GuestUserButton extends StatelessWidget {
                 ),
               ),
               Container(
-                width: 30,
-                height: 30,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFFF1F2),
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.22),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.arrow_forward_rounded,
-                  color: Color(0xFFE11D48),
-                  size: 16,
+                  color: Colors.white,
+                  size: 17,
                 ),
               ),
             ],
