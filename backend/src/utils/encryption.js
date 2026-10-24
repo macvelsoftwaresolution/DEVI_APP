@@ -1,10 +1,8 @@
 import crypto from 'crypto';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import { ENCRYPTION_KEY } from '../config/security.js';
 
 // Standard 256-bit (32 bytes) AES key derived via SHA-256
-const SECRET_SEED = process.env.ENCRYPTION_KEY || 'devi_aes_256_military_grade_secret_key_2026';
+const SECRET_SEED = ENCRYPTION_KEY;
 const AES_KEY = crypto.createHash('sha256').update(SECRET_SEED).digest();
 const ALGORITHM = 'aes-256-cbc';
 const IV_LENGTH = 16; // 128-bit IV for AES-CBC

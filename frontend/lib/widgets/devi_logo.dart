@@ -43,20 +43,43 @@ class DeviLogoBadge extends StatelessWidget {
 }
 
 class DeviAppBarBadge extends StatelessWidget {
-  const DeviAppBarBadge({super.key});
+  final String title;
+  final String? subtitle;
+  final double logoSize;
+  final double fontSize;
+
+  const DeviAppBarBadge({
+    super.key,
+    this.title = 'Your Safety Guardian',
+    this.subtitle,
+    this.logoSize = 32,
+    this.fontSize = 13,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final titleText = Text(
+      title,
+      style: TextStyle(
+        fontSize: fontSize,
+        fontWeight: FontWeight.w800,
+        color: AppColors.primaryNavy,
+        letterSpacing: subtitle != null ? 0.5 : 0,
+        height: 1.1,
+      ),
+      overflow: TextOverflow.ellipsis,
+    );
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 32,
-          height: 32,
+          width: logoSize,
+          height: logoSize,
           padding: const EdgeInsets.all(2),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(logoSize / 4),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.05),
@@ -65,23 +88,36 @@ class DeviAppBarBadge extends StatelessWidget {
               ),
             ],
           ),
-          child: Image.asset(
-            'assets/images/devi-logo.png',
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const _FallbackLogo(size: 28),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(logoSize / 4 - 2),
+            child: Image.asset(
+              'assets/images/devi-logo.png',
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => _FallbackLogo(size: logoSize - 4),
+            ),
           ),
         ),
-        const SizedBox(width: 8),
-        const Flexible(
-          child: Text(
-            'Your Safety Guardian',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AppColors.primaryNavy,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: subtitle == null
+              ? titleText
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    titleText,
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textMuted,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
         ),
       ],
     );

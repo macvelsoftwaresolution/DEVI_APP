@@ -7,6 +7,7 @@ import { socketService } from '../services/socket.service.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { verifyResponderAuth } from '../middlewares/auth.middleware.js';
 import { supabase } from '../config/supabase.js';
+import { JWT_SECRET, IS_PRODUCTION } from '../config/security.js';
 
 const router = Router();
 
@@ -22,7 +23,7 @@ router.post(['/duty/login', '/agents/login'], async (req, res, next) => {
     const agent = result.agent;
     const token = jwt.sign(
       { id: agent.id, role: 'responder', phone: agent.phone, name: agent.name },
-      process.env.JWT_SECRET || 'devi_secret_key_change_in_production',
+      JWT_SECRET,
       { expiresIn: '30d' }
     );
 
@@ -132,7 +133,8 @@ router.post('/agents/send-otp', async (req, res, next) => {
       success: true,
       message: `Verification OTP dispatched to +91 ${cleanPhone}`,
       phone: cleanPhone,
-      devOtp: otp, // Available for instant testing & demo ease
+      // Demo OTP is only returned outside production
+      ...(!IS_PRODUCTION && { devOtp: otp }),
       waDispatched: waResult?.success || false,
     });
   } catch (err) {
@@ -282,7 +284,7 @@ router.post('/duty/invite/respond', async (req, res, next) => {
       const agent = result.agent;
       const authToken = jwt.sign(
         { id: agent.id, role: 'responder', phone: agent.phone, name: agent.name },
-        process.env.JWT_SECRET || 'devi_secret_key_change_in_production',
+        JWT_SECRET,
         { expiresIn: '30d' }
       );
 

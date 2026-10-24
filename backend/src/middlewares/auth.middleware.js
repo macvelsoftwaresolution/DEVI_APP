@@ -1,7 +1,20 @@
 import jwt from 'jsonwebtoken';
+import { JWT_SECRET, ADMIN_SECRET_KEY } from '../config/security.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'devi_secret_key_change_in_production';
-const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || 'devi_admin_secret_2026';
+/**
+ * Signs a 30-day JWT for an app user (used by login & first-time sign up)
+ */
+export const signUserToken = (user, phone) =>
+  jwt.sign(
+    {
+      id: user.id,
+      phone,
+      name: user.name || '',
+      isGuest: !!user.isGuest,
+    },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
 
 /**
  * Middleware: Verify user JWT token for protected API routes

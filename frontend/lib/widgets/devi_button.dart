@@ -62,32 +62,37 @@ class GuestUserButton extends StatelessWidget {
   final VoidCallback onPressed;
   final String title;
   final String subtitle;
+  final double height;
 
   const GuestUserButton({
     super.key,
     required this.onPressed,
     this.title = 'Instant SOS',
     this.subtitle = '',
+    this.height = 50,
   });
 
   @override
   Widget build(BuildContext context) {
+    final borderRadius = BorderRadius.circular(height / 2);
+    final isCompact = height <= 52;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: borderRadius,
         child: Container(
-          height: 64,
+          height: height,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: AppColors.emergencyRed,
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: borderRadius,
             boxShadow: [
               BoxShadow(
                 color: AppColors.emergencyRed.withValues(alpha: 0.35),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+                blurRadius: isCompact ? 12 : 16,
+                offset: Offset(0, isCompact ? 4 : 6),
               ),
             ],
           ),
@@ -95,8 +100,8 @@ class GuestUserButton extends StatelessWidget {
             children: [
               // Flash icon in badge
               Container(
-                width: 40,
-                height: 40,
+                width: isCompact ? 32 : 40,
+                height: isCompact ? 32 : 40,
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.22),
                   shape: BoxShape.circle,
@@ -105,78 +110,115 @@ class GuestUserButton extends StatelessWidget {
                     width: 1.2,
                   ),
                 ),
-                child: const Center(
+                child: Center(
                   child: Icon(
                     Icons.bolt_rounded,
                     color: Colors.white,
-                    size: 24,
+                    size: isCompact ? 19 : 24,
                   ),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.25),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.45),
-                            ),
-                          ),
-                          child: const Text(
-                            'FAST',
+                child: subtitle.isEmpty
+                    ? Row(
+                        children: [
+                          Text(
+                            title,
                             style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
+                              fontSize: isCompact ? 15 : 16,
+                              fontWeight: FontWeight.w700,
                               color: Colors.white,
-                              letterSpacing: 0.4,
+                              letterSpacing: -0.2,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white.withValues(alpha: 0.85),
-                        ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isCompact ? 6 : 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.45),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: const Text(
+                              'FAST',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                title,
+                                style: TextStyle(
+                                  fontSize: isCompact ? 14 : 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  borderRadius: BorderRadius.circular(5),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.45),
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: const Text(
+                                  'FAST',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              fontSize: isCompact ? 10 : 11,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ],
-                ),
               ),
               Container(
-                width: 32,
-                height: 32,
+                width: isCompact ? 28 : 32,
+                height: isCompact ? 28 : 32,
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.22),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.arrow_forward_rounded,
                   color: Colors.white,
-                  size: 17,
+                  size: isCompact ? 15 : 17,
                 ),
               ),
             ],

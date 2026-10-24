@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { DataService } from '../services/data.service.js';
-import { optionalToken } from '../middlewares/auth.middleware.js';
+import { optionalToken, verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
 const isValidMobile = (phone) => /^[6-9]\d{9}$/.test(phone);
 
 // GET /api/user/profile/:phone
-router.get('/profile/:phone', optionalToken, async (req, res, next) => {
+router.get('/profile/:phone', verifyToken, async (req, res, next) => {
   try {
     const { phone } = req.params;
     if (!phone || !isValidMobile(phone.trim())) {
@@ -17,8 +17,8 @@ router.get('/profile/:phone', optionalToken, async (req, res, next) => {
       });
     }
 
-    // If authenticated, ensure user can only query their own profile
-    if (req.user && req.user.phone && req.user.phone !== phone.trim()) {
+    // Users can only query their own profile
+    if (req.user.phone !== phone.trim()) {
       return res.status(403).json({
         success: false,
         message: 'Access forbidden: You cannot view another user profile',
@@ -61,6 +61,18 @@ router.put('/profile', optionalToken, async (req, res, next) => {
         success: false,
         message: 'Access forbidden: You cannot update another user profile',
       });
+    }
+
+    // Without a token, only first-time sign up is allowed (existing profiles need login)
+    const isNewSignup = !req.user;
+    if (isNewSignup) {
+      const existing = await DataService.findUserByPhone(cleanPhone);
+      if (existing && !existing.isGuest) {
+        return res.status(401).json({
+          success: false,
+          message: 'This mobile number is already registered. Please sign in.',
+        });
+      }
     }
 
     // Name validation
@@ -116,6 +128,8 @@ router.put('/profile', optionalToken, async (req, res, next) => {
       success: true,
       message: 'Profile updated successfully in database',
       data: updatedUser,
+      // New sign ups get a session token so they stay logged in
+      ...(isNewSignup && { token: signUserToken(updatedUser, cleanPhone) }),
     });
   } catch (err) {
     next(err);

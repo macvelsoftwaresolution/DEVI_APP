@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../theme/app_colors.dart';
 import '../widgets/input_field.dart';
@@ -64,8 +65,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _guardianNameControllers.add(TextEditingController());
       _guardianPhoneControllers.add(TextEditingController());
     }
-    _guardianNameErrors = List.filled(_guardianPhoneControllers.length, null);
-    _guardianPhoneErrors = List.filled(_guardianPhoneControllers.length, null);
+    _guardianNameErrors = List.filled(_guardianPhoneControllers.length, null, growable: true);
+    _guardianPhoneErrors = List.filled(_guardianPhoneControllers.length, null, growable: true);
   }
 
   @override
@@ -90,6 +91,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _guardianNameErrors.add(null);
         _guardianPhoneErrors.add(null);
       });
+    } else {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.primaryNavy,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          content: const Text(
+            'You can add up to 5 guardians only',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -414,8 +430,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     // 4. Guardians Validation (Both Name & Phone)
     final List<GuardianModel> newGuardians = [];
-    _guardianNameErrors = List.filled(_guardianPhoneControllers.length, null);
-    _guardianPhoneErrors = List.filled(_guardianPhoneControllers.length, null);
+    _guardianNameErrors = List.filled(_guardianPhoneControllers.length, null, growable: true);
+    _guardianPhoneErrors = List.filled(_guardianPhoneControllers.length, null, growable: true);
 
     final Set<String> seenPhones = {};
     int validGuardianCount = 0;
@@ -488,13 +504,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isSaving = true);
 
     // Dynamically persist to Supabase backend
-    await AppState.instance.saveProfileToBackend(
+    final saved = await AppState.instance.saveProfileToBackend(
       newName: name,
       newPhone: phone,
       newAddress1: address1,
       newAddress2: null,
       newGuardians: newGuardians,
     );
+
+    if (!saved) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ApiService.instance.lastProfileError ?? 'Could not save profile. Please try again.',
+          ),
+          backgroundColor: AppColors.emergencyRed,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
 
     // Persist chosen profile photo locally in AppState
     AppState.instance.setProfilePhoto(_selectedPhotoPath);
@@ -588,7 +622,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   width: 90,
                                   height: 90,
                                   decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
+                                    borderRadius: BorderRadius.circular(22),
                                     color: Colors.grey.shade100,
                                     border: Border.all(
                                       color: Colors.white,
@@ -602,13 +636,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       ),
                                     ],
                                   ),
-                                  child: ClipOval(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(18.5),
                                     child: _buildAvatarImage(),
                                   ),
                                 ),
                                 Positioned(
-                                  right: -2,
-                                  bottom: 2,
+                                  right: -8,
+                                  bottom: -8,
                                   child: Container(
                                     width: 30,
                                     height: 30,
@@ -717,7 +752,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 14),
 
                   CustomTextField(
-                    label: 'Address 1',
+                    label: 'Address',
                     labelTrailing: const Text(
                       'Mandatory',
                       style: TextStyle(

@@ -327,37 +327,96 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                           onPressed: _isLoading ? null : _signIn,
                         ),
+
+                        const SizedBox(height: 20),
+
+                        // "New user? [Sign Up]" with highlighted Sign Up chip
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text(
+                              'New user?',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Material(
+                              color: AppColors.primaryNavy.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(20),
+                              child: InkWell(
+                                onTap: _navigateToSignUp,
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: AppColors.primaryNavy.withValues(alpha: 0.25),
+                                      width: 1.2,
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Sign Up',
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.primaryNavy,
+                                        ),
+                                      ),
+                                      SizedBox(width: 6),
+                                      Icon(
+                                        Icons.arrow_forward_rounded,
+                                        size: 16,
+                                        color: AppColors.primaryNavy,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 22),
+
+                        // "OR" divider
+                        Row(
+                          children: [
+                            Expanded(child: Divider(color: AppColors.textLight.withValues(alpha: 0.4), thickness: 1)),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'OR',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textMuted,
+                                  letterSpacing: 1,
+                                ),
+                              ),
+                            ),
+                            Expanded(child: Divider(color: AppColors.textLight.withValues(alpha: 0.4), thickness: 1)),
+                          ],
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Guest User Button (Instant SOS, same width as Sign In)
+                        GuestUserButton(
+                          height: 50,
+                          onPressed: _continueAsGuest,
+                        ),
                       ],
                     ),
                   ),
 
-                  const SizedBox(height: 20),
-
-                  // Guest User Pill Button
-                  GuestUserButton(
-                    onPressed: _continueAsGuest,
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // "New User? Sign Up" Button (matching Sign In button color and size)
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16.0 : 22.0),
-                    child: DeviPrimaryButton(
-                      text: 'New User? Sign Up',
-                      height: 50,
-                      backgroundColor: AppColors.primaryNavy,
-                      textColor: Colors.white,
-                      trailing: const Icon(
-                        Icons.arrow_forward,
-                        color: Colors.white,
-                        size: 17,
-                      ),
-                      onPressed: _navigateToSignUp,
-                    ),
-                  ),
-
-                  SizedBox(height: size.height * 0.04),
+                  SizedBox(height: isShortScreen ? 12 : size.height * 0.04),
                 ],
               ),
             ),

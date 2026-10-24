@@ -453,8 +453,16 @@ router.get('/history/:phone', optionalToken, async (req, res, next) => {
   try {
     const { phone } = req.params;
 
+    // Guest sessions (GUEST_xxx) have no login, so only registered numbers need a token
+    if (!phone.startsWith('GUEST_') && !req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. Please log in to view your emergency history.',
+      });
+    }
+
     // Privacy check: User can only view their own emergency history
-    if (req.user && req.user.phone && req.user.phone !== phone) {
+    if (req.user && req.user.phone !== phone) {
       return res.status(403).json({
         success: false,
         message: 'Access forbidden: You cannot view another user emergency history',

@@ -40,6 +40,9 @@ class ApiService {
 
   String? get authToken => _authToken;
 
+  // Error message from the last failed profile save (shown to the user)
+  String? lastProfileError;
+
   // Base URL for all API requests
   static String get baseUrl {
     if (isLocal) {
@@ -137,15 +140,29 @@ class ApiService {
     }
   }
 
+  // --- Auth: Silently get a fresh token for a saved session (no OTP login) ---
+  Future<void> _ensureToken(String phone, {bool force = false}) async {
+    if (!force && _authToken != null && _authToken!.isNotEmpty) return;
+    await login(phone);
+  }
+
   // --- User: Get Profile & Guardians ---
   Future<Map<String, dynamic>?> getProfile(String phone) async {
     try {
-      final res = await http
+      await _ensureToken(phone);
+      Future<http.Response> fetch() => http
           .get(
             Uri.parse('$baseUrl/user/profile/$phone'),
             headers: _headers,
           )
           .timeout(const Duration(seconds: 8));
+
+      var res = await fetch();
+      // Token expired or invalid: refresh once and retry
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        await _ensureToken(phone, force: true);
+        res = await fetch();
+      }
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
@@ -182,9 +199,21 @@ class ApiService {
           )
           .timeout(const Duration(seconds: 8));
 
-      return res.statusCode == 200;
+      final body = jsonDecode(res.body);
+      if (res.statusCode == 200) {
+        lastProfileError = null;
+        // First-time sign up returns a session token
+        final token = body['token'];
+        if (token != null && token is String) {
+          setAuthToken(token);
+        }
+        return true;
+      }
+      lastProfileError = body['message']?.toString();
+      return false;
     } catch (e) {
       debugPrint('API Update Profile Error: $e');
+      lastProfileError = 'Unable to reach server. Please try again.';
       return false;
     }
   }
@@ -337,9 +366,18 @@ class ApiService {
           ? '$baseUrl/sos/history/$userPhone'
           : '$baseUrl/sos/history';
 
-      final res = await http
+      Future<http.Response> fetch() => http
           .get(Uri.parse(url), headers: _headers)
           .timeout(const Duration(seconds: 8));
+
+      var res = await fetch();
+      // Token expired or invalid: refresh once and retry (registered users only)
+      if ((res.statusCode == 401 || res.statusCode == 403) &&
+          userPhone != null &&
+          !userPhone.startsWith('GUEST_')) {
+        await _ensureToken(userPhone, force: true);
+        res = await fetch();
+      }
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);

@@ -9,6 +9,7 @@ import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../services/disguise_notification_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/devi_logo.dart';
 import '../widgets/emergency_sound_card.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -27,7 +28,6 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
   bool _isSendingSos = false;
   String? _activeIdempotencyKey;
   String? _activeAlertId;
-  bool get _isSoundPlaying => SoundService.instance.isPlaying;
   Timer? _holdTimer;
   double _holdProgress = 0.0;
   late AnimationController _pulseController;
@@ -447,259 +447,168 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     }
   }
 
-  // --- Demo Mode Bottom Sheet (Matches Screenshot 2) ---
-  void _showDemoModeSheet() {
-    showModalBottomSheet(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              12,
-              20,
-              24 + MediaQuery.of(ctx).viewInsets.bottom,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Top Handle Bar
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
+  // --- SOS Guide (top section of the SOS card) ---
+  Widget _buildSosGuide() {
+    final String title;
+    final String message;
+    if (_isEmergencyActive) {
+      title = 'Alert is live';
+      message = 'Tap I Am Safe when safe';
+    } else if (_isCountingDown) {
+      title = 'Sending alert…';
+      message = 'Tap Cancel to stop';
+    } else {
+      title = 'Demo Mode';
+      message = 'See the alert message';
+    }
 
-                // Title and Close Button
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        onTap: _showSosNote,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(Icons.lightbulb_outline_rounded, color: Color(0xFFD97706), size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Demo Mode',
-                      style: TextStyle(
-                        fontSize: 17,
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: AppColors.primaryNavy,
                       ),
                     ),
-                    InkWell(
-                      onTap: () => Navigator.of(ctx).pop(),
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFF1F5F9),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: AppColors.textMuted,
-                        ),
+                    const SizedBox(height: 3),
+                    Text(
+                      message,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textMuted,
+                        height: 1.35,
                       ),
                     ),
                   ],
                 ),
-
-                const SizedBox(height: 18),
-
-                // Option 1: SOS Test Card
-                InkWell(
-                  onTap: () {
-                    Navigator.of(ctx).pop();
-                    _triggerSosAlert();
-                  },
-                  borderRadius: BorderRadius.circular(18),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.02),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 46,
-                          height: 46,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFE50914),
-                            borderRadius: BorderRadius.all(Radius.circular(14)),
-                          ),
-                          child: const Center(
-                            child: Icon(
-                              Icons.shield_outlined,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        const Text(
-                          'SOS Test',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primaryNavy,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // Option 2: Emergency Sound Card (Interactive Toggle Inside Sheet)
-                InkWell(
-                  onTap: () async {
-                    await SoundService.instance.toggleSiren();
-                    if (mounted) {
-                      setState(() {});
-                      setSheetState(() {});
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(18),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 250),
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: _isSoundPlaying ? const Color(0xFFFEF2F2) : Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: _isSoundPlaying ? const Color(0xFFDC2626) : const Color(0xFFE2E8F0),
-                        width: _isSoundPlaying ? 1.5 : 1,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _isSoundPlaying
-                              ? const Color(0xFFDC2626).withValues(alpha: 0.15)
-                              : Colors.black.withValues(alpha: 0.02),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          width: 46,
-                          height: 46,
-                          decoration: BoxDecoration(
-                            color: _isSoundPlaying ? const Color(0xFFDC2626) : const Color(0xFFFF521D),
-                            borderRadius: const BorderRadius.all(Radius.circular(14)),
-                          ),
-                          child: Center(
-                            child: Icon(
-                              _isSoundPlaying ? Icons.volume_up : Icons.volume_up_rounded,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    _isSoundPlaying ? 'Siren Playing...' : 'Emergency Sound',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: _isSoundPlaying ? const Color(0xFFDC2626) : AppColors.primaryNavy,
-                                    ),
-                                  ),
-                                  if (_isSoundPlaying) ...[
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      width: 8,
-                                      height: 8,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFFDC2626),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                _isSoundPlaying
-                                    ? 'Tap to stop siren'
-                                    : 'Tap to test loud siren',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: _isSoundPlaying ? const Color(0xFFDC2626) : AppColors.textMuted,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _isSoundPlaying ? const Color(0xFFDC2626) : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _isSoundPlaying ? Icons.stop_circle_outlined : Icons.play_arrow_rounded,
-                                size: 14,
-                                color: _isSoundPlaying ? Colors.white : AppColors.primaryNavy,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _isSoundPlaying ? 'STOP' : 'TEST',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: _isSoundPlaying ? Colors.white : AppColors.primaryNavy,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-              ],
-            ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.primaryNavy,
+                size: 24,
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Preview only: shows the alert message format, nothing is sent
+  void _showSosNote() {
+    final name = _appState.name.isNotEmpty ? _appState.name : 'DEVI User';
+    final time = TimeOfDay.now().format(context);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Message preview',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This is sent when you press SOS',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 14),
+            // WhatsApp-style message bubble
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+              decoration: const BoxDecoration(
+                color: Color(0xFFDCF8C6),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(4),
+                  topRight: Radius.circular(14),
+                  bottomLeft: Radius.circular(14),
+                  bottomRight: Radius.circular(14),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '🚨 EMERGENCY SOS ALERT',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF111B21)),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '$name needs help!',
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF111B21), height: 1.4),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    '📍 Live location: devi.app/track/…',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF027EB5), height: 1.4),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Call them now or dial 112.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF111B21), height: 1.4),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Text(
+                      time,
+                      style: const TextStyle(fontSize: 10.5, color: Color(0xFF667781)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text(
+              'Got it',
+              style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -733,42 +642,34 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Row(
-                        children: [
-                          Icon(
-                            Icons.shield_outlined,
-                            color: AppColors.emergencyRed,
-                            size: 20,
-                          ),
-                          SizedBox(width: 6),
-                          Text(
-                            'Sos',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primaryNavy,
-                            ),
-                          ),
-                        ],
+                      const Flexible(
+                        child: DeviAppBarBadge(
+                          title: 'DEVI',
+                          subtitle: 'Your Safety Guardian',
+                          logoSize: 40,
+                          fontSize: 18,
+                        ),
                       ),
                       Row(
                         children: [
                           IconButton(
+                            tooltip: 'History',
+                            iconSize: 28,
                             icon: Stack(
                               clipBehavior: Clip.none,
                               children: [
                                 const Icon(
                                   Icons.history,
                                   color: AppColors.primaryNavy,
-                                  size: 22,
+                                  size: 28,
                                 ),
                                 if (_activeAlertId != null)
                                   Positioned(
                                     top: -1,
                                     right: -1,
                                     child: Container(
-                                      width: 9,
-                                      height: 9,
+                                      width: 11,
+                                      height: 11,
                                       decoration: BoxDecoration(
                                         color: const Color(0xFF0284C7),
                                         shape: BoxShape.circle,
@@ -785,10 +686,12 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                             },
                           ),
                           IconButton(
+                            tooltip: 'Settings',
+                            iconSize: 28,
                             icon: const Icon(
                               Icons.settings_outlined,
                               color: AppColors.primaryNavy,
-                              size: 22,
+                              size: 28,
                             ),
                             onPressed: _navigateToSettings,
                           ),
@@ -801,35 +704,6 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
                   // Emergency 2-Minute Recording Live Banner & Evidence Player
                   // const EmergencyRecordingBanner(),
-
-                  // Demo Pill
-                  GestureDetector(
-                    onTap: _showDemoModeSheet,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8EEF5),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.play_arrow, size: 13, color: AppColors.demoPillText),
-                          SizedBox(width: 4),
-                          Text(
-                            'Demo',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.demoPillText,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-
 
                   SizedBox(height: isShortScreen ? 6 : 10),
 
@@ -906,24 +780,14 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                     ),
                   ],
 
+                  // SOS Guide Card (separate card above SOS)
+                  _buildSosGuide(),
+
+                  const SizedBox(height: 12),
+
                   // SOS Home Card (Presented for both Registered and Guest User)
                   Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        if (_isCountingDown) {
-                          _cancelSosCountdown();
-                        } else {
-                          _onSosTriggered();
-                        }
-                      },
-                      onTapDown: (_) {
-                        if (!_isCountingDown && !_isEmergencyActive) {
-                          _onHoldStart();
-                        }
-                      },
-                      onTapUp: (_) => _onHoldEnd(),
-                      onTapCancel: _onHoldEnd,
-                      child: AnimatedContainer(
+                    child: AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
                         width: double.infinity,
                         decoration: BoxDecoration(
@@ -950,7 +814,23 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                             ),
                           ],
                         ),
-                        child: LayoutBuilder(
+                        child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {
+                                  if (_isCountingDown) {
+                                    _cancelSosCountdown();
+                                  } else {
+                                    _onSosTriggered();
+                                  }
+                                },
+                                onTapDown: (_) {
+                                  if (!_isCountingDown && !_isEmergencyActive) {
+                                    _onHoldStart();
+                                  }
+                                },
+                                onTapUp: (_) => _onHoldEnd(),
+                                onTapCancel: _onHoldEnd,
+                                child: LayoutBuilder(
                           builder: (context, constraints) {
                             final availableHeight = constraints.maxHeight;
                             final circleSize = (availableHeight * 0.22).clamp(52.0, 78.0);

@@ -4,6 +4,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import { isAllowedOrigin } from './config/security.js';
 import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
@@ -32,7 +33,7 @@ app.use(
 // CORS configuration
 app.use(
   cors({
-    origin: '*',
+    origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-key'],
   })
@@ -63,7 +64,7 @@ app.get(['/webhook', '/api/webhook'], (req, res) => {
     console.log('✅ [WHATSAPP WEBHOOK VERIFIED BY META]');
     return res.status(200).send(challenge);
   } else {
-    console.warn(`❌ [WHATSAPP WEBHOOK FAILED] Expected: ${WHATSAPP_VERIFY_TOKEN}, Received: ${token}`);
+    console.warn(`❌ [WHATSAPP WEBHOOK FAILED] Verify token mismatch`);
     return res.sendStatus(403);
   }
 });

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'emergency_media_service.dart';
@@ -68,6 +69,22 @@ class AppState extends ChangeNotifier {
   static const String _keyGuestGuardians = 'devi_guest_guardians';
   static const String _keyAuthToken = 'devi_auth_token';
 
+  // Auth token lives in encrypted storage (Android Keystore / iOS Keychain), not SharedPreferences
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+
+  Future<String?> _readAuthToken(SharedPreferences prefs) async {
+    final token = await _secureStorage.read(key: _keyAuthToken);
+    if (token != null && token.isNotEmpty) return token;
+
+    // One-time migration of tokens saved by older app versions
+    final legacyToken = prefs.getString(_keyAuthToken);
+    if (legacyToken != null && legacyToken.isNotEmpty) {
+      await _secureStorage.write(key: _keyAuthToken, value: legacyToken);
+      await prefs.remove(_keyAuthToken);
+    }
+    return legacyToken;
+  }
+
   /// Initializes anonymous guest session with unique ID and syncs to Supabase
   Future<void> initGuestSession() async {
     isGuest = true;
@@ -116,7 +133,7 @@ class AppState extends ChangeNotifier {
       }
       final tokenToSave = token ?? ApiService.instance.authToken;
       if (tokenToSave != null && tokenToSave.isNotEmpty) {
-        await prefs.setString(_keyAuthToken, tokenToSave);
+        await _secureStorage.write(key: _keyAuthToken, value: tokenToSave);
       }
       // Reset any previous emergency media banner for fresh user session
       EmergencyMediaService.instance.reset();
@@ -132,6 +149,7 @@ class AppState extends ChangeNotifier {
       await prefs.remove(_keyLoggedInPhone);
       await prefs.remove(_keyProfilePhoto);
       await prefs.remove(_keyAuthToken);
+      await _secureStorage.delete(key: _keyAuthToken);
     } catch (e) {
       debugPrint('Error clearing session: $e');
     }
@@ -155,7 +173,7 @@ class AppState extends ChangeNotifier {
       final isLoggedIn = prefs.getBool(_keyIsLoggedIn) ?? false;
       final savedPhone = prefs.getString(_keyLoggedInPhone);
       final savedPhoto = prefs.getString(_keyProfilePhoto);
-      final savedToken = prefs.getString(_keyAuthToken);
+      final savedToken = await _readAuthToken(prefs);
 
       if (savedToken != null && savedToken.isNotEmpty) {
         ApiService.instance.setAuthToken(savedToken);
