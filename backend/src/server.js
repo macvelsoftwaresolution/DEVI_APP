@@ -10,6 +10,7 @@ import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
 import { DataService } from './services/data.service.js';
 import { socketService } from './services/socket.service.js';
+import { startSignalWatchdog } from './services/signal.watchdog.js';
 
 dotenv.config();
 
@@ -107,6 +108,7 @@ app.use(errorHandler);
 // Create HTTP and WebSocket Server
 const server = http.createServer(app);
 socketService.init(server);
+startSignalWatchdog();
 
 // Start server
 server.listen(PORT, () => {

@@ -741,6 +741,26 @@ export const DataService = {
     return session || { id: key, evidenceUrl };
   },
 
+  // --- SIGNAL MONITORING (live tracking health) ---
+  // Active in-memory sessions, used by the signal watchdog
+  getActiveLiveSessions() {
+    return [...liveTrackSessions.values()].filter((s) => s.status === 'ACTIVE');
+  },
+
+  // Marks an alert's live signal as lost ('NO_UPDATES' or 'APP_CLOSED') or restored (lost = false)
+  setSignalState(alertId, { lost, reason = null }) {
+    const key = alertId.toString();
+    let session = liveTrackSessions.get(key);
+    if (!session) {
+      session = { id: key, status: 'ACTIVE', lastUpdated: new Date().toISOString(), breadcrumbs: [] };
+      liveTrackSessions.set(key, session);
+    }
+    session.signalLost = lost;
+    session.signalReason = lost ? reason : null;
+    session.signalLostAt = lost ? new Date().toISOString() : null;
+    return session;
+  },
+
   async resolveSosAlert(alertId) {
     if (!alertId) return null;
     const key = alertId.toString();
@@ -865,6 +885,9 @@ export const DataService = {
           accuracy: liveSession?.accuracy ?? alert.accuracy ?? null,
           location: dec(alert.location_address) || `GPS (${alert.latitude}, ${alert.longitude})`,
           status: liveSession?.status || alert.status || 'DISPATCHED',
+          signalLost: !!liveSession?.signalLost,
+          signalReason: liveSession?.signalReason || null,
+          lastSeen: liveSession?.lastUpdated || alert.created_at,
           evidenceUrl: alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null,
           operatorNotes: dec(alert.operator_notes) || liveSession?.operatorNotes || '',
           user: {

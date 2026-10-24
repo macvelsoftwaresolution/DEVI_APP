@@ -126,7 +126,7 @@ DEVI_APP/
 │       │   ├── location_service.dart# GPS fix + live tracking stream
 │       │   ├── socket_service.dart  # WebSocket client
 │       │   ├── emergency_media_service.dart # 2-min evidence recording
-│       │   ├── disguise_notification_service.dart
+│       │   ├── emergency_foreground_service.dart # Bridge to native EmergencyService (Android)
 │       │   ├── sms_service.dart     # Guardian phone call
 │       │   ├── sound_service.dart   # Siren
 │       │   ├── permission_service.dart
@@ -164,13 +164,17 @@ DEVI_APP/
 1. **Tap:** Starts a 5-second countdown. The user can **Cancel** or **Send Now**.
 2. **Hold (~1.5s):** Sends the alert instantly.
 3. **Demo Mode card:** Shows a preview of the alert message only. Nothing is sent.
-4. **I Am Safe:** Stops live tracking, finalizes evidence and resolves the alert.
+4. **I Am Safe:** While an alert is active the big card turns green. Tapping it (with confirmation) stops live tracking, finalizes evidence and resolves the alert.
 
 ### 4.3 Background Services
-- **LocationService:** Takes a high-accuracy GPS fix, then streams live location (about every 2s / 2m) over WebSocket.
-- **EmergencyMediaService:** Records 2 minutes of evidence and uploads it to the backend (Cloudinary).
-- **DisguiseNotificationService:** Shows a disguised notification while SOS is active.
+- **EmergencyService (Android native foreground service, `EmergencyService.kt`):** Started the moment SOS is pressed. Types `camera|microphone|location`. Records 2 minutes of front-camera video + audio with CameraX (audio-only fallback), and keeps live location allowed while the app is minimized or a call is in progress. Shows one discreet ongoing notification ("Daily Reminder — Your reminder is active"). Stopped on "I Am Safe". Dart bridge: `emergency_foreground_service.dart`.
+- **LocationService:** Takes a high-accuracy GPS fix, then streams live location (about every 2s / 2m) over WebSocket. Asks the user to turn location on (or allow permission) when the app opens or resumes.
+- **EmergencyMediaService:** Controls the 2-minute evidence recording and uploads the file to the backend (Cloudinary).
 - **SmsService:** Calls the first guardian. The direct `112` call is on hold during testing.
+
+After SOS is sent, the app minimizes itself to the home screen (Android) so the alert is not visible on screen.
+
+**Signal monitoring:** While an SOS is active the app re-sends its latest position every 20s (heartbeat), even when standing still. If the server gets no update for 60s, the dashboard marks the incident **"⚠️ Signal lost • last seen HH:MM"**. If the user swipes the app away from recent apps, `EmergencyService.onTaskRemoved` reports it immediately (`POST /api/sos/app-closed/:alertId`) and the dashboard shows **"App closed by user"**. The map keeps the last known location. The flag clears automatically when updates resume.
 
 ---
 
@@ -201,6 +205,7 @@ All routes are under `/api`.
 | GET | `/sos/live/:alertId` | Current live session (used by the track page) |
 | POST | `/sos/upload-evidence` | Upload evidence file to Cloudinary |
 | POST | `/sos/resolve/:alertId` | Resolve alert from the app ("I Am Safe") |
+| POST | `/sos/app-closed/:alertId` | Phone reports the app was swiped away during an SOS (control token required) |
 | GET | `/sos/history/:phone` | User's own history (token required, except guests) |
 | GET | `/sos/history` | All history (admin key) |
 | GET | `/sos/geocode` | Reverse geocode lat/lng to an address |
@@ -234,6 +239,7 @@ Plain WebSocket (`ws` library), JSON messages.
 | `sos:new` | `dashboard` | New SOS: dashboard plays the siren and zooms to the victim |
 | `loc` | `dashboard`, `alert:<id>` | Live location update |
 | `incident:evidence` | `dashboard` | Evidence video uploaded |
+| `incident:signal_lost` / `incident:signal_restored` | `dashboard` | Live location stopped (no updates for 60s, or app closed) / resumed |
 | `incident:resolved` / `status` | `dashboard`, `alert:<id>` | Alert resolved |
 | `ack` | sender | Confirms a `loc` packet was received |
 

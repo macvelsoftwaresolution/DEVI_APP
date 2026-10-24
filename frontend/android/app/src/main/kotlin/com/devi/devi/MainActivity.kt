@@ -1,16 +1,11 @@
 package com.devi.devi
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -18,38 +13,66 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.devi.app/sms"
-    private val RECORDER_CHANNEL = "com.devi.app/recorder"
-    private val NOTIFICATION_CHANNEL = "com.devi.app/notifications"
+    private val EMERGENCY_CHANNEL = "com.devi.app/emergency"
     private val SMS_PERMISSION_CODE = 101
-    private val DISGUISE_NOTIFICATION_ID = 991
-    private val DISGUISE_CHANNEL_ID = "devi_disguise_offers"
     private var pendingPermissionResult: MethodChannel.Result? = null
 
-    private var mediaRecorder: android.media.MediaRecorder? = null
-    private var recordingOutputFile: java.io.File? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // Native Emergency Audio/Evidence Recorder Channel
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, RECORDER_CHANNEL).setMethodCallHandler { call, result ->
+        // Emergency foreground service: background evidence recording + location, app minimize
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, EMERGENCY_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
-                "startRecording" -> {
-                    val hasAudio = ContextCompat.checkSelfPermission(
-                        this,
+                "start" -> {
+                    val record = call.argument<Boolean>("record") ?: true
+                    val canRun = listOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                        Manifest.permission.CAMERA,
                         Manifest.permission.RECORD_AUDIO
-                    ) == PackageManager.PERMISSION_GRANTED
-
-                    if (!hasAudio) {
+                    ).any { EmergencyService.hasPermission(this, it) }
+                    if (!canRun) {
                         result.success(false)
                         return@setMethodCallHandler
                     }
-                    val started = startNativeRecording()
-                    result.success(started)
+                    try {
+                        val intent = Intent(this, EmergencyService::class.java).apply {
+                            action = EmergencyService.ACTION_START
+                            putExtra(EmergencyService.EXTRA_RECORD, record)
+                        }
+                        ContextCompat.startForegroundService(this, intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        android.util.Log.e("DEVI_EMERGENCY", "Could not start emergency service", e)
+                        result.success(false)
+                    }
                 }
                 "stopRecording" -> {
-                    val filePath = stopNativeRecording()
-                    result.success(filePath)
+                    val service = EmergencyService.instance
+                    if (service == null) {
+                        result.success(EmergencyService.lastFilePath)
+                    } else {
+                        service.stopRecording { path -> runOnUiThread { result.success(path) } }
+                    }
+                }
+                "stop" -> {
+                    if (EmergencyService.instance != null) {
+                        startService(Intent(this, EmergencyService::class.java).apply {
+                            action = EmergencyService.ACTION_STOP
+                        })
+                    }
+                    result.success(true)
+                }
+                "setAlertContext" -> {
+                    EmergencyService.alertId = call.argument<String>("alertId")
+                    EmergencyService.apiBaseUrl = call.argument<String>("apiBaseUrl")
+                    EmergencyService.controlToken = call.argument<String>("controlToken")
+                    result.success(true)
+                }
+                "minimize" -> {
+                    moveTaskToBack(true)
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }
@@ -146,20 +169,6 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // Disguise Heads-Up Notification Channel (Flipkart Stealth Mode)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NOTIFICATION_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "showFlipkartNotification" -> {
-                    showFlipkartDisguiseNotification()
-                    result.success(true)
-                }
-                "cancelNotification" -> {
-                    cancelDisguiseNotification()
-                    result.success(true)
-                }
-                else -> result.notImplemented()
-            }
-        }
     }
 
     override fun onRequestPermissionsResult(
@@ -172,118 +181,6 @@ class MainActivity : FlutterActivity() {
             val granted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
             pendingPermissionResult?.success(granted)
             pendingPermissionResult = null
-        }
-    }
-
-    private fun startNativeRecording(): Boolean {
-        return try {
-            stopNativeRecording() // release any previous session
-
-            val cacheDir = applicationContext.cacheDir
-            val outFile = java.io.File(cacheDir, "devi_sos_evidence_${System.currentTimeMillis()}.mp4")
-            recordingOutputFile = outFile
-
-            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                android.media.MediaRecorder(applicationContext)
-            } else {
-                @Suppress("DEPRECATION")
-                android.media.MediaRecorder()
-            }
-
-            recorder.apply {
-                setAudioSource(android.media.MediaRecorder.AudioSource.MIC)
-                setOutputFormat(android.media.MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
-                setAudioEncodingBitRate(128000)
-                setAudioSamplingRate(44100)
-                setOutputFile(outFile.absolutePath)
-                prepare()
-                start()
-            }
-            mediaRecorder = recorder
-            android.util.Log.d("DEVI_RECORDER", "Emergency audio recording started: ${outFile.absolutePath}")
-            true
-        } catch (e: Exception) {
-            android.util.Log.e("DEVI_RECORDER", "Failed to start emergency audio recording", e)
-            false
-        }
-    }
-
-    private fun stopNativeRecording(): String? {
-        val path = recordingOutputFile?.absolutePath
-        try {
-            mediaRecorder?.apply {
-                try {
-                    stop()
-                } catch (_: Exception) {}
-                reset()
-                release()
-            }
-            android.util.Log.d("DEVI_RECORDER", "Emergency audio recording stopped. File: $path")
-        } catch (e: Exception) {
-            android.util.Log.e("DEVI_RECORDER", "Error stopping emergency audio recording", e)
-        } finally {
-            mediaRecorder = null
-        }
-        return path
-    }
-
-    private fun showFlipkartDisguiseNotification() {
-        try {
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    DISGUISE_CHANNEL_ID,
-                    "Promotions & Special Deals",
-                    NotificationManager.IMPORTANCE_HIGH
-                ).apply {
-                    description = "Special shopping discounts and order updates"
-                    enableVibration(true)
-                    setShowBadge(true)
-                    lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
-                }
-                notificationManager.createNotificationChannel(channel)
-            }
-
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, MainActivity::class.java)
-            launchIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            val pendingIntent = PendingIntent.getActivity(
-                this,
-                0,
-                launchIntent,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
-            )
-
-            val builder = NotificationCompat.Builder(this, DISGUISE_CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle("Flipkart")
-                .setContentText("⚡ Big Billion Days Deal! Flat 60% OFF on items in your wishlist.")
-                .setStyle(
-                    NotificationCompat.BigTextStyle()
-                        .bigText("⚡ Big Billion Days Deal! Flat 60% OFF on items saved in your wishlist. Order before stocks run out!")
-                )
-                .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setCategory(NotificationCompat.CATEGORY_PROMO)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true)
-                .setAutoCancel(false)
-
-            notificationManager.notify(DISGUISE_NOTIFICATION_ID, builder.build())
-            android.util.Log.d("DEVI_DISGUISE", "Flipkart disguise notification posted successfully")
-        } catch (e: Exception) {
-            android.util.Log.e("DEVI_DISGUISE", "Failed to show Flipkart notification", e)
-        }
-    }
-
-    private fun cancelDisguiseNotification() {
-        try {
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.cancel(DISGUISE_NOTIFICATION_ID)
-            android.util.Log.d("DEVI_DISGUISE", "Flipkart disguise notification cancelled")
-        } catch (e: Exception) {
-            android.util.Log.e("DEVI_DISGUISE", "Failed to cancel disguise notification", e)
         }
     }
 }

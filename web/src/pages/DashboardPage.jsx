@@ -280,6 +280,21 @@ export default function DashboardPage() {
                 smoothFlyTo(lat, lng, 17);
               }
               fetchIncidents(true);
+            } else if ((msg.type === 'incident:signal_lost' || msg.type === 'incident:signal_restored') && msg.alertId) {
+              const lost = msg.type === 'incident:signal_lost';
+              setIncidents((prev) =>
+                prev.map((inc) =>
+                  String(inc.id) === String(msg.alertId)
+                    ? { ...inc, signalLost: lost, signalReason: lost ? msg.reason : null, lastSeen: msg.lastSeen || inc.lastSeen }
+                    : inc
+                )
+              );
+              if (lost && audioEnabled && 'speechSynthesis' in window) {
+                try {
+                  const why = msg.reason === 'APP_CLOSED' ? 'The victim app was closed.' : 'Live location stopped updating.';
+                  window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Warning! Signal lost. ${why}`));
+                } catch (_) {}
+              }
             } else if (msg.type === 'incident:evidence' && msg.alertId) {
               setIncidents((prev) =>
                 prev.map((inc) =>
@@ -337,6 +352,15 @@ export default function DashboardPage() {
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  // "Signal lost" label: why the live location stopped and when it was last seen
+  const signalLostText = (inc) => {
+    const when = inc.lastSeen
+      ? new Date(inc.lastSeen).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : '';
+    const why = inc.signalReason === 'APP_CLOSED' ? 'App closed by user' : 'Signal lost';
+    return when ? `${why} • last seen ${when}` : why;
   };
 
   // Save Notes
@@ -665,6 +689,11 @@ export default function DashboardPage() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-dim)', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.04)' }}>
                       <span>{inc.timeAgo || 'Just now'}</span>
                     </div>
+                    {isEmergency && inc.signalLost && (
+                      <div style={{ marginTop: '6px', fontSize: '10px', fontWeight: '700', color: '#FBBF24', background: 'var(--amber-soft)', borderRadius: '6px', padding: '4px 6px' }}>
+                        ⚠️ {signalLostText(inc)}
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -872,6 +901,16 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
+
+              {/* SIGNAL LOST WARNING */}
+              {selectedIncident.signalLost && (selectedIncident.status === 'ACTIVE' || selectedIncident.status === 'DISPATCHED') && (
+                <div style={{ background: 'var(--amber-soft)', border: '1px solid rgba(245, 158, 11, 0.5)', borderRadius: '10px', padding: '10px 12px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#FBBF24' }}>⚠️ {signalLostText(selectedIncident)}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Map shows the last known location. Call the victim or send help to this location.
+                  </div>
+                </div>
+              )}
 
               {/* VICTIM DETAILS */}
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>

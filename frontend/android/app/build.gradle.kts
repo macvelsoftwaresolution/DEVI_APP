@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.devi.devi"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "30.0.16248370"
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -46,4 +46,14 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // EmergencyService: background SOS video recording (same CameraX version as the camera plugin)
+    val cameraxVersion = "1.6.2"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
+    implementation("androidx.lifecycle:lifecycle-service:2.8.7")
 }

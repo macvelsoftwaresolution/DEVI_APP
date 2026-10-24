@@ -1,13 +1,15 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
+import '../services/emergency_foreground_service.dart';
 import '../services/emergency_media_service.dart';
 import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
-import '../services/disguise_notification_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/devi_logo.dart';
 import '../widgets/emergency_sound_card.dart';
@@ -21,8 +23,10 @@ class SosScreen extends StatefulWidget {
   State<SosScreen> createState() => _SosScreenState();
 }
 
-class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMixin {
+class _SosScreenState extends State<SosScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final AppState _appState = AppState.instance;
+  bool _isLocationPromptOpen = false;
 
   bool _isEmergencyActive = false;
   bool _isSendingSos = false;
@@ -47,14 +51,79 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
   void initState() {
     super.initState();
     _appState.addListener(_onStateChange);
+    WidgetsBinding.instance.addObserver(this);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureLocationOn());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-check when the user comes back (e.g. from the location settings screen)
+    if (state == AppLifecycleState.resumed) _ensureLocationOn();
+  }
+
+  // --- Location must stay on so an SOS can share where the user is ---
+  Future<void> _ensureLocationOn() async {
+    if (kIsWeb || _isLocationPromptOpen || !mounted) return;
+    final readiness = await LocationService.checkReadiness();
+    if (readiness == LocationReadiness.ready || !mounted) return;
+
+    final isServiceOff = readiness == LocationReadiness.serviceOff;
+    final isBlocked = readiness == LocationReadiness.permissionBlocked;
+
+    _isLocationPromptOpen = true;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(Icons.location_off_rounded, color: AppColors.emergencyRed, size: 30),
+        title: Text(
+          isServiceOff ? 'Turn on location' : 'Allow location access',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
+        ),
+        content: const Text(
+          'DEVI needs your location to send help to the right place when you press SOS.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13.5, color: AppColors.textMuted, height: 1.4),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Later', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              if (isServiceOff) {
+                await Geolocator.openLocationSettings();
+              } else if (isBlocked) {
+                await Geolocator.openAppSettings();
+              } else {
+                await Geolocator.requestPermission();
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryNavy,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(isServiceOff ? 'Turn On' : 'Allow', style: const TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    _isLocationPromptOpen = false;
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _appState.removeListener(_onStateChange);
     _holdTimer?.cancel();
     _countdownTimer?.cancel();
@@ -135,7 +204,6 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
   void _cancelSosCountdown() {
     _countdownTimer?.cancel();
     EmergencyMediaService.instance.reset();
-    DisguiseNotificationService.cancelDisguise();
     if (mounted) {
       setState(() {
         _isCountingDown = false;
@@ -230,11 +298,9 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
     // 2. Stop 2-minute emergency recording and finalize evidence upload
     await EmergencyMediaService.instance.stopEmergencyRecording();
+    await EmergencyForegroundService.stop();
 
-    // 3. Cancel Flipkart stealth disguise notification
-    await DisguiseNotificationService.cancelDisguise();
-
-    // 4. Directly call backend resolve if alertId was tracked
+    // 3. Directly call backend resolve if alertId was tracked
     if (alertId != null && alertId.isNotEmpty) {
       await ApiService.instance.resolveEmergencyAlert(alertId);
     }
@@ -249,7 +315,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
               SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '🛡️ Alert Resolved • You are Safe. Live tracking ended.',
+                  'Alert closed. You are marked safe.',
                   style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                 ),
               ),
@@ -258,16 +324,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
           backgroundColor: const Color(0xFF059669),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'History',
-            textColor: Colors.white,
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const HistoryScreen()),
-              );
-            },
-          ),
+          duration: const Duration(seconds: 3),
         ),
       );
     }
@@ -333,8 +390,9 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
 
     try {
       // 1. Auto-start 2-minute emergency video and audio recording
+      // (runs in parallel with the location fetch; on Android it also starts the SOS foreground service)
       final initialId = 'SOS_${DateTime.now().millisecondsSinceEpoch}';
-      EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
+      final recordingStarted = EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
 
       final isGuestMode = _appState.isGuest;
       final guardiansList = isGuestMode ? <GuardianModel>[] : _appState.guardians;
@@ -377,11 +435,15 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
       // Bind alert ID for automatic evidence upload to Cloudinary upon completion
       EmergencyMediaService.instance.setAlertId(alertId);
 
-      // 4. Start real-time continuous GPS tracking stream in background
+      // 4. Start real-time continuous GPS tracking stream in background.
+      // Wait for the recording start so tracking can reuse the SOS foreground service.
+      await recordingStarted;
       LocationService.startLiveTracking(alertId: alertId);
-
-      // 4.1 Trigger Heads-Up Disguise Notification (Masquerading as Flipkart to protect user)
-      DisguiseNotificationService.showFlipkartDisguise();
+      await EmergencyForegroundService.setAlertContext(
+        alertId: alertId,
+        apiBaseUrl: ApiService.baseUrl,
+        controlToken: ApiService.instance.sosControlToken(alertId),
+      );
 
       if (mounted) {
         setState(() {
@@ -401,47 +463,10 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
         debugPrint('🔁 [SOS RETRY/DUPLICATE] Active session reused ($alertId). Skipping duplicate call.');
       }
 
-      if (!mounted) return;
-
-      // Feedback banner showing database recording status for verification
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              Icon(
-                isDuplicate ? Icons.sync_rounded : Icons.verified_user_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  isDuplicate
-                      ? '🚨 Active SOS Resumed'
-                      : (primaryPhone.isNotEmpty
-                          ? '🛡️ SOS Incident & Evidence Recorded • Calling $primaryPhone'
-                          : '🛡️ Emergency SOS Activated • Live Tracking Active'),
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: const Color(0xFF0F172A),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'History',
-            textColor: const Color(0xFF38BDF8),
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const HistoryScreen()),
-              );
-            },
-          ),
-        ),
-      );
+      // 6. Hide the app (go to home screen) so the SOS is not visible on screen.
+      // The call is launched first because Android blocks starting activities from the background.
+      await Future.delayed(const Duration(milliseconds: 800));
+      await EmergencyForegroundService.minimizeApp();
     } finally {
       _isSendingSos = false;
     }
@@ -453,7 +478,7 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
     final String message;
     if (_isEmergencyActive) {
       title = 'Alert is live';
-      message = 'Tap I Am Safe when safe';
+      message = 'Tap the green card when safe';
     } else if (_isCountingDown) {
       title = 'Sending alert…';
       message = 'Tap Cancel to stop';
@@ -701,79 +726,6 @@ class _SosScreenState extends State<SosScreen> with SingleTickerProviderStateMix
                   ),
 
                   SizedBox(height: isShortScreen ? 10 : 16),
-
-                  // Prominent "I Am Safe" Deactivation Banner when SOS is Active
-                  if (_isEmergencyActive) ...[
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFECFDF5),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF10B981), width: 1.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF10B981),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(Icons.shield_rounded, color: Colors.white, size: 20),
-                          ),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'SOS Active • Tracking On',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF065F46),
-                                  ),
-                                ),
-                                Text(
-                                  'Safe now? Tap to resolve alert',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF047857),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          ElevatedButton.icon(
-                            onPressed: () => _handleDeactivateSos(showConfirmation: true),
-                            icon: const Icon(Icons.check_circle_rounded, size: 16),
-                            label: const Text(
-                              'I Am Safe',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF059669),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
 
                   // SOS Guide Card (separate card above SOS)
                   _buildSosGuide(),

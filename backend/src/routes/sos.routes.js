@@ -11,6 +11,7 @@ import {
 } from '../middlewares/auth.middleware.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { socketService } from '../services/socket.service.js';
+import { broadcastSignalLost } from '../services/signal.watchdog.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -352,6 +353,19 @@ router.post('/resolve/:alertId', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// POST /api/sos/app-closed/:alertId - Sent by the phone when the user swipes the app away during an SOS
+router.post('/app-closed/:alertId', (req, res) => {
+  const { alertId } = req.params;
+  if (!hasSosControl(req, alertId, req.body)) {
+    return rejectSosControl(res);
+  }
+
+  const session = DataService.setSignalState(alertId, { lost: true, reason: 'APP_CLOSED' });
+  console.warn(`📴 [APP CLOSED DURING SOS] Alert ${alertId}`);
+  broadcastSignalLost(session);
+  res.json({ success: true });
 });
 
 // GET /api/sos/history/:phone - Returns SOS emergency history for a user
