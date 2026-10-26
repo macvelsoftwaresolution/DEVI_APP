@@ -4,7 +4,8 @@ import cors from 'cors';
 import morgan from 'morgan';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
-import { isAllowedOrigin } from './config/security.js';
+import { isAllowedOrigin, WHATSAPP_VERIFY_TOKEN } from './config/security.js';
+import { safeEqual } from './middlewares/auth.middleware.js';
 import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
@@ -52,14 +53,12 @@ app.use('/api', globalLimiter);
 app.use('/api', apiRoutes);
 
 // WhatsApp Business Cloud API Webhook Handshake & Event Receiver
-const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'devi_whatsapp_verify_token_2026';
-
 app.get(['/webhook', '/api/webhook'], (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode === 'subscribe' && token === WHATSAPP_VERIFY_TOKEN) {
+  if (mode === 'subscribe' && WHATSAPP_VERIFY_TOKEN && safeEqual(token, WHATSAPP_VERIFY_TOKEN)) {
     console.log('✅ [WHATSAPP WEBHOOK VERIFIED BY META]');
     return res.status(200).send(challenge);
   } else {

@@ -49,6 +49,14 @@ export const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || 'devi_admin_secr
 // Server-only key for database field encryption (AES-256-GCM)
 export const ENCRYPTION_KEY = encryptionKey || 'devi_local_dev_field_encryption_key_not_for_production';
 
+// Meta webhook handshake token. Production has no default: if unset, webhook verification is refused
+// (the server still starts, so SOS keeps working)
+const whatsappVerifyToken = (process.env.WHATSAPP_VERIFY_TOKEN || '').trim();
+if (isProduction && !whatsappVerifyToken) {
+  console.warn('⚠️ [SECURITY] WHATSAPP_VERIFY_TOKEN not set: WhatsApp webhook verification is disabled.');
+}
+export const WHATSAPP_VERIFY_TOKEN = whatsappVerifyToken || (isProduction ? null : 'devi_whatsapp_dev_verify_token');
+
 // Admin dashboard login credentials
 export const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'admin').trim();
 export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devi_admin_dev_password';
