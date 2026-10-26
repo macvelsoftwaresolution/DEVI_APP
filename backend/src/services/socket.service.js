@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { SosService } from './sos.service.js';
-import { decodeAdminToken, verifySosControlToken } from '../middlewares/auth.middleware.js';
+import { decodeAdminToken, verifySosControlToken, verifySosViewToken } from '../middlewares/auth.middleware.js';
 
 class SocketService {
   constructor() {
@@ -178,13 +178,31 @@ class SocketService {
 
     switch (type) {
       case 'join': {
+        const room = typeof msg.room === 'string' ? msg.room : '';
+        const isAdmin = !!decodeAdminToken(msg.token);
+
         // The dashboard room carries every incident, so only signed-in admins may join it
-        if (msg.room === 'dashboard' && !decodeAdminToken(msg.token)) {
-          this.sendToClient(ws, { type: 'error', code: 'ADMIN_AUTH_REQUIRED', room: msg.room });
+        if (room === 'dashboard') {
+          if (!isAdmin) {
+            this.sendToClient(ws, { type: 'error', code: 'ADMIN_AUTH_REQUIRED', room });
+            break;
+          }
+        } else if (room.startsWith('alert:')) {
+          // One alert's live location: needs that alert's link key (guardian), control token (victim's phone) or admin
+          const alertId = room.slice('alert:'.length);
+          const allowed = isAdmin ||
+            verifySosViewToken(alertId, msg.key) ||
+            verifySosControlToken(alertId, msg.controlToken);
+          if (!allowed) {
+            this.sendToClient(ws, { type: 'error', code: 'TRACKING_KEY_REQUIRED', room });
+            break;
+          }
+        } else {
+          this.sendToClient(ws, { type: 'error', code: 'UNKNOWN_ROOM', room });
           break;
         }
-        this.joinRoom(ws, msg.room);
-        this.sendToClient(ws, { type: 'joined', room: msg.room });
+        this.joinRoom(ws, room);
+        this.sendToClient(ws, { type: 'joined', room });
         break;
       }
 

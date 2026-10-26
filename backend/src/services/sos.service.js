@@ -414,6 +414,19 @@ export const SosService = {
     return session;
   },
 
+  // Stored evidence reference for an alert (live session first, then the database)
+  async getEvidenceRef(alertId) {
+    const session = liveTrackSessions.get(String(alertId));
+    if (session?.evidenceUrl) return session.evidenceUrl;
+    try {
+      const { data } = await supabase.from('sos_history').select('*').eq('id', alertId).maybeSingle();
+      return data?.evidence_url || data?.audio_url || null;
+    } catch (e) {
+      console.error('Error reading evidence reference:', e);
+      return null;
+    }
+  },
+
   async attachEvidenceUrl(alertId, evidenceUrl) {
     if (!alertId || !evidenceUrl) return null;
     const key = alertId.toString();

@@ -8,23 +8,16 @@ class WebSoundPlayer implements PlatformSoundPlayer {
 
   @override
   Future<void> play() async {
-    final candidateUrls = [
-      'assets/audio/siren.mp3',
-      'assets/assets/audio/siren.mp3',
-      'audio/siren.mp3',
-    ];
-
-    for (final url in candidateUrls) {
-      try {
-        _audio?.pause();
-        _audio = html.AudioElement(url)
-          ..loop = true
-          ..volume = 1.0;
-        await _audio!.play();
-        return;
-      } catch (e) {
-        debugPrint('WebSoundPlayer candidate failed ($url): $e');
-      }
+    // Flutter web serves pubspec assets under build/web/assets/<asset path>
+    const url = 'assets/assets/audio/siren.mp3';
+    try {
+      _audio?.pause();
+      _audio = html.AudioElement(url)
+        ..loop = true
+        ..volume = 1.0;
+      await _audio!.play();
+    } catch (e) {
+      debugPrint('WebSoundPlayer play failed ($url): $e');
     }
   }
 

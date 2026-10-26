@@ -1,15 +1,20 @@
 import { Router } from 'express';
+import { Readable } from 'node:stream';
 import multer from 'multer';
 import { GeocodeService } from '../services/geocode.service.js';
 import { SosService } from '../services/sos.service.js';
 import { UserService } from '../services/user.service.js';
-import { uploadMediaToCloudinary } from '../config/cloudinary.js';
+import { uploadMediaToCloudinary, evidenceDeliveryUrl } from '../config/cloudinary.js';
+import { toEvidenceRef, parseEvidenceRef, evidenceLink, withEvidenceLink } from '../utils/evidence.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
 import {
   verifyAdmin,
   optionalToken,
   signSosControlToken,
   verifySosControlToken,
+  signSosViewToken,
+  verifySosViewToken,
+  decodeAdminToken,
 } from '../middlewares/auth.middleware.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { socketService } from '../services/socket.service.js';
@@ -33,12 +38,23 @@ const rejectSosControl = (res) =>
     message: 'This device is not allowed to update this SOS alert.',
   });
 
-// Strips internal fields (idempotency key, phone) before sending a session to clients
-const publicSession = (session) => {
+// View access to an alert's evidence: the guardian link key (?k=) or an admin login
+const hasViewAccess = (req, alertId) => {
+  if (verifySosViewToken(String(alertId), req.query.k)) return true;
+  const auth = req.get('authorization') || '';
+  return !!decodeAdminToken(auth.startsWith('Bearer ') ? auth.slice(7) : null);
+};
+
+// Strips internal fields (idempotency key, phone) before sending a session to clients.
+// The stored evidence reference becomes the protected link, or null without view access.
+const publicSession = (session, { includeEvidence = true } = {}) => {
   if (!session) return session;
   const { idempotencyKey, userPhone, userId, ...rest } = session;
-  return rest;
+  return { ...rest, evidenceUrl: includeEvidence ? evidenceLink(rest.id, rest.evidenceUrl) : null };
 };
+
+// Guardian tracking link carries the view key so evidence opens only for people who got the link
+const trackingLink = (baseUrl, alertId) => `${baseUrl}/track/${alertId}?k=${signSosViewToken(String(alertId))}`;
 
 // POST /api/sos/trigger - Dispatches emergency alert, starts live tracking, and returns tracking URL
 router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next) => {
@@ -66,7 +82,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     const baseUrl = getWebBaseUrl();
 
     if (existingSession) {
-      const trackingUrl = `${baseUrl}/track/${existingSession.id}`;
+      const trackingUrl = trackingLink(baseUrl, existingSession.id);
       console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${userPhone}, Key: ${finalIdempotencyKey || 'N/A'}. 🛑 Skipping duplicate SMS broadcast.`);
 
       // Hand the control token back only to the original device (same idempotency key)
@@ -97,7 +113,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       capturedAt: captured_at,
     });
 
-    const trackingUrl = `${baseUrl}/track/${alert.id}`;
+    const trackingUrl = trackingLink(baseUrl, alert.id);
     console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
 
     // Retrieve victim's friendly display name if available
@@ -259,6 +275,16 @@ router.post('/live-update', async (req, res, next) => {
 router.get('/live/:alertId', async (req, res, next) => {
   try {
     const { alertId } = req.params;
+    // Alert IDs are sequential: without the link key anyone could follow strangers' live location.
+    // Checked before the lookup so unknown and forbidden IDs look the same.
+    if (!hasViewAccess(req, alertId) && !hasSosControl(req, alertId)) {
+      return res.status(403).json({
+        success: false,
+        code: 'TRACKING_KEY_REQUIRED',
+        message: 'This tracking link is incomplete. Open the full link from the WhatsApp alert.',
+      });
+    }
+
     const session = await SosService.getLiveLocation(alertId);
 
     if (!session) {
@@ -272,6 +298,46 @@ router.get('/live/:alertId', async (req, res, next) => {
       success: true,
       data: publicSession(session),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/sos/evidence/:alertId?k=<view key> - Streams the private evidence file.
+// The Cloudinary URL is never sent to the client; Range is forwarded so video seeking works.
+router.get('/evidence/:alertId', async (req, res, next) => {
+  try {
+    const { alertId } = req.params;
+    if (!hasViewAccess(req, alertId)) {
+      return res.status(403).json({ success: false, message: 'This evidence link is not valid.' });
+    }
+
+    const ref = parseEvidenceRef(await SosService.getEvidenceRef(alertId));
+    if (!ref) {
+      return res.status(404).json({ success: false, message: 'No evidence has been uploaded for this alert yet.' });
+    }
+
+    const upstream = await fetch(evidenceDeliveryUrl(ref), {
+      headers: req.headers.range ? { Range: req.headers.range } : {},
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!upstream.ok && upstream.status !== 206) {
+      console.error(`❌ [EVIDENCE FETCH FAILED] Alert ${alertId}: Cloudinary HTTP ${upstream.status}`);
+      return res.status(502).json({ success: false, message: 'Evidence is temporarily unavailable. Try again.' });
+    }
+
+    res.status(upstream.status);
+    for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag']) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Content-Disposition', 'inline');
+
+    const body = Readable.fromWeb(upstream.body);
+    req.on('close', () => body.destroy());
+    body.on('error', () => res.end());
+    body.pipe(res);
   } catch (err) {
     next(err);
   }
@@ -302,7 +368,8 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
     const fileSizeMb = (req.file.size / (1024 * 1024)).toFixed(2);
     console.log(`📹 [EMERGENCY EVIDENCE UPLOAD] Alert ID: ${alertId}, Size: ${fileSizeMb}MB, MIME: ${req.file.mimetype}`);
 
-    let evidenceUrl = '';
+    // Stored reference (private asset), never a public Cloudinary URL
+    let evidenceRef = '';
 
     // If Cloudinary credentials are provided, upload directly to Cloudinary
     if (
@@ -314,15 +381,16 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
       const uploadRes = await uploadMediaToCloudinary(req.file.buffer, {
         public_id: `devi_sos_${alertId}_${Date.now()}`,
       });
-      evidenceUrl = uploadRes.secure_url || uploadRes.url;
-      console.log(`✅ [CLOUDINARY UPLOAD SUCCESS] Stored URL: ${evidenceUrl}`);
+      evidenceRef = toEvidenceRef(uploadRes);
+      console.log(`✅ [CLOUDINARY UPLOAD SUCCESS] Stored private evidence: ${evidenceRef}`);
     } else {
-      console.warn('⚠️ Cloudinary keys not yet configured in .env. Returning simulated Cloudinary URL.');
-      evidenceUrl = `https://res.cloudinary.com/demo/video/upload/devi_sos_${alertId}_evidence.mp4`;
+      console.warn('⚠️ Cloudinary keys not yet configured in .env. Storing simulated evidence reference.');
+      evidenceRef = `cld:upload/video/devi_sos_${alertId}_evidence.mp4`;
     }
 
     // Attach to active live session and persist to Supabase
-    const session = await SosService.attachEvidenceUrl(alertId, evidenceUrl);
+    const session = await SosService.attachEvidenceUrl(alertId, evidenceRef);
+    const evidenceUrl = evidenceLink(alertId, evidenceRef);
 
     try {
       socketService.broadcastToRoom('dashboard', {
@@ -413,7 +481,7 @@ router.get('/history/:phone', optionalToken, async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: history,
+      data: history.map((h) => withEvidenceLink(h)),
     });
   } catch (err) {
     next(err);
@@ -427,7 +495,7 @@ router.get('/history', verifyAdmin, async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: history,
+      data: history.map((h) => withEvidenceLink(h)),
     });
   } catch (err) {
     next(err);
