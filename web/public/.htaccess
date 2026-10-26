@@ -1,3 +1,13 @@
+# Security headers (keep the CSP in sync with deploy/nginx/devi.macvelsoftware.com.nginx.conf)
+# CSP is Report-Only: violations show in the browser console but nothing is blocked.
+# Once the console is clean, rename the header to Content-Security-Policy to enforce it.
+<IfModule mod_headers.c>
+  Header always set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com https://*.basemaps.cartocdn.com; media-src 'self' blob: https://res.cloudinary.com; connect-src 'self' https://devi-api.macvelsoftware.com wss://devi-api.macvelsoftware.com https://*.googleapis.com https://nominatim.openstreetmap.org https://router.project-osrm.org; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+  Header always set X-Frame-Options "DENY"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
