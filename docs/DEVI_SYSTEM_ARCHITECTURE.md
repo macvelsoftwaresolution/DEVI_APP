@@ -114,6 +114,7 @@ DEVI_APP/
 │   │   └── server.js                # Entry point (port 5005)
 │   ├── test/                        # npm test (node:test): encryption, auth, CORS
 │   ├── scripts/encrypt-existing-data.js  # One-time DB field encryption migration
+│   ├── db/schema.sql                # Supabase tables (users, guardians, sos_history)
 │   ├── .env.example
 │   └── package.json
 │
