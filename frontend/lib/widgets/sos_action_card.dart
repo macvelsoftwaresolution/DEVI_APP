@@ -174,12 +174,12 @@ class SosActionCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 24.0),
                       child: Text(
                         isHolding
-                            ? 'Keep holding to trigger SOS instantly\nRelease finger to cancel'
+                            ? 'Keep holding to send SOS instantly\nRelease finger to cancel'
                             : isCountingDown
                             ? 'Auto-dispatching alert in ${countdownSeconds}s\nTap anywhere or press Cancel'
                             : isEmergencyActive
                             ? 'Alert is Active • Tap here\nif you have reached safety'
-                            : 'Tap for 5s countdown or hold to trigger\nemergency contacts',
+                            : 'Tap for 5s countdown or hold to send\nemergency contacts',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: isSmallScreen || isShortScreen ? 11.5 : 12.5,
