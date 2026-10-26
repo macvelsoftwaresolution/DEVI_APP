@@ -130,7 +130,9 @@ export default function EmergencyAlertBanner({ alert, onClose, onReZoom }) {
             </span>
           </div>
           <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--text-dim)', flexShrink: 0, marginLeft: '8px' }}>
-            {alert.lat?.toFixed(5)}, {alert.lng?.toFixed(5)}
+            {Number.isFinite(alert.lat) && Number.isFinite(alert.lng)
+              ? `${alert.lat.toFixed(5)}, ${alert.lng.toFixed(5)}`
+              : 'GPS pending'}
           </span>
         </div>
       </div>

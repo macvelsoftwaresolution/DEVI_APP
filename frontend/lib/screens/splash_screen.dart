@@ -2,9 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/app_state.dart';
+import '../services/onboarding_service.dart';
 import '../services/permission_service.dart';
-import 'login_screen.dart';
-import 'sos_screen.dart';
+import 'onboarding/onboarding_flow.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -21,14 +21,14 @@ class _SplashScreenState extends State<SplashScreen>
 
   Timer? _navigationTimer;
   bool _hasNavigated = false;
-  bool _isLoggedIn = false;
+  late final Future<Widget> _nextScreen;
 
   @override
   void initState() {
     super.initState();
 
-    // 1. Request Camera, Mic, SMS & Call Phone permissions upfront upon launch
-    _initAppFlow();
+    // Restore session and decide the next screen (onboarding or app) while the logo shows
+    _nextScreen = _initAppFlow();
 
     // Fast and smooth fade-in
     _controller = AnimationController(
@@ -52,30 +52,32 @@ class _SplashScreenState extends State<SplashScreen>
     });
   }
 
-  void _initAppFlow() async {
+  Future<Widget> _initAppFlow() async {
+    var loggedIn = false;
     try {
-      await PermissionService.requestAllSafetyPermissions();
-    } catch (e) {
-      debugPrint('Error requesting initial safety permissions: $e');
+      loggedIn = await AppState.instance.checkAutoLogin();
+    } catch (_) {}
+
+    // Permissions are asked only after the terms screen has explained why they are needed.
+    // First-run users get the request from the terms screen instead.
+    if (await OnboardingService.hasAcceptedCurrentTerms()) {
+      try {
+        await PermissionService.requestAllSafetyPermissions();
+      } catch (e) {
+        debugPrint('Error requesting initial safety permissions: $e');
+      }
     }
 
-    try {
-      final loggedIn = await AppState.instance.checkAutoLogin();
-      if (mounted) {
-        setState(() {
-          _isLoggedIn = loggedIn;
-        });
-      }
-    } catch (_) {}
+    return OnboardingFlow.firstScreen(isLoggedIn: loggedIn);
   }
 
-  void _navigateToNext() {
+  Future<void> _navigateToNext() async {
     if (_hasNavigated || !mounted) return;
     _hasNavigated = true;
     _navigationTimer?.cancel();
 
-    final Widget targetScreen =
-        _isLoggedIn ? const SosScreen() : const LoginScreen();
+    final Widget targetScreen = await _nextScreen;
+    if (!mounted) return;
 
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(

@@ -41,7 +41,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _selectedPhotoPath = widget.isEditing ? state.profilePhotoPath : null;
     // If registered user is editing profile from settings, show current values
     final isEditing = widget.isEditing && state.name.isNotEmpty && !state.isGuest;
-    _nameController = TextEditingController(text: isEditing ? state.name : '');
+    _nameController = TextEditingController(
+      text: isEditing ? state.name : (widget.isEditing ? '' : state.setupName),
+    );
     _phoneController = TextEditingController(text: isEditing ? state.phone : '');
     _address1Controller = TextEditingController(text: isEditing ? state.address1 : '');
 
@@ -51,6 +53,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .map((g) => TextEditingController(text: g.name))
           .toList();
       _guardianPhoneControllers = existingGuardians
+          .map((g) => TextEditingController(text: g.phone))
+          .toList();
+    } else if (!widget.isEditing && state.setupGuardians.isNotEmpty) {
+      // Sign up after first-run quick setup: start from the guardians already entered
+      _guardianNameControllers = state.setupGuardians
+          .map((g) => TextEditingController(text: g.name))
+          .toList();
+      _guardianPhoneControllers = state.setupGuardians
           .map((g) => TextEditingController(text: g.phone))
           .toList();
     } else {

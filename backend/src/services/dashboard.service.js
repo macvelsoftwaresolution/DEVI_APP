@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import { encryptField as enc, decryptField as dec } from '../utils/encryption.js';
 import { liveTrackSessions } from './live-sessions.js';
+import { toLatLng, hasFix, initialBreadcrumbs } from '../utils/coords.js';
 
 // Admin dashboard: incident list (with user & guardian details) and operator notes
 export const DashboardService = {
@@ -89,18 +90,24 @@ export const DashboardService = {
         });
         const displayTime = `${istDate}, ${istTime}`;
 
+        // Real GPS only: live session first, then the stored alert, else null ("GPS pending")
+        const coords = hasFix(liveSession?.latitude, liveSession?.longitude)
+          ? toLatLng(liveSession.latitude, liveSession.longitude)
+          : toLatLng(alert.latitude, alert.longitude);
+
         return {
           id: alert.id.toString(),
           userId: alert.user_id,
           createdAt: alert.created_at,
           displayTime,
           timeAgo,
-          latitude: liveSession?.latitude ?? alert.latitude ?? 13.0827,
-          longitude: liveSession?.longitude ?? alert.longitude ?? 80.2707,
-          accuracy: liveSession?.accuracy ?? alert.accuracy ?? null,
-          location: dec(alert.location_address) || `GPS (${alert.latitude}, ${alert.longitude})`,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          accuracy: coords.latitude !== null ? (liveSession?.accuracy ?? alert.accuracy ?? null) : null,
+          location: dec(alert.location_address) || 'Location not yet available',
           status: liveSession?.status || alert.status || 'DISPATCHED',
           signalLost: !!liveSession?.signalLost,
+          whatsapp: liveSession?.whatsapp || null,
           signalReason: liveSession?.signalReason || null,
           lastSeen: liveSession?.lastUpdated || alert.created_at,
           evidenceUrl: alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null,
@@ -112,13 +119,7 @@ export const DashboardService = {
             isGuest: user?.is_guest || false,
           },
           guardians,
-          breadcrumbs: liveSession?.breadcrumbs || [
-            {
-              latitude: alert.latitude || 13.0827,
-              longitude: alert.longitude || 80.2707,
-              timestamp: alert.created_at,
-            },
-          ],
+          breadcrumbs: liveSession?.breadcrumbs || initialBreadcrumbs(coords.latitude, coords.longitude, alert.created_at),
         };
       });
     } catch (err) {

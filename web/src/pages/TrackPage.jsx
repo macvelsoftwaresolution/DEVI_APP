@@ -11,11 +11,12 @@ export default function TrackPage() {
   const alertId = paramAlertId || searchParams.get('id') || searchParams.get('alertId') || 'LIVE';
 
   const [session, setSession] = useState(null);
-  const [victimLocation, setVictimLocation] = useState({ lat: 13.0827, lng: 80.2707 });
+  // null until the phone sends a real GPS fix (never show a made-up location)
+  const [victimLocation, setVictimLocation] = useState(null);
   const [guardianLocation, setGuardianLocation] = useState(null);
   const [lastUpdated, setLastUpdated] = useState('');
-  const [areaTitle, setAreaTitle] = useState('Fetching Live Address...');
-  const [areaSub, setAreaSub] = useState('');
+  const [areaTitle, setAreaTitle] = useState('Waiting for live location...');
+  const [areaSub, setAreaSub] = useState('The map will update as soon as her phone sends GPS');
   const [status, setStatus] = useState('ACTIVE');
   const [evidenceUrl, setEvidenceUrl] = useState(null);
 
@@ -49,51 +50,25 @@ export default function TrackPage() {
       attribution: '© OpenStreetMap | DEVI Safety',
     });
 
+    // Start on an India overview; victim marker, accuracy circle and trail are added
+    // only when the first real GPS fix arrives (see applyUpdate)
     const map = L.map(mapContainerRef.current, {
-      center: [victimLocation.lat, victimLocation.lng],
-      zoom: 17,
+      center: [22.5, 79.0],
+      zoom: 5,
       zoomControl: false,
       layers: [satellite],
     });
 
     L.control.layers({ '🛰️ Satellite': satellite, '🗺️ Streets': street }, null, { position: 'topright' }).addTo(map);
 
-    // Victim Marker
-    const victimIcon = createVictimDivIcon({
-      id: alertId,
-      status: status,
-      userName: session?.userName || session?.user?.name || 'Emergency Victim',
-    }, true);
-
-    const vMarker = L.marker([victimLocation.lat, victimLocation.lng], { icon: victimIcon }).addTo(map);
-    victimMarkerRef.current = vMarker;
-
-    // GPS Accuracy Radius Circle
-    const accuracyCircle = L.circle([victimLocation.lat, victimLocation.lng], {
-      radius: session?.accuracy ? Math.max(6, Math.min(45, parseFloat(session.accuracy))) : 12,
-      color: '#EF4444',
-      weight: 1.5,
-      opacity: 0.55,
-      fillColor: '#EF4444',
-      fillOpacity: 0.12,
-    }).addTo(map);
-    accuracyCircleRef.current = accuracyCircle;
-
-    // Trail
-    const trail = L.polyline([[victimLocation.lat, victimLocation.lng]], {
-      color: '#EF4444',
-      weight: 4,
-      opacity: 0.85,
-      dashArray: '6, 6',
-    }).addTo(map);
-    trailRef.current = trail;
-
     mapInstanceRef.current = map;
 
     return () => {
       map.remove();
       mapInstanceRef.current = null;
+      victimMarkerRef.current = null;
       accuracyCircleRef.current = null;
+      trailRef.current = null;
     };
   }, []);
 
@@ -268,9 +243,36 @@ export default function TrackPage() {
   const applyUpdate = (data) => {
     const lat = parseFloat(data.latitude);
     const lng = parseFloat(data.longitude);
-    if (!isNaN(lat) && !isNaN(lng)) {
+    // 0,0 is the server's "no GPS yet" placeholder, not a real position
+    if (!isNaN(lat) && !isNaN(lng) && !(lat === 0 && lng === 0)) {
       const newLoc = { lat, lng };
       setVictimLocation(newLoc);
+      const map = mapInstanceRef.current;
+      if (map && !victimMarkerRef.current) {
+        // First real fix: add victim layers and zoom in
+        victimMarkerRef.current = L.marker([lat, lng], {
+          icon: createVictimDivIcon({
+            id: alertId,
+            status: data.status || status,
+            userName: data.userName || data.user?.name || 'Emergency Victim',
+          }, true),
+        }).addTo(map);
+        accuracyCircleRef.current = L.circle([lat, lng], {
+          radius: 12,
+          color: '#EF4444',
+          weight: 1.5,
+          opacity: 0.55,
+          fillColor: '#EF4444',
+          fillOpacity: 0.12,
+        }).addTo(map);
+        trailRef.current = L.polyline([[lat, lng]], {
+          color: '#EF4444',
+          weight: 4,
+          opacity: 0.85,
+          dashArray: '6, 6',
+        }).addTo(map);
+        map.setView([lat, lng], 17);
+      }
       if (victimMarkerRef.current) {
         victimMarkerRef.current.setLatLng([lat, lng]);
         victimMarkerRef.current.setIcon(createVictimDivIcon({
@@ -381,19 +383,21 @@ export default function TrackPage() {
           guardianMarkerRef.current.setLatLng([gLat, gLng]);
         }
 
-        // Calculate Real Road Route Paths
-        calculateRealRoadRoutes(newGuardianLoc, victimLocation, activeRouteIndex);
+        // Calculate Real Road Route Paths (only once the victim's real location is known)
+        if (victimLocation) calculateRealRoadRoutes(newGuardianLoc, victimLocation, activeRouteIndex);
       },
       () => {},
       { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
     );
 
     return () => navigator.geolocation.clearWatch(id);
-  }, [victimLocation.lat, victimLocation.lng]);
+  }, [victimLocation?.lat, victimLocation?.lng]);
 
-  const navUrl = guardianLocation
-    ? `https://www.google.com/maps/dir/?api=1&origin=${guardianLocation.lat},${guardianLocation.lng}&destination=${victimLocation.lat},${victimLocation.lng}&travelmode=driving`
-    : `https://www.google.com/maps/dir/?api=1&destination=${victimLocation.lat},${victimLocation.lng}`;
+  const navUrl = !victimLocation
+    ? null
+    : guardianLocation
+      ? `https://www.google.com/maps/dir/?api=1&origin=${guardianLocation.lat},${guardianLocation.lng}&destination=${victimLocation.lat},${victimLocation.lng}&travelmode=driving`
+      : `https://www.google.com/maps/dir/?api=1&destination=${victimLocation.lat},${victimLocation.lng}`;
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
@@ -472,9 +476,11 @@ export default function TrackPage() {
             <div style={{ fontSize: '15px', fontWeight: '800', color: '#FFF', lineHeight: '1.2' }}>{areaTitle}</div>
             <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span>{areaSub}</span>
-              <span style={{ fontSize: '10px', color: '#34D399', background: 'rgba(16, 185, 129, 0.15)', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                GPS: ±${Math.round(session?.accuracy || 8)}m
-              </span>
+              {victimLocation && session?.accuracy != null && !isNaN(parseFloat(session.accuracy)) && (
+                <span style={{ fontSize: '10px', color: '#34D399', background: 'rgba(16, 185, 129, 0.15)', padding: '1px 6px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                  GPS: ±{Math.round(parseFloat(session.accuracy))}m
+                </span>
+              )}
             </div>
           </div>
           <div style={{ textAlign: 'right', minWidth: '120px' }}>
@@ -503,7 +509,7 @@ export default function TrackPage() {
                 <button
                   key={i}
                   onClick={() => {
-                    if (guardianLocation) calculateRealRoadRoutes(guardianLocation, victimLocation, i);
+                    if (guardianLocation && victimLocation) calculateRealRoadRoutes(guardianLocation, victimLocation, i);
                   }}
                   style={{
                     display: 'flex',
@@ -540,27 +546,30 @@ export default function TrackPage() {
 
         {/* Google Navigation Button */}
         <a
-          href={navUrl}
+          href={navUrl || undefined}
           target="_blank"
           rel="noreferrer"
+          aria-disabled={!navUrl}
+          onClick={(e) => { if (!navUrl) e.preventDefault(); }}
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
             width: '100%',
-            background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
-            color: '#FFF',
+            background: navUrl ? 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)' : '#334155',
+            color: navUrl ? '#FFF' : '#94A3B8',
             padding: '14px',
             borderRadius: '14px',
             fontFamily: 'Outfit, sans-serif',
             fontSize: '15px',
             fontWeight: '800',
             textDecoration: 'none',
-            boxShadow: '0 4px 18px rgba(2, 132, 199, 0.5)',
+            cursor: navUrl ? 'pointer' : 'not-allowed',
+            boxShadow: navUrl ? '0 4px 18px rgba(2, 132, 199, 0.5)' : 'none',
           }}
         >
-          <Navigation size={18} /> Turn-by-Turn Google Navigation
+          <Navigation size={18} /> {navUrl ? 'Turn-by-Turn Google Navigation' : 'Navigation available once GPS arrives'}
         </a>
       </div>
     </div>

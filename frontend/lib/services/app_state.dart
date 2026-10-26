@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'emergency_media_service.dart';
+import 'onboarding_service.dart';
 
 class GuardianModel {
   final String name;
@@ -33,6 +34,12 @@ class AppState extends ChangeNotifier {
   String? profilePhotoPath;
   bool isGuest = false;
   bool isLoading = false;
+
+  // Name + guardian from the first-run quick setup (kept on the device, used by
+  // Instant SOS and merged into the account on sign in / pre-filled on sign up)
+  String setupName = '';
+  final List<GuardianModel> _setupGuardians = [];
+  List<GuardianModel> get setupGuardians => List.unmodifiable(_setupGuardians);
 
   final List<GuardianModel> _guardians = [];
 
@@ -68,6 +75,7 @@ class AppState extends ChangeNotifier {
   static const String _keyGuestId = 'devi_guest_id';
   static const String _keyGuestGuardians = 'devi_guest_guardians';
   static const String _keyAuthToken = 'devi_auth_token';
+  static const String _keySetupName = 'devi_setup_name';
 
   // Auth token lives in encrypted storage (Android Keystore / iOS Keychain), not SharedPreferences
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
@@ -97,6 +105,7 @@ class AppState extends ChangeNotifier {
         await prefs.setString(_keyGuestId, guestId);
       }
       phone = guestId;
+      if (name.isEmpty) name = setupName;
 
       // Restore locally saved guest guardians if any
       final localGuardiansJson = prefs.getString(_keyGuestGuardians);
@@ -137,6 +146,8 @@ class AppState extends ChangeNotifier {
       }
       // Reset any previous emergency media banner for fresh user session
       EmergencyMediaService.instance.reset();
+      // Signed in / signed up: the first-run quick setup is no longer needed
+      await OnboardingService.markSetupDone();
     } catch (e) {
       debugPrint('Error saving session: $e');
     }
@@ -168,6 +179,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> checkAutoLogin() async {
+    await _loadQuickSetup();
     try {
       final prefs = await SharedPreferences.getInstance();
       final isLoggedIn = prefs.getBool(_keyIsLoggedIn) ?? false;
@@ -194,6 +206,7 @@ class AppState extends ChangeNotifier {
         if (guestId != null && guestId.isNotEmpty) {
           phone = guestId;
           isGuest = true;
+          if (name.isEmpty) name = setupName;
           final localG = prefs.getString(_keyGuestGuardians);
           if (localG != null && localG.isNotEmpty) {
             final list = jsonDecode(localG) as List<dynamic>?;
@@ -290,6 +303,62 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
     return false;
+  }
+
+  // --- First-run quick setup ---
+  Future<void> _loadQuickSetup() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setupName = prefs.getString(_keySetupName) ?? '';
+      _setupGuardians.clear();
+      final json = prefs.getString(_keyGuestGuardians);
+      if (json != null && json.isNotEmpty) {
+        final list = jsonDecode(json) as List<dynamic>?;
+        for (final item in list ?? const []) {
+          _setupGuardians.add(GuardianModel.fromMap(Map<String, dynamic>.from(item as Map)));
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading quick setup: $e');
+    }
+  }
+
+  /// Saves the quick-setup name and guardian on the device. The guardian goes first in
+  /// the device guardian list, which Instant SOS (guest mode) uses.
+  Future<void> saveQuickSetup({required String name, required GuardianModel guardian}) async {
+    setupName = name;
+    final merged = <GuardianModel>[guardian];
+    for (final g in _setupGuardians) {
+      if (g.phone != guardian.phone) merged.add(g);
+    }
+    _setupGuardians
+      ..clear()
+      ..addAll(merged);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keySetupName, name);
+      await prefs.setString(_keyGuestGuardians, jsonEncode(merged.map((g) => g.toMap()).toList()));
+    } catch (e) {
+      debugPrint('Error saving quick setup: $e');
+    }
+    notifyListeners();
+  }
+
+  /// After sign in: add quick-setup guardians the account does not have yet (max 5 total)
+  Future<void> mergeSetupGuardiansIntoAccount() async {
+    if (_setupGuardians.isEmpty || isGuest || phone.isEmpty) return;
+    final merged = List<GuardianModel>.from(_guardians);
+    var changed = false;
+    for (final g in _setupGuardians) {
+      if (merged.length >= 5) break;
+      if (g.phone == phone) continue; // never the user's own number
+      if (merged.any((m) => m.phone == g.phone)) continue;
+      merged.add(g);
+      changed = true;
+    }
+    if (changed) {
+      await saveProfileToBackend(newGuardians: merged);
+    }
   }
 
   void addGuardian(String name, String phone) {

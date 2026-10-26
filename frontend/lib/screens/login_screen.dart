@@ -9,7 +9,10 @@ import 'profile_screen.dart';
 import 'sos_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  // False when opened from quick setup ("Already have an account?"): Instant SOS
+  // must not skip the guardian setup.
+  final bool allowInstantSos;
+  const LoginScreen({super.key, this.allowInstantSos = true});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -94,6 +97,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Load user profile & guardians dynamically from backend
       await AppState.instance.loadUserProfile(phone);
+      // Add the guardian entered in first-run quick setup if the account lacks it
+      await AppState.instance.mergeSetupGuardiansIntoAccount();
 
       // Save session for auto-login persistence
       await AppState.instance.saveSession(phone);
@@ -122,8 +127,9 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
 
-      Navigator.of(context).pushReplacement(
+      Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const SosScreen()),
+        (route) => false,
       );
     } catch (e) {
       if (!mounted) return;
@@ -383,6 +389,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
 
+                        if (widget.allowInstantSos) ...[
                         const SizedBox(height: 22),
 
                         // "OR" divider
@@ -412,6 +419,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           height: 50,
                           onPressed: _continueAsGuest,
                         ),
+                        ],
                       ],
                     ),
                   ),

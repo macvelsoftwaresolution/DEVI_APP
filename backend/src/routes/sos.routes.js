@@ -110,61 +110,76 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     }
     if (!victimName) victimName = userPhone || 'DEVI User';
 
-    // STEP 3: Emergency Dispatch (WhatsApp active with Google Maps Hyperlink & Live Tracking)
-    const contactsToSend = req.body.emergencyContacts || req.body.contactsAlerted;
-    let dispatchedAnyWhatsApp = false;
-
-    if (contactsToSend && Array.isArray(contactsToSend) && contactsToSend.length > 0) {
-      contactsToSend.forEach(contact => {
-        let contactPhone = typeof contact === 'object' ? (contact.phone || contact.number) : String(contact);
-        const match = contactPhone.match(/(?:\+?91|0)?[6-9]\d{9}/);
-        if (match) {
-          contactPhone = match[0];
-          dispatchedAnyWhatsApp = true;
-          // Dispatch WhatsApp SOS message with Google Maps Hyperlink & live tracking link
-          WhatsAppService.sendEmergencyAlert(
-            contactPhone,
-            trackingUrl,
-            victimName,
-            { latitude, longitude, location }
-          );
-        }
-      });
-    }
-
-    // If Instant SOS / Guest user without personal guardians, dispatch WhatsApp to Emergency Control / Admin
-    if (!dispatchedAnyWhatsApp) {
-      const emergencyControlPhone = process.env.ADMIN_WHATSAPP || '916381592501';
-      console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${emergencyControlPhone}) with Google Maps & Live Tracking Link...`);
-      WhatsAppService.sendEmergencyAlert(
-        emergencyControlPhone,
-        trackingUrl,
-        `${victimName} (Instant SOS)`,
-        { latitude, longitude, location: location || 'Live GPS Coordinates' }
-      );
-    }
-
-    // Broadcast real-time emergency alert via WebSockets to operator dashboard
+    // Dashboard first: operators see the alert immediately, before WhatsApp finishes
     socketService.broadcastNewSosAlert({
       id: alert.id,
       userPhone,
       userName: victimName,
-      latitude,
-      longitude,
-      location,
+      latitude: alert.latitude,
+      longitude: alert.longitude,
+      location: alert.location,
       trackingUrl,
       timestamp: alert.timestamp || new Date().toISOString(),
       status: 'ACTIVE',
     });
+
+    // STEP 3: Emergency Dispatch (WhatsApp with live tracking link).
+    // Wait for Meta's answer (bounded by the service timeout) so the phone learns who was NOT reached.
+    const recipients = [];
+    const contactsToSend = req.body.emergencyContacts || req.body.contactsAlerted;
+    if (Array.isArray(contactsToSend)) {
+      for (const contact of contactsToSend) {
+        const raw = typeof contact === 'object' ? (contact.phone || contact.number) : String(contact);
+        const match = String(raw || '').match(/(?:\+?91|0)?[6-9]\d{9}/);
+        if (match) recipients.push({ phone: match[0].slice(-10), role: 'guardian' });
+      }
+    }
+
+    // Instant SOS / Guest user without personal guardians: alert the Emergency Control / Admin number
+    let isControlRoomOnly = false;
+    if (recipients.length === 0) {
+      const emergencyControlPhone = process.env.ADMIN_WHATSAPP || '916381592501';
+      console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${emergencyControlPhone})...`);
+      recipients.push({ phone: emergencyControlPhone, role: 'control_room' });
+      isControlRoomOnly = true;
+    }
+
+    const results = await Promise.all(
+      recipients.map(async (r) => {
+        const out = await WhatsAppService.sendEmergencyAlert(
+          r.phone,
+          trackingUrl,
+          isControlRoomOnly ? `${victimName} (Instant SOS)` : victimName,
+          { latitude: alert.latitude, longitude: alert.longitude, location: alert.location }
+        ).catch((e) => ({ success: false, reason: 'NETWORK', error: e.message }));
+        return { phone: r.phone, role: r.role, sent: !!out?.success, reason: out?.success ? null : (out?.reason || 'UNKNOWN') };
+      })
+    );
+
+    const sentCount = results.filter((r) => r.sent).length;
+    const whatsapp = {
+      total: results.length,
+      sent: sentCount,
+      status: sentCount === results.length ? 'ALL_SENT' : sentCount === 0 ? 'NONE_SENT' : 'PARTIAL',
+      results,
+    };
+    if (whatsapp.status !== 'ALL_SENT') {
+      console.warn(`⚠️ [SOS WHATSAPP ${whatsapp.status}] Alert ${alert.id}: ${sentCount}/${results.length} accepted by WhatsApp`);
+    }
+
+    // Keep on the live session so retries (duplicate responses) and the dashboard see it too
+    const liveSession = SosService.attachWhatsAppStatus(alert.id, whatsapp);
+    socketService.broadcastToRoom('dashboard', { type: 'incident:whatsapp', alertId: alert.id, whatsapp });
 
     res.status(201).json({
       success: true,
       duplicate: false,
       message: 'Emergency SOS alert recorded and live tracking initiated',
       data: {
-        ...publicSession(alert),
+        ...publicSession(liveSession || alert),
         status: 'ACTIVE',
         trackingUrl,
+        whatsapp,
         controlToken: signSosControlToken(alert.id),
       },
     });
