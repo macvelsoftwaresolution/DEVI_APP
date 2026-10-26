@@ -84,6 +84,17 @@ export const verifySosControlToken = (alertId, token) =>
   !!alertId && !!token && safeEqual(token, signSosControlToken(alertId));
 
 /**
+ * Per-alert view key (`k` in the guardian tracking link). Alert IDs are sequential numbers,
+ * so the key is what stops strangers from opening other people's evidence by guessing IDs.
+ * Different prefix from the control token: viewing never grants control.
+ */
+export const signSosViewToken = (alertId) =>
+  crypto.createHmac('sha256', JWT_SECRET).update(`sos-view:${alertId}`).digest('base64url').slice(0, 22);
+
+export const verifySosViewToken = (alertId, token) =>
+  !!alertId && !!token && safeEqual(token, signSosViewToken(alertId));
+
+/**
  * Signs a short-lived JWT for the admin dashboard
  */
 export const signAdminToken = (username) =>

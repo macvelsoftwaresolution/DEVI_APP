@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "node --test",
-    "migrate:encrypt": "node scripts/encrypt-existing-data.js"
+    "migrate:encrypt": "node scripts/encrypt-existing-data.js",
+    "migrate:evidence": "node scripts/make-evidence-private.js"
   },
   "keywords": [
     "safety",

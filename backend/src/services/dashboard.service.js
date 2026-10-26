@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase.js';
 import { encryptField as enc, decryptField as dec } from '../utils/encryption.js';
 import { liveTrackSessions } from './live-sessions.js';
 import { toLatLng, hasFix, initialBreadcrumbs } from '../utils/coords.js';
+import { evidenceLink } from '../utils/evidence.js';
 
 // Admin dashboard: incident list (with user & guardian details) and operator notes
 export const DashboardService = {
@@ -110,7 +111,7 @@ export const DashboardService = {
           whatsapp: liveSession?.whatsapp || null,
           signalReason: liveSession?.signalReason || null,
           lastSeen: liveSession?.lastUpdated || alert.created_at,
-          evidenceUrl: alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null,
+          evidenceUrl: evidenceLink(alert.id, alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null),
           operatorNotes: dec(alert.operator_notes) || liveSession?.operatorNotes || '',
           user: {
             name: dec(user?.full_name) || (user?.is_guest ? 'Guest Victim' : 'DEVI User'),

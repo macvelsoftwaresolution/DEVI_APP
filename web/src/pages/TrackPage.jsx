@@ -9,6 +9,9 @@ export default function TrackPage() {
   const { alertId: paramAlertId } = useParams();
   const [searchParams] = useSearchParams();
   const alertId = paramAlertId || searchParams.get('id') || searchParams.get('alertId') || 'LIVE';
+  // View key from the guardian's WhatsApp link; without it the map works but evidence stays hidden
+  const viewKey = searchParams.get('k');
+  const [linkInvalid, setLinkInvalid] = useState(false);
 
   const [session, setSession] = useState(null);
   // null until the phone sends a real GPS fix (never show a made-up location)
@@ -231,7 +234,12 @@ export default function TrackPage() {
   const fetchLive = async () => {
     if (!alertId || alertId === 'LIVE') return;
     try {
-      const res = await fetch(apiUrl(`/api/sos/live/${alertId}`));
+      const query = viewKey ? `?k=${encodeURIComponent(viewKey)}` : '';
+      const res = await fetch(apiUrl(`/api/sos/live/${alertId}${query}`));
+      if (res.status === 403) {
+        setLinkInvalid(true);
+        return;
+      }
       if (!res.ok) return;
       const data = await res.json();
       if (data && data.success && data.data) {
@@ -338,7 +346,7 @@ export default function TrackPage() {
 
       ws.onopen = () => {
         if (alertId && alertId !== 'LIVE') {
-          ws.send(JSON.stringify({ type: 'join', room: `alert:${alertId}` }));
+          ws.send(JSON.stringify({ type: 'join', room: `alert:${alertId}`, key: viewKey }));
         }
       };
 
@@ -401,6 +409,33 @@ export default function TrackPage() {
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+      {/* Link without (or with a wrong) key: location is private, explain instead of showing an empty map */}
+      {linkInvalid && (
+        <div
+          role="alert"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            background: 'rgba(15, 23, 42, 0.92)',
+          }}
+        >
+          <div style={{ maxWidth: '360px', textAlign: 'center', color: '#E2E8F0', fontFamily: 'Outfit, sans-serif' }}>
+            <div style={{ fontSize: '20px', fontWeight: '800', color: '#FFF', marginBottom: '10px' }}>
+              This tracking link is incomplete
+            </div>
+            <div style={{ fontSize: '14px', lineHeight: '1.5' }}>
+              For the person's safety, live location opens only from the full link in the DEVI WhatsApp alert.
+              Open that message and tap the link again.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FLOATING TOP HEADER */}
       <header
         style={{

@@ -16,6 +16,8 @@ export const uploadMediaToCloudinary = async (bufferOrPath, options = {}) => {
       {
         folder: 'devi_emergency_evidence',
         resource_type: 'auto', // handles both video & audio formats
+        // Private: the asset cannot be opened by URL; it is served only by /api/sos/evidence
+        type: 'authenticated',
         ...options,
       },
       (error, result) => {
@@ -33,5 +35,16 @@ export const uploadMediaToCloudinary = async (bufferOrPath, options = {}) => {
     }
   });
 };
+
+// Short-lived signed delivery URL for the backend to fetch a private evidence file.
+// Used server-side only; never sent to clients.
+export const evidenceDeliveryUrl = ({ type, resourceType, publicId, format }) =>
+  cloudinary.url(publicId, {
+    resource_type: resourceType,
+    type,
+    format: format || undefined,
+    sign_url: type !== 'upload',
+    secure: true,
+  });
 
 export default cloudinary;
