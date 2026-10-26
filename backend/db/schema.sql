@@ -34,7 +34,7 @@ create table if not exists public.sos_history (
   status            text default 'active'::text,
   created_at        timestamptz not null default timezone('utc'::text, now()),
   evidence_url      text,
-  idempotency_key   uuid,
+  idempotency_key   uuid unique,
   accuracy          numeric,
   operator_notes    text
 );
