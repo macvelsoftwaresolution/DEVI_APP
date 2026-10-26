@@ -81,6 +81,8 @@ flowchart TD
 
 ```text
 DEVI_APP/
+├── docs/                            # This architecture document
+├── deploy/nginx/*.nginx.conf        # Hostinger NGINX configs (API + web)
 ├── backend/                         # Node.js Express REST API + WebSocket
 │   ├── src/
 │   │   ├── config/
@@ -112,7 +114,6 @@ DEVI_APP/
 │   │   └── server.js                # Entry point (port 5005)
 │   ├── test/                        # npm test (node:test): encryption, auth, CORS
 │   ├── scripts/encrypt-existing-data.js  # One-time DB field encryption migration
-│   ├── *.nginx.conf                 # Hostinger NGINX configs (API + web)
 │   ├── .env.example
 │   └── package.json
 │

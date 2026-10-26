@@ -11,4 +11,4 @@ flutter run --dart-define=SERVER=live     # use live server
 flutter run --dart-define=SERVER=local    # force local backend
 ```
 
-See [../DEVI_SYSTEM_ARCHITECTURE.md](../DEVI_SYSTEM_ARCHITECTURE.md) for the full system flow.
+See [../docs/DEVI_SYSTEM_ARCHITECTURE.md](../docs/DEVI_SYSTEM_ARCHITECTURE.md) for the full system flow.
