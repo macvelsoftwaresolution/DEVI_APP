@@ -333,19 +333,22 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
 });
 
 // POST /api/sos/resolve/:alertId - Deactivates live tracking when user marks as safe
-router.post('/resolve/:alertId', async (req, res, next) => {
+router.post('/resolve/:alertId', optionalToken, async (req, res, next) => {
   try {
     const { alertId } = req.params;
-    if (!hasSosControl(req, alertId, req.body)) {
-      return rejectSosControl(res);
-    }
 
     const session = await SosService.resolveSosAlert(alertId);
 
     console.log(`✅ [SOS RESOLVED/DEACTIVATED] ID: ${alertId}`);
 
-    // Broadcast status change immediately to all WebSocket listeners
+    // Broadcast status change immediately to all WebSocket listeners (dashboard & tracking rooms)
     socketService.broadcastSosStatus(alertId, { status: 'RESOLVED' });
+    socketService.broadcastToRoom('dashboard', {
+      type: 'incident:resolved',
+      alertId,
+      status: 'RESOLVED',
+      resolvedAt: new Date().toISOString(),
+    });
 
     res.status(200).json({
       success: true,

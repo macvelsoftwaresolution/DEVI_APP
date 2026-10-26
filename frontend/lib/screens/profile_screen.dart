@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../theme/app_colors.dart';
@@ -10,6 +11,18 @@ import '../widgets/input_field.dart';
 import '../widgets/devi_button.dart';
 import '../widgets/devi_logo.dart';
 import 'sos_screen.dart';
+
+class _ContactSuggestion {
+  final String name;
+  final String phoneNumber; // 10-digit clean phone number
+  final String rawNumber;
+
+  const _ContactSuggestion({
+    required this.name,
+    required this.phoneNumber,
+    required this.rawNumber,
+  });
+}
 
 class ProfileScreen extends StatefulWidget {
   final bool isEditing;
@@ -34,9 +47,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<String?> _guardianPhoneErrors = [];
   bool _isSaving = false;
 
+  List<_ContactSuggestion> _allContactSuggestions = [];
+  List<_ContactSuggestion> _filteredSuggestions = [];
+  int? _activeSuggestionGuardianIndex; // 0, 1, 2... for guardian slots only
+  bool _isLoadingContacts = false;
+  bool _hasRequestedContactsPermission = false;
+
   @override
   void initState() {
     super.initState();
+    // Warm up contacts cache in background if permission is already granted
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final hasPerm = await FlutterContacts.permissions.has(PermissionType.read);
+        if (hasPerm) {
+          _initContacts();
+        }
+      } catch (_) {}
+    });
+
     final state = AppState.instance;
     _selectedPhotoPath = widget.isEditing ? state.profilePhotoPath : null;
     // If registered user is editing profile from settings, show current values
@@ -419,7 +448,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     // 3. Address 1 Validation (Mandatory)
     if (address1.isEmpty) {
-      _address1Error = 'Address line 1 is mandatory';
+      _address1Error = 'Address is mandatory';
       hasError = true;
     } else if (address1.length < 5) {
       _address1Error = 'Enter complete address (minimum 5 characters)';
@@ -566,6 +595,328 @@ class _ProfileScreenState extends State<ProfileScreen> {
         (route) => false,
       );
     }
+  }
+
+  Future<void> _initContacts() async {
+    if (_allContactSuggestions.isNotEmpty || _isLoadingContacts) return;
+    _isLoadingContacts = true;
+    try {
+      final hasPerm = await FlutterContacts.permissions.has(PermissionType.read);
+      if (!hasPerm) {
+        final status = await FlutterContacts.permissions.request(PermissionType.read);
+        if (status != PermissionStatus.granted && status != PermissionStatus.limited) {
+          _isLoadingContacts = false;
+          return;
+        }
+      }
+      final contacts = await FlutterContacts.getAll(
+        properties: {ContactProperty.phone, ContactProperty.name},
+      );
+      final List<_ContactSuggestion> list = [];
+      final Set<String> seen = {};
+      for (final c in contacts) {
+        final name = (c.displayName ?? '').trim();
+        for (final p in c.phones) {
+          final clean = _normalizePhone(p.number);
+          if (clean.length == 10 && !seen.contains(clean)) {
+            seen.add(clean);
+            list.add(_ContactSuggestion(
+              name: name.isNotEmpty ? name : 'Contact',
+              phoneNumber: clean,
+              rawNumber: p.number,
+            ));
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _allContactSuggestions = list;
+          _isLoadingContacts = false;
+        });
+      }
+    } catch (_) {
+      _isLoadingContacts = false;
+    }
+  }
+
+  String _normalizePhone(String raw) {
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 12 && digits.startsWith('91')) {
+      return digits.substring(2);
+    }
+    if (digits.length == 11 && digits.startsWith('0')) {
+      return digits.substring(1);
+    }
+    if (digits.length >= 10) {
+      return digits.substring(digits.length - 10);
+    }
+    return digits;
+  }
+
+  void _onPhoneChanged(String value, {required int guardianIndex}) {
+    final query = value.trim();
+    if (query.isEmpty || query.length >= 10) {
+      if (_activeSuggestionGuardianIndex != null) {
+        setState(() {
+          _activeSuggestionGuardianIndex = null;
+          _filteredSuggestions = [];
+        });
+      }
+      return;
+    }
+
+    if (_allContactSuggestions.isEmpty && !_isLoadingContacts && !_hasRequestedContactsPermission) {
+      _hasRequestedContactsPermission = true;
+      _initContacts().then((_) {
+        if (mounted) _onPhoneChanged(value, guardianIndex: guardianIndex);
+      });
+      return;
+    }
+
+    final prefixMatches = _allContactSuggestions
+        .where((c) => c.phoneNumber.startsWith(query))
+        .toList();
+    final containMatches = _allContactSuggestions
+        .where((c) => !c.phoneNumber.startsWith(query) && c.phoneNumber.contains(query))
+        .toList();
+
+    final matches = [...prefixMatches, ...containMatches].take(5).toList();
+
+    setState(() {
+      _activeSuggestionGuardianIndex = matches.isNotEmpty ? guardianIndex : null;
+      _filteredSuggestions = matches;
+    });
+  }
+
+  void _selectSuggestion(_ContactSuggestion suggestion, int guardianIndex) {
+    if (guardianIndex >= 0 && guardianIndex < _guardianPhoneControllers.length) {
+      setState(() {
+        _guardianPhoneControllers[guardianIndex].text = suggestion.phoneNumber;
+        _guardianPhoneControllers[guardianIndex].selection =
+            TextSelection.collapsed(offset: suggestion.phoneNumber.length);
+        if (_guardianNameControllers[guardianIndex].text.trim().isEmpty &&
+            suggestion.name != 'Contact') {
+          _guardianNameControllers[guardianIndex].text = suggestion.name;
+        }
+        if (guardianIndex < _guardianPhoneErrors.length) {
+          _guardianPhoneErrors[guardianIndex] = null;
+        }
+        _activeSuggestionGuardianIndex = null;
+        _filteredSuggestions = [];
+      });
+    }
+  }
+
+  Future<void> _pickContactFromBook(int guardianIndex) async {
+    try {
+      final contact = await FlutterContacts.native.showPicker(
+        properties: {ContactProperty.phone, ContactProperty.name},
+      );
+      if (contact != null && contact.phones.isNotEmpty) {
+        final rawPhone = contact.phones.first.number;
+        final cleanPhone = _normalizePhone(rawPhone);
+        if (cleanPhone.length == 10) {
+          _selectSuggestion(
+            _ContactSuggestion(
+              name: (contact.displayName != null && contact.displayName!.trim().isNotEmpty)
+                  ? contact.displayName!.trim()
+                  : 'Contact',
+              phoneNumber: cleanPhone,
+              rawNumber: rawPhone,
+            ),
+            guardianIndex,
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
+  Widget _buildContactSuggestionsBox({
+    required int guardianIndex,
+    required String currentQuery,
+  }) {
+    if (_activeSuggestionGuardianIndex != guardianIndex || _filteredSuggestions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.contacts_rounded, size: 14, color: AppColors.primaryNavy.withValues(alpha: 0.8)),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'Matching Contacts (Tap to Auto-fill)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primaryNavy,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+                  ],
+                ),
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _activeSuggestionGuardianIndex = null;
+                      _filteredSuggestions = [];
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(Icons.close, size: 14, color: AppColors.textMuted),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          ..._filteredSuggestions.map((suggestion) {
+            final phone = suggestion.phoneNumber;
+            final isPrefix = phone.startsWith(currentQuery);
+            final prefixPart = isPrefix ? currentQuery : '';
+            final nextPart = isPrefix
+                ? phone.substring(currentQuery.length)
+                : phone;
+
+            return InkWell(
+              onTap: () => _selectSuggestion(suggestion, guardianIndex),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 16,
+                      backgroundColor: const Color(0xFFEFF6FF),
+                      child: Text(
+                        suggestion.name.isNotEmpty
+                            ? suggestion.name[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF2563EB),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            suggestion.name,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primaryNavy,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          RichText(
+                            text: TextSpan(
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                              ),
+                              children: [
+                                const TextSpan(
+                                  text: '+91 ',
+                                  style: TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (isPrefix) ...[
+                                  TextSpan(
+                                    text: prefixPart,
+                                    style: const TextStyle(
+                                      color: AppColors.primaryNavy,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: nextPart,
+                                    style: const TextStyle(
+                                      color: Color(0xFF0284C7),
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ] else ...[
+                                  TextSpan(
+                                    text: phone,
+                                    style: const TextStyle(
+                                      color: Color(0xFF0284C7),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Select',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF16A34A),
+                            ),
+                          ),
+                          SizedBox(width: 3),
+                          Icon(Icons.check_rounded, size: 12, color: Color(0xFF16A34A)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
   }
 
   @override
@@ -739,6 +1090,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     prefixIcon: Icons.phone_outlined,
                     prefixText: '+91',
                     keyboardType: TextInputType.phone,
+                    autofillHints: const [AutofillHints.telephoneNumber],
                     errorText: _phoneError,
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,
@@ -761,7 +1113,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         color: AppColors.mandatoryRed,
                       ),
                     ),
-                    hintText: 'Enter address line 1',
+                    hintText: 'Enter Complete Address',
                     controller: _address1Controller,
                     prefixIcon: Icons.location_on_outlined,
                     errorText: _address1Error,
@@ -894,16 +1246,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             prefixIcon: Icons.phone_outlined,
                             prefixText: '+91',
                             keyboardType: TextInputType.phone,
+                            autofillHints: const [AutofillHints.telephoneNumber],
                             errorText: phoneErr,
                             inputFormatters: [
                               FilteringTextInputFormatter.digitsOnly,
                               LengthLimitingTextInputFormatter(10),
                             ],
-                            onChanged: (_) {
+                            suffixIcon: InkWell(
+                              onTap: () => _pickContactFromBook(index),
+                              borderRadius: BorderRadius.circular(16),
+                              child: const Padding(
+                                padding: EdgeInsets.all(4.0),
+                                child: Icon(Icons.contacts_rounded, size: 20, color: Color(0xFF0284C7)),
+                              ),
+                            ),
+                            onChanged: (val) {
                               if (index < _guardianPhoneErrors.length && _guardianPhoneErrors[index] != null) {
                                 setState(() => _guardianPhoneErrors[index] = null);
                               }
+                              _onPhoneChanged(val, guardianIndex: index);
                             },
+                          ),
+
+                          _buildContactSuggestionsBox(
+                            guardianIndex: index,
+                            currentQuery: _guardianPhoneControllers[index].text.trim(),
                           ),
                         ],
                       ),

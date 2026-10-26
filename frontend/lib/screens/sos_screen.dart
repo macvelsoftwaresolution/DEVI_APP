@@ -58,6 +58,10 @@ class _SosScreenState extends State<SosScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
+    if (_appState.isEmergencyActive) {
+      _isEmergencyActive = true;
+      _activeAlertId = _appState.activeAlertId;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureLocationOn());
   }
 
@@ -95,18 +99,15 @@ class _SosScreenState extends State<SosScreen>
 
   // --- Handle SOS Action ---
   void _onSosTriggered() {
-    // If triggered by a full 1.5s hold, ignore subsequent tap
-    if (_didTriggerViaHold) {
-      _didTriggerViaHold = false;
+    // If emergency is currently active, tapping immediately triggers "I'M SAFE" resolution
+    if (_isEmergencyActive) {
+      _handleDeactivateSos();
       return;
     }
 
-    final holdDuration = _pressStartTime != null
-        ? DateTime.now().difference(_pressStartTime!).inMilliseconds
-        : 0;
-
-    // If finger was held for > 350ms but not completed to 1.5s, it was an aborted hold
-    if (holdDuration > 350) {
+    // If triggered by a full 1.5s hold, ignore subsequent tap
+    if (_didTriggerViaHold) {
+      _didTriggerViaHold = false;
       return;
     }
 
@@ -116,8 +117,12 @@ class _SosScreenState extends State<SosScreen>
       return;
     }
 
-    if (_isEmergencyActive) {
-      _handleDeactivateSos();
+    final holdDuration = _pressStartTime != null
+        ? DateTime.now().difference(_pressStartTime!).inMilliseconds
+        : 0;
+
+    // If finger was held for > 350ms but not completed to 1.5s, it was an aborted hold
+    if (holdDuration > 350) {
       return;
     }
 
@@ -242,13 +247,18 @@ class _SosScreenState extends State<SosScreen>
       if (confirmed != true) return;
     }
 
-    final alertId = _activeAlertId;
+    final alertId = _activeAlertId ?? _appState.activeAlertId;
 
     setState(() {
       _isEmergencyActive = false;
       _activeIdempotencyKey = null;
       _activeAlertId = null;
+      _isHolding = false;
+      _holdProgress = 0.0;
+      _pressStartTime = null;
+      _didTriggerViaHold = false;
     });
+    _appState.clearActiveEmergency();
 
     // 1. Stop live GPS tracking and resolve in backend
     await LocationService.stopLiveTracking(resolveBackend: true);
@@ -405,8 +415,10 @@ class _SosScreenState extends State<SosScreen>
       if (mounted) {
         setState(() {
           _activeAlertId = alertId;
+          _pressStartTime = null;
         });
       }
+      _appState.setActiveEmergency(alertId);
 
       // 5. Emergency Auto-Call: 112 is on HOLD per test request; routes directly to Web & WhatsApp!
       if (!isDuplicate) {

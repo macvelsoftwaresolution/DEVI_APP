@@ -14,7 +14,6 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   List<Map<String, dynamic>> _alerts = [];
   bool _isLoading = true;
-  final Set<String> _expandedIds = {};
   Timer? _pollTimer;
 
   @override
@@ -44,22 +43,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       setState(() {
         _alerts = results;
         if (!isSilent) _isLoading = false;
-        // Auto-expand the latest alert by default
-        if (results.isNotEmpty && results.first['id'] != null) {
-          _expandedIds.add(results.first['id'].toString());
-        }
       });
     }
-  }
-
-  void _toggleExpand(String id) {
-    setState(() {
-      if (_expandedIds.contains(id)) {
-        _expandedIds.remove(id);
-      } else {
-        _expandedIds.add(id);
-      }
-    });
   }
 
   @override
@@ -157,8 +142,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             separatorBuilder: (context, index) => const SizedBox(height: 12),
                             itemBuilder: (context, index) {
                               final item = _alerts[index];
-                              final alertId = item['id']?.toString() ?? index.toString();
-                              final isExpanded = _expandedIds.contains(alertId);
                               final timeStr = _formatLocalDisplayTime(item['timestamp'], item['displayTime']);
 
                               // Status determination:
@@ -169,22 +152,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
                               // Badge configuration
                               final Color badgeBg;
-                              final Color badgeBorder;
                               final Color badgeText;
-                              final String badgeLabel;
                               final IconData statusIcon;
 
                               if (isResolved) {
                                 badgeBg = const Color(0xFFDCFCE7);
-                                badgeBorder = const Color(0xFF86EFAC);
                                 badgeText = const Color(0xFF15803D);
-                                badgeLabel = 'RESOLVED';
                                 statusIcon = Icons.check_circle_rounded;
                               } else {
                                 badgeBg = const Color(0xFFE0F2FE);
-                                badgeBorder = const Color(0xFF7DD3FC);
                                 badgeText = const Color(0xFF0369A1);
-                                badgeLabel = 'ACTIVE';
                                 statusIcon = Icons.crisis_alert_rounded;
                               }
 
@@ -207,167 +184,88 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                     ),
                                   ],
                                 ),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(16),
-                                  onTap: () => _toggleExpand(alertId),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        // Header Row: Icon + Time + Status Badge + Arrow
-                                        Row(
-                                          children: [
-                                            Container(
-                                              width: 32,
-                                              height: 32,
-                                              decoration: BoxDecoration(
-                                                color: badgeBg,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: Icon(statusIcon, size: 16, color: badgeText),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    timeStr,
-                                                    style: const TextStyle(
-                                                      fontSize: 13.5,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: AppColors.primaryNavy,
-                                                      letterSpacing: -0.2,
-                                                    ),
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    isResolved
-                                                        ? 'Incident Closed'
-                                                        : 'Alert sent to safety desk',
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w500,
-                                                      color: isResolved ? const Color(0xFF16A34A) : const Color(0xFF0284C7),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            // Status Badge
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                              decoration: BoxDecoration(
-                                                color: badgeBg,
-                                                borderRadius: BorderRadius.circular(6),
-                                                border: Border.all(color: badgeBorder, width: 0.8),
-                                              ),
-                                              child: Text(
-                                                badgeLabel,
-                                                style: TextStyle(
-                                                  fontSize: 9.5,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: badgeText,
-                                                  letterSpacing: 0.3,
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Icon(
-                                              isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                              size: 20,
-                                              color: AppColors.textMuted,
-                                            ),
-                                          ],
-                                        ),
-
-                                        // EXPANDABLE DETAILS DROPDOWN
-                                        if (isExpanded) ...[
-                                          const SizedBox(height: 12),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Header Row: Icon + Date
+                                      Row(
+                                        children: [
                                           Container(
-                                            width: double.infinity,
-                                            padding: const EdgeInsets.all(12),
+                                            width: 32,
+                                            height: 32,
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFFF8FAFC),
-                                              borderRadius: BorderRadius.circular(12),
-                                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                                              color: badgeBg,
+                                              shape: BoxShape.circle,
                                             ),
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                // TIMELINE STEP 1: TRIGGERED
-                                                _buildTimelineStep(
-                                                  isDone: true,
-                                                  icon: Icons.notifications_active_rounded,
-                                                  color: const Color(0xFFEF4444),
-                                                  title: 'SOS Triggered',
-                                                  time: _formatLocalTimeOnly(item['timestamp'], item['displayTime'] ?? 'Initiated'),
-                                                  subtitle: 'Alert sent to safety desk',
-                                                ),
-                                                _buildTimelineLine(isDone: isResolved),
-
-                                                // TIMELINE STEP 2: RESOLVED
-                                                _buildTimelineStep(
-                                                  isDone: isResolved,
-                                                  icon: Icons.verified_rounded,
-                                                  color: isResolved ? const Color(0xFF16A34A) : const Color(0xFF94A3B8),
-                                                  title: isResolved ? 'Resolved' : 'Resolution',
-                                                  time: item['resolvedTime'] != null
-                                                      ? _formatLocalTimeOnly(item['resolvedTime'], item['displayResolvedTime'])
-                                                      : (isResolved ? 'Resolved' : 'In Progress'),
-                                                  subtitle: isResolved ? 'Incident verified & closed safe' : 'Active monitoring',
-                                                ),
-
-                                                // Location Note (Minimal)
-                                                if (item['location'] != null && item['location'].toString().trim().isNotEmpty) ...[
-                                                  const SizedBox(height: 10),
-                                                  Row(
-                                                    children: [
-                                                      const Icon(Icons.location_on_outlined, size: 13, color: AppColors.textMuted),
-                                                      const SizedBox(width: 4),
-                                                      Expanded(
-                                                        child: Text(
-                                                          item['location'].toString(),
-                                                          style: const TextStyle(
-                                                            fontSize: 11,
-                                                            color: AppColors.textMuted,
-                                                            fontWeight: FontWeight.w500,
-                                                          ),
-                                                          maxLines: 1,
-                                                          overflow: TextOverflow.ellipsis,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-
-                                                // Audio/Video Evidence Link if present
-                                                if (item['evidenceUrl'] != null) ...[
-                                                  const SizedBox(height: 8),
-                                                  Row(
-                                                    children: [
-                                                      const Icon(Icons.mic_none_rounded, size: 13, color: Color(0xFF0284C7)),
-                                                      const SizedBox(width: 4),
-                                                      const Text(
-                                                        'Evidence recorded (Saved securely)',
-                                                        style: TextStyle(
-                                                          fontSize: 11,
-                                                          fontWeight: FontWeight.w600,
-                                                          color: Color(0xFF0284C7),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ],
+                                            child: Icon(statusIcon, size: 16, color: badgeText),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              timeStr,
+                                              style: const TextStyle(
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.primaryNavy,
+                                                letterSpacing: -0.2,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ],
-                                      ],
-                                    ),
+                                      ),
+
+                                      const SizedBox(height: 10),
+
+                                      // SOS Triggered Section with Time
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF8FAFC),
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 22,
+                                              height: 22,
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: const Color(0xFFEF4444),
+                                                  width: 1.2,
+                                                ),
+                                              ),
+                                              child: const Icon(Icons.notifications_active_rounded, size: 12, color: Color(0xFFEF4444)),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            const Expanded(
+                                              child: Text(
+                                                'SOS Triggered',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: AppColors.primaryNavy,
+                                                ),
+                                              ),
+                                            ),
+                                            Text(
+                                              _formatLocalTimeOnly(item['timestamp'], item['displayTime'] ?? 'Initiated'),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFFEF4444),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               );
@@ -380,82 +278,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  Widget _buildTimelineStep({
-    required bool isDone,
-    required IconData icon,
-    required Color color,
-    required String title,
-    required String time,
-    required String subtitle,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
-            color: isDone ? color.withValues(alpha: 0.12) : const Color(0xFFF1F5F9),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isDone ? color : const Color(0xFFCBD5E1),
-              width: 1.2,
-            ),
-          ),
-          child: Icon(icon, size: 12, color: isDone ? color : const Color(0xFF94A3B8)),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: isDone ? AppColors.primaryNavy : const Color(0xFF94A3B8),
-                    ),
-                  ),
-                  Text(
-                    time,
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                      color: isDone ? color : const Color(0xFF94A3B8),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 1),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textMuted,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
-  Widget _buildTimelineLine({required bool isDone}) {
-    return Container(
-      margin: const EdgeInsets.only(left: 10, top: 2, bottom: 2),
-      width: 2,
-      height: 14,
-      color: isDone ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0),
-    );
-  }
 
   String _formatLocalDisplayTime(dynamic rawIso, dynamic fallback) {
     if (rawIso != null) {

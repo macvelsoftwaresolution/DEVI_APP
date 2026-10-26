@@ -156,7 +156,7 @@ class SosActionCard extends StatelessWidget {
                           : isCountingDown
                           ? 'ALERT IN ${countdownSeconds}S'
                           : isEmergencyActive
-                          ? 'I AM SAFE'
+                          ? "I'M SAFE"
                           : 'SOS',
                       style: TextStyle(
                         fontSize: (isHolding || isCountingDown || isEmergencyActive)
@@ -178,8 +178,8 @@ class SosActionCard extends StatelessWidget {
                             : isCountingDown
                             ? 'Auto-dispatching alert in ${countdownSeconds}s\nTap anywhere or press Cancel'
                             : isEmergencyActive
-                            ? 'Alert is Active • Tap here\nif you have reached safety'
-                            : 'Tap for 5s countdown or hold to trigger\nemergency contacts',
+                            ? 'Alert is Active • Tap here\nto finish alert & mark safe'
+                            : 'Tap for 5s countdown or hold to send\nemergency contacts',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: isSmallScreen || isShortScreen ? 11.5 : 12.5,
@@ -189,6 +189,40 @@ class SosActionCard extends StatelessWidget {
                         ),
                       ),
                     ),
+
+                    if (isEmergencyActive) ...[
+                      SizedBox(height: spacing2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.15),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.verified_user_rounded, color: Color(0xFF059669), size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              "Tap: I'm Safe",
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF059669),
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
 
                     if (isCountingDown) ...[
                       SizedBox(height: spacing2),

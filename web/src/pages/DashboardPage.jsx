@@ -238,6 +238,16 @@ export default function DashboardPage() {
               );
               fetchIncidents(false);
             } else if (msg.type === 'status' || msg.type === 'incident:resolved') {
+              if (msg.alertId) {
+                const targetId = String(msg.alertId);
+                setIncidents((prev) =>
+                  prev.map((inc) =>
+                    String(inc.id) === targetId
+                      ? { ...inc, status: 'RESOLVED', signalLost: false }
+                      : inc
+                  )
+                );
+              }
               fetchIncidents(false);
             }
           } catch (_) {}

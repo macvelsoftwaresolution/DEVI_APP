@@ -33,12 +33,26 @@ class AppState extends ChangeNotifier {
   String? profilePhotoPath;
   bool isGuest = false;
   bool isLoading = false;
+  String? activeAlertId;
+  bool isEmergencyActive = false;
 
   final List<GuardianModel> _guardians = [];
 
   List<GuardianModel> get rawGuardians => List.unmodifiable(_guardians);
 
   List<GuardianModel> get guardians => List.unmodifiable(_guardians);
+
+  void setActiveEmergency(String? alertId) {
+    activeAlertId = alertId;
+    isEmergencyActive = alertId != null;
+    notifyListeners();
+  }
+
+  void clearActiveEmergency() {
+    activeAlertId = null;
+    isEmergencyActive = false;
+    notifyListeners();
+  }
 
   void setProfilePhoto(String? path) {
     profilePhotoPath = path;

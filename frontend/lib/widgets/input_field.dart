@@ -18,6 +18,9 @@ class CustomTextField extends StatelessWidget {
   final List<TextInputFormatter>? inputFormatters;
   final int? maxLength;
   final TextCapitalization textCapitalization;
+  final Widget? suffixIcon;
+  final Iterable<String>? autofillHints;
+  final VoidCallback? onTap;
 
   const CustomTextField({
     super.key,
@@ -34,6 +37,9 @@ class CustomTextField extends StatelessWidget {
     this.inputFormatters,
     this.maxLength,
     this.textCapitalization = TextCapitalization.none,
+    this.suffixIcon,
+    this.autofillHints,
+    this.onTap,
   });
 
   @override
@@ -116,6 +122,8 @@ class CustomTextField extends StatelessWidget {
                   controller: controller,
                   keyboardType: keyboardType,
                   onChanged: onChanged,
+                  onTap: onTap,
+                  autofillHints: autofillHints,
                   inputFormatters: inputFormatters,
                   maxLength: maxLength,
                   buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
@@ -138,6 +146,10 @@ class CustomTextField extends StatelessWidget {
                   ),
                 ),
               ),
+              if (suffixIcon != null) ...[
+                const SizedBox(width: 8),
+                suffixIcon!,
+              ],
             ],
           ),
         ),
