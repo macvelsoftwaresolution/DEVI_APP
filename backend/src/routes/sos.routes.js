@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { DataService } from '../services/data.service.js';
+import { GeocodeService } from '../services/geocode.service.js';
+import { SosService } from '../services/sos.service.js';
+import { UserService } from '../services/user.service.js';
 import { uploadMediaToCloudinary } from '../config/cloudinary.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
 import {
@@ -48,7 +50,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     const finalIdempotencyKey = idempotency_key || idempotencyKey || null;
 
     // STEP 1: Idempotency & Active Session Check (Prevents duplicate DB alerts & duplicate SMS)
-    const existingSession = await DataService.findExistingSos({
+    const existingSession = await SosService.findExistingSos({
       idempotencyKey: finalIdempotencyKey,
       userPhone,
     });
@@ -85,7 +87,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     }
 
     // STEP 2: Fresh SOS - Create session and persist to database
-    const alert = await DataService.createSosAlert({
+    const alert = await SosService.createSosAlert({
       userPhone,
       location,
       latitude,
@@ -102,7 +104,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     let victimName = req.body.userName;
     if (!victimName && userPhone) {
       try {
-        const u = await DataService.findUserByPhone(userPhone);
+        const u = await UserService.findUserByPhone(userPhone);
         if (u && u.name) victimName = u.name;
       } catch (_) { }
     }
@@ -178,7 +180,7 @@ router.get('/geocode', async (req, res, next) => {
     if (!lat || !lng) {
       return res.status(400).json({ success: false, message: 'lat and lng query parameters are required' });
     }
-    const address = await DataService.reverseGeocode(lat, lng);
+    const address = await GeocodeService.reverseGeocode(lat, lng);
     res.json({
       success: true,
       address: address || 'Live Emergency Location',
@@ -209,7 +211,7 @@ router.post('/live-update', async (req, res, next) => {
       return rejectSosControl(res);
     }
 
-    const session = await DataService.updateLiveLocation({
+    const session = await SosService.updateLiveLocation({
       alertId,
       latitude,
       longitude,
@@ -242,7 +244,7 @@ router.post('/live-update', async (req, res, next) => {
 router.get('/live/:alertId', async (req, res, next) => {
   try {
     const { alertId } = req.params;
-    const session = await DataService.getLiveLocation(alertId);
+    const session = await SosService.getLiveLocation(alertId);
 
     if (!session) {
       return res.status(404).json({
@@ -305,7 +307,7 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
     }
 
     // Attach to active live session and persist to Supabase
-    const session = await DataService.attachEvidenceUrl(alertId, evidenceUrl);
+    const session = await SosService.attachEvidenceUrl(alertId, evidenceUrl);
 
     try {
       socketService.broadcastToRoom('dashboard', {
@@ -338,7 +340,7 @@ router.post('/resolve/:alertId', async (req, res, next) => {
       return rejectSosControl(res);
     }
 
-    const session = await DataService.resolveSosAlert(alertId);
+    const session = await SosService.resolveSosAlert(alertId);
 
     console.log(`✅ [SOS RESOLVED/DEACTIVATED] ID: ${alertId}`);
 
@@ -362,7 +364,7 @@ router.post('/app-closed/:alertId', (req, res) => {
     return rejectSosControl(res);
   }
 
-  const session = DataService.setSignalState(alertId, { lost: true, reason: 'APP_CLOSED' });
+  const session = SosService.setSignalState(alertId, { lost: true, reason: 'APP_CLOSED' });
   console.warn(`📴 [APP CLOSED DURING SOS] Alert ${alertId}`);
   broadcastSignalLost(session);
   res.json({ success: true });
@@ -389,7 +391,7 @@ router.get('/history/:phone', optionalToken, async (req, res, next) => {
       });
     }
 
-    const history = await DataService.getSosHistory(phone);
+    const history = await SosService.getSosHistory(phone);
 
     res.status(200).json({
       success: true,
@@ -403,7 +405,7 @@ router.get('/history/:phone', optionalToken, async (req, res, next) => {
 // GET /api/sos/history - Returns all SOS history (Protected: Operator / Admin only)
 router.get('/history', verifyAdmin, async (req, res, next) => {
   try {
-    const history = await DataService.getSosHistory();
+    const history = await SosService.getSosHistory();
 
     res.status(200).json({
       success: true,

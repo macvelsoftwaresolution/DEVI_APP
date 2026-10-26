@@ -100,11 +100,17 @@ DEVI_APP/
 │   │   │   ├── sos.routes.js        # SOS trigger, live location, evidence, history
 │   │   │   └── user.routes.js       # Profile, guardians, guest users
 │   │   ├── services/
-│   │   │   ├── data.service.js      # Supabase persistence + live session cache
+│   │   │   ├── user.service.js      # Users & guardians (encrypted fields)
+│   │   │   ├── sos.service.js       # SOS alerts, live tracking, evidence, history, signal state
+│   │   │   ├── dashboard.service.js # Admin incident list & operator notes
+│   │   │   ├── geocode.service.js   # GPS -> place name (cached)
+│   │   │   ├── live-sessions.js     # In-memory live tracking sessions (shared)
+│   │   │   ├── signal.watchdog.js   # Flags alerts whose live location stopped
 │   │   │   ├── socket.service.js    # WebSocket rooms & broadcasts
 │   │   │   └── whatsapp.service.js  # Emergency alert dispatch
 │   │   ├── utils/encryption.js      # AES-256-GCM database field encryption
 │   │   └── server.js                # Entry point (port 5005)
+│   ├── test/                        # npm test (node:test): encryption, auth, CORS
 │   ├── scripts/encrypt-existing-data.js  # One-time DB field encryption migration
 │   ├── *.nginx.conf                 # Hostinger NGINX configs (API + web)
 │   ├── .env.example
@@ -133,7 +139,11 @@ DEVI_APP/
 │       │   └── *_mobile / *_web / *_stub.dart  # Platform implementations
 │       ├── theme/                   # Colors & theme
 │       ├── utils/map_utils.dart     # Google Maps link for SOS
-│       └── widgets/                 # Buttons, logo, inputs, siren card, guardian dialog
+│       └── widgets/
+│           ├── sos_top_bar.dart, sos_guide_card.dart, sos_action_card.dart  # SOS home pieces
+│           ├── location_prompt_dialog.dart  # "Turn on location" prompt
+│           └── devi_button, devi_logo, input_field, emergency_sound_card, add_guardian_dialog
+│   └── android/.../EmergencyService.kt     # Native SOS foreground service (recording + location)
 │
 └── web/                             # React admin dashboard (Vite)
     └── src/
@@ -141,10 +151,16 @@ DEVI_APP/
         │   ├── LoginPage.jsx        # Admin sign in
         │   ├── DashboardPage.jsx    # Admin control room (login required)
         │   └── TrackPage.jsx        # Public live tracking page
-        ├── config/api.js            # API & WebSocket URLs
-        ├── utils/mapMarkers.js      # Victim & guardian map markers
+        ├── components/dashboard/    # DashboardHeader, IncidentSidebar, IncidentMap,
+        │                            # IncidentDrawer, EmergencyAlertBanner
+        ├── config/api.js            # API & WebSocket URLs, admin session (adminFetch)
+        ├── utils/
+        │   ├── mapMarkers.js        # Victim & guardian map markers
+        │   ├── incidents.js         # isActiveIncident, distance, signal-lost label
+        │   └── alertSounds.js       # Siren tone & spoken alerts
         ├── App.jsx                  # Routes: /login, /, /dashboard, /track/:alertId
         └── index.css
+    └── eslint.config.js             # npm run lint
 ```
 
 ---
@@ -356,6 +372,7 @@ sequenceDiagram
 cd backend
 npm install
 npm run dev        # http://localhost:5005
+npm test           # unit tests (no database needed)
 ```
 Key `.env` values: `NODE_ENV`, `PORT`, `SUPABASE_URL`, `SUPABASE_KEY`, `JWT_SECRET`, `ADMIN_SECRET_KEY`, `ENCRYPTION_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`, `ADMIN_WHATSAPP`, `CLOUDINARY_*`, `GOOGLE_MAPS_API_KEY`, `WEB_BASE_URL`, `CORS_ORIGINS` (optional).
 
@@ -364,6 +381,7 @@ Key `.env` values: `NODE_ENV`, `PORT`, `SUPABASE_URL`, `SUPABASE_KEY`, `JWT_SECR
 cd web
 npm install
 npm run dev        # http://localhost:5173
+npm run lint       # ESLint
 ```
 Needs `VITE_GOOGLE_MAPS_API_KEY`.
 

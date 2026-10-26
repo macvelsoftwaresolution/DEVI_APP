@@ -1,4 +1,4 @@
-import { DataService } from './data.service.js';
+import { SosService } from './sos.service.js';
 import { socketService } from './socket.service.js';
 
 // The app sends a location (or heartbeat) at least every 20s while an SOS is active.
@@ -22,16 +22,16 @@ export const broadcastSignalLost = (session) => {
 export function startSignalWatchdog() {
   setInterval(() => {
     const now = Date.now();
-    for (const session of DataService.getActiveLiveSessions()) {
+    for (const session of SosService.getActiveLiveSessions()) {
       const lastUpdate = new Date(session.lastUpdated || 0).getTime();
       const isStale = now - lastUpdate > SIGNAL_TIMEOUT_MS;
 
       if (isStale && !session.signalLost) {
-        DataService.setSignalState(session.id, { lost: true, reason: 'NO_UPDATES' });
+        SosService.setSignalState(session.id, { lost: true, reason: 'NO_UPDATES' });
         console.warn(`📡 [SIGNAL LOST] Alert ${session.id}, last update ${session.lastUpdated}`);
         broadcastSignalLost(session);
       } else if (!isStale && session.signalLost && session.signalLostAt && lastUpdate > new Date(session.signalLostAt).getTime()) {
-        DataService.setSignalState(session.id, { lost: false });
+        SosService.setSignalState(session.id, { lost: false });
         console.log(`📡 [SIGNAL RESTORED] Alert ${session.id}`);
         socketService.broadcastToRoom('dashboard', {
           type: 'incident:signal_restored',

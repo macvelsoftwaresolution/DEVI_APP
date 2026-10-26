@@ -58,4 +58,8 @@ export const Encryption = {
   },
 };
 
+// Shorthands for database field encryption in services
+export const encryptField = (value) => Encryption.encrypt(value);
+export const decryptField = (value) => Encryption.decrypt(value);
+
 export default Encryption;

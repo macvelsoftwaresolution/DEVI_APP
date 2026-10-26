@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { DataService } from '../services/data.service.js';
+import { UserService } from '../services/user.service.js';
 import { optionalToken, verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -25,7 +25,7 @@ router.get('/profile/:phone', verifyToken, async (req, res, next) => {
       });
     }
 
-    const user = await DataService.findUserByPhone(phone.trim());
+    const user = await UserService.findUserByPhone(phone.trim());
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -66,7 +66,7 @@ router.put('/profile', optionalToken, async (req, res, next) => {
     // Without a token, only first-time sign up is allowed (existing profiles need login)
     const isNewSignup = !req.user;
     if (isNewSignup) {
-      const existing = await DataService.findUserByPhone(cleanPhone);
+      const existing = await UserService.findUserByPhone(cleanPhone);
       if (existing && !existing.isGuest) {
         return res.status(401).json({
           success: false,
@@ -117,7 +117,7 @@ router.put('/profile', optionalToken, async (req, res, next) => {
       }
     }
 
-    const updatedUser = await DataService.updateUserProfile(cleanPhone, {
+    const updatedUser = await UserService.updateUserProfile(cleanPhone, {
       name: name !== undefined ? name.trim() : undefined,
       address1: address1 !== undefined ? address1.trim() : undefined,
       address2: address2 !== undefined ? address2.trim() : undefined,
@@ -144,7 +144,7 @@ router.post('/guest', async (req, res, next) => {
       ? guestId.trim()
       : `GUEST_${Date.now().toString(36).toUpperCase()}`;
 
-    const guestUser = await DataService.createOrGetGuestUser(idToUse, guardians);
+    const guestUser = await UserService.createOrGetGuestUser(idToUse, guardians);
 
     res.status(200).json({
       success: true,

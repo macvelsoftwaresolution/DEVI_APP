@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { DataService } from '../services/data.service.js';
+import { UserService } from '../services/user.service.js';
 import { verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -27,7 +27,7 @@ router.post('/login', async (req, res, next) => {
     }
 
     // Check if user exists in the database
-    const user = await DataService.findUserByPhone(cleanPhone);
+    const user = await UserService.findUserByPhone(cleanPhone);
     if (!user) {
       return res.status(404).json({
         success: false,

@@ -8,7 +8,6 @@ import { isAllowedOrigin } from './config/security.js';
 import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
-import { DataService } from './services/data.service.js';
 import { socketService } from './services/socket.service.js';
 import { startSignalWatchdog } from './services/signal.watchdog.js';
 

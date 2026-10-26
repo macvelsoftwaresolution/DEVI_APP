@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
@@ -11,8 +10,11 @@ import '../services/location_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/devi_logo.dart';
 import '../widgets/emergency_sound_card.dart';
+import '../widgets/location_prompt_dialog.dart';
+import '../widgets/sos_action_card.dart';
+import '../widgets/sos_guide_card.dart';
+import '../widgets/sos_top_bar.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
 
@@ -71,53 +73,8 @@ class _SosScreenState extends State<SosScreen>
     final readiness = await LocationService.checkReadiness();
     if (readiness == LocationReadiness.ready || !mounted) return;
 
-    final isServiceOff = readiness == LocationReadiness.serviceOff;
-    final isBlocked = readiness == LocationReadiness.permissionBlocked;
-
     _isLocationPromptOpen = true;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        icon: const Icon(Icons.location_off_rounded, color: AppColors.emergencyRed, size: 30),
-        title: Text(
-          isServiceOff ? 'Turn on location' : 'Allow location access',
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
-        ),
-        content: const Text(
-          'DEVI needs your location to send help to the right place when you press SOS.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 13.5, color: AppColors.textMuted, height: 1.4),
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Later', style: TextStyle(color: AppColors.textMuted)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              if (isServiceOff) {
-                await Geolocator.openLocationSettings();
-              } else if (isBlocked) {
-                await Geolocator.openAppSettings();
-              } else {
-                await Geolocator.requestPermission();
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryNavy,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(isServiceOff ? 'Turn On' : 'Allow', style: const TextStyle(fontWeight: FontWeight.w800)),
-          ),
-        ],
-      ),
-    );
+    await showLocationPromptDialog(context, readiness);
     _isLocationPromptOpen = false;
   }
 
@@ -472,171 +429,6 @@ class _SosScreenState extends State<SosScreen>
     }
   }
 
-  // --- SOS Guide (top section of the SOS card) ---
-  Widget _buildSosGuide() {
-    final String title;
-    final String message;
-    if (_isEmergencyActive) {
-      title = 'Alert is live';
-      message = 'Tap the green card when safe';
-    } else if (_isCountingDown) {
-      title = 'Sending alert…';
-      message = 'Tap Cancel to stop';
-    } else {
-      title = 'Demo Mode';
-      message = 'See the alert message';
-    }
-
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(24),
-      child: InkWell(
-        onTap: _showSosNote,
-        borderRadius: BorderRadius.circular(24),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.lightbulb_outline_rounded, color: Color(0xFFD97706), size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primaryNavy,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      message,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textMuted,
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.primaryNavy,
-                size: 24,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Preview only: shows the alert message format, nothing is sent
-  void _showSosNote() {
-    final name = _appState.name.isNotEmpty ? _appState.name : 'DEVI User';
-    final time = TimeOfDay.now().format(context);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Message preview',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'This is sent when you press SOS',
-              style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
-            ),
-            const SizedBox(height: 14),
-            // WhatsApp-style message bubble
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-              decoration: const BoxDecoration(
-                color: Color(0xFFDCF8C6),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(4),
-                  topRight: Radius.circular(14),
-                  bottomLeft: Radius.circular(14),
-                  bottomRight: Radius.circular(14),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '🚨 EMERGENCY SOS ALERT',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF111B21)),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '$name needs help!',
-                    style: const TextStyle(fontSize: 13, color: Color(0xFF111B21), height: 1.4),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '📍 Live location: devi.app/track/…',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF027EB5), height: 1.4),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Call them now or dial 112.',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF111B21), height: 1.4),
-                  ),
-                  Align(
-                    alignment: Alignment.bottomRight,
-                    child: Text(
-                      time,
-                      style: const TextStyle(fontSize: 10.5, color: Color(0xFF667781)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text(
-              'Got it',
-              style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _navigateToSettings() {
     Navigator.of(context).push(
@@ -664,339 +456,42 @@ class _SosScreenState extends State<SosScreen>
               child: Column(
                 children: [
                   // Top Bar
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Flexible(
-                        child: DeviAppBarBadge(
-                          title: 'DEVI',
-                          subtitle: 'Your Safety Guardian',
-                          logoSize: 40,
-                          fontSize: 18,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          IconButton(
-                            tooltip: 'History',
-                            iconSize: 28,
-                            icon: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                const Icon(
-                                  Icons.history,
-                                  color: AppColors.primaryNavy,
-                                  size: 28,
-                                ),
-                                if (_activeAlertId != null)
-                                  Positioned(
-                                    top: -1,
-                                    right: -1,
-                                    child: Container(
-                                      width: 11,
-                                      height: 11,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF0284C7),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(color: Colors.white, width: 1.5),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(builder: (context) => const HistoryScreen()),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            tooltip: 'Settings',
-                            iconSize: 28,
-                            icon: const Icon(
-                              Icons.settings_outlined,
-                              color: AppColors.primaryNavy,
-                              size: 28,
-                            ),
-                            onPressed: _navigateToSettings,
-                          ),
-                        ],
-                      ),
-                    ],
+                  SosTopBar(
+                    hasActiveAlert: _activeAlertId != null,
+                    onHistoryTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const HistoryScreen()),
+                    ),
+                    onSettingsTap: _navigateToSettings,
                   ),
 
                   SizedBox(height: isShortScreen ? 10 : 16),
 
                   // SOS Guide Card (separate card above SOS)
-                  _buildSosGuide(),
+                  SosGuideCard(
+                    isEmergencyActive: _isEmergencyActive,
+                    isCountingDown: _isCountingDown,
+                    userName: _appState.name,
+                  ),
 
                   const SizedBox(height: 12),
 
                   // SOS Home Card (Presented for both Registered and Guest User)
                   Expanded(
-                    child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: _isEmergencyActive
-                                ? [const Color(0xFF059669), const Color(0xFF047857)]
-                                : _isCountingDown
-                                    ? [const Color(0xFFFF3366), const Color(0xFFCC0826)]
-                                    : [const Color(0xFFE80B1E), const Color(0xFFD60719)],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ),
-                          borderRadius: BorderRadius.circular(isSmallScreen ? 24 : 32),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (_isEmergencyActive
-                                      ? const Color(0xFF059669)
-                                      : _isCountingDown
-                                          ? const Color(0xFFF05252)
-                                          : AppColors.emergencyRed)
-                                  .withValues(alpha: 0.35),
-                              blurRadius: 24,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: () {
-                                  if (_isCountingDown) {
-                                    _cancelSosCountdown();
-                                  } else {
-                                    _onSosTriggered();
-                                  }
-                                },
-                                onTapDown: (_) {
-                                  if (!_isCountingDown && !_isEmergencyActive) {
-                                    _onHoldStart();
-                                  }
-                                },
-                                onTapUp: (_) => _onHoldEnd(),
-                                onTapCancel: _onHoldEnd,
-                                child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final availableHeight = constraints.maxHeight;
-                            final circleSize = (availableHeight * 0.22).clamp(52.0, 78.0);
-                            final iconSize = (circleSize * 0.48).clamp(24.0, 36.0);
-                            final titleSize = (availableHeight * 0.12).clamp(32.0, 44.0);
-                            final spacing1 = (availableHeight * 0.04).clamp(8.0, 18.0);
-                            final spacing2 = (availableHeight * 0.03).clamp(6.0, 12.0);
-
-                            return Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    AnimatedScale(
-                                      scale: (_isEmergencyActive || _isCountingDown)
-                                          ? 1.10
-                                          : _isHolding
-                                              ? 0.94
-                                              : 1.0,
-                                      duration: const Duration(milliseconds: 200),
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          // Circular Progress Ring when holding
-                                          if (_holdProgress > 0)
-                                            SizedBox(
-                                              width: circleSize + 16,
-                                              height: circleSize + 16,
-                                              child: CircularProgressIndicator(
-                                                value: _holdProgress,
-                                                strokeWidth: 4.5,
-                                                strokeCap: StrokeCap.round,
-                                                valueColor:
-                                                    const AlwaysStoppedAnimation<Color>(Colors.white),
-                                                backgroundColor:
-                                                    Colors.white.withValues(alpha: 0.25),
-                                              ),
-                                            ),
-                                          AnimatedContainer(
-                                            duration: const Duration(milliseconds: 200),
-                                            width: circleSize,
-                                            height: circleSize,
-                                            decoration: BoxDecoration(
-                                              color: _isEmergencyActive
-                                                  ? const Color(0xFF064E3B)
-                                                  : _isCountingDown
-                                                      ? Colors.white
-                                                      : const Color(0xFFBF0818),
-                                              shape: BoxShape.circle,
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: Colors.black.withValues(alpha: 0.18),
-                                                  blurRadius: 10,
-                                                  offset: const Offset(0, 4),
-                                                ),
-                                              ],
-                                            ),
-                                            child: Center(
-                                              child: _isCountingDown
-                                                  ? Text(
-                                                      '${_countdownSeconds}s',
-                                                      style: TextStyle(
-                                                        fontSize: iconSize,
-                                                        fontWeight: FontWeight.w900,
-                                                        color: const Color(0xFFDC2626),
-                                                      ),
-                                                    )
-                                                  : Icon(
-                                                      _isEmergencyActive
-                                                          ? Icons.verified_user_rounded
-                                                          : Icons.crisis_alert,
-                                                      color: Colors.white,
-                                                      size: iconSize,
-                                                    ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                    SizedBox(height: spacing1),
-
-                                    Text(
-                                      _isHolding
-                                          ? 'HOLDING FOR SOS'
-                                          : _isCountingDown
-                                              ? 'ALERT IN ${_countdownSeconds}S'
-                                              : _isEmergencyActive
-                                                  ? 'I AM SAFE'
-                                                  : 'SOS',
-                                      style: TextStyle(
-                                        fontSize: (_isHolding || _isCountingDown || _isEmergencyActive)
-                                            ? (titleSize * 0.72).clamp(24.0, 34.0)
-                                            : titleSize,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
-                                        letterSpacing: 1.0,
-                                      ),
-                                    ),
-
-                                    SizedBox(height: spacing2),
-
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                                      child: Text(
-                                        _isHolding
-                                            ? 'Keep holding to trigger SOS instantly\nRelease finger to cancel'
-                                            : _isCountingDown
-                                                ? 'Auto-dispatching alert in ${_countdownSeconds}s\nTap anywhere or press Cancel'
-                                                : _isEmergencyActive
-                                                    ? 'Alert is Active • Tap here\nif you have reached safety'
-                                                    : 'Tap for 5s countdown or hold to trigger\nemergency contacts',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: isSmallScreen || isShortScreen ? 11.5 : 12.5,
-                                          fontWeight: FontWeight.w500,
-                                          color: Colors.white.withValues(alpha: 0.92),
-                                          height: 1.35,
-                                        ),
-                                      ),
-                                    ),
-
-                                    if (_isCountingDown) ...[
-                                      SizedBox(height: spacing2),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          GestureDetector(
-                                            behavior: HitTestBehavior.opaque,
-                                            onTap: _cancelSosCountdown,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius: BorderRadius.circular(20),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Colors.black.withValues(alpha: 0.2),
-                                                    blurRadius: 6,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ],
-                                              ),
-                                              child: const Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(Icons.close, color: Color(0xFFDC2626), size: 16),
-                                                  SizedBox(width: 4),
-                                                  Text(
-                                                    'CANCEL',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight: FontWeight.w800,
-                                                      color: Color(0xFFDC2626),
-                                                      letterSpacing: 0.5,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          GestureDetector(
-                                            behavior: HitTestBehavior.opaque,
-                                            onTap: _sendNow,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white.withValues(alpha: 0.22),
-                                                borderRadius: BorderRadius.circular(20),
-                                                border: Border.all(color: Colors.white, width: 1.5),
-                                              ),
-                                              child: const Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(Icons.send_rounded, color: Colors.white, size: 15),
-                                                  SizedBox(width: 4),
-                                                  Text(
-                                                    'SEND NOW',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      fontWeight: FontWeight.w800,
-                                                      color: Colors.white,
-                                                      letterSpacing: 0.5,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ],
-                                ),
-
-                                // Hold Progress Indicator (Bottom Bar)
-                                if (_holdProgress > 0)
-                                  Positioned(
-                                    bottom: 20,
-                                    left: 40,
-                                    right: 40,
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: LinearProgressIndicator(
-                                        value: _holdProgress,
-                                        backgroundColor: Colors.white.withValues(alpha: 0.25),
-                                        valueColor:
-                                            const AlwaysStoppedAnimation<Color>(Colors.white),
-                                        minHeight: 5,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
+                    child: SosActionCard(
+                      isEmergencyActive: _isEmergencyActive,
+                      isCountingDown: _isCountingDown,
+                      isHolding: _isHolding,
+                      holdProgress: _holdProgress,
+                      countdownSeconds: _countdownSeconds,
+                      isSmallScreen: isSmallScreen,
+                      isShortScreen: isShortScreen,
+                      onTap: () => _isCountingDown ? _cancelSosCountdown() : _onSosTriggered(),
+                      onPressStart: () {
+                        if (!_isCountingDown && !_isEmergencyActive) _onHoldStart();
+                      },
+                      onPressEnd: _onHoldEnd,
+                      onCancelCountdown: _cancelSosCountdown,
+                      onSendNow: _sendNow,
                     ),
                   ),
 

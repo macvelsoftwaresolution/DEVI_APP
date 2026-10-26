@@ -1,6 +1,7 @@
 
 import { Router } from 'express';
-import { DataService } from '../services/data.service.js';
+import { DashboardService } from '../services/dashboard.service.js';
+import { SosService } from '../services/sos.service.js';
 import { socketService } from '../services/socket.service.js';
 
 const router = Router();
@@ -8,7 +9,7 @@ const router = Router();
 // GET all incidents for the operator dashboard
 router.get('/incidents', async (req, res, next) => {
   try {
-    const incidents = await DataService.getAllIncidentsForDashboard();
+    const incidents = await DashboardService.getAllIncidentsForDashboard();
     res.json({
       success: true,
       count: incidents.length,
@@ -27,7 +28,7 @@ router.post('/add-note', async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'alertId and note are required' });
     }
 
-    const updated = await DataService.addIncidentNote(alertId, note);
+    const updated = await DashboardService.addIncidentNote(alertId, note);
     res.json({
       success: true,
       message: 'Operator note logged successfully',
@@ -42,7 +43,7 @@ router.post('/add-note', async (req, res, next) => {
 router.post('/resolve/:alertId', async (req, res, next) => {
   try {
     const { alertId } = req.params;
-    const session = await DataService.resolveSosAlert(alertId);
+    const session = await SosService.resolveSosAlert(alertId);
     try {
       socketService.broadcastToRoom('dashboard', {
         type: 'incident:resolved',

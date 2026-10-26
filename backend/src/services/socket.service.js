@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { DataService } from './data.service.js';
+import { SosService } from './sos.service.js';
 import { decodeAdminToken, verifySosControlToken } from '../middlewares/auth.middleware.js';
 
 class SocketService {
@@ -208,8 +208,8 @@ class SocketService {
         const currentSpeed = speed ?? spd ?? null;
         const currentHeading = heading ?? hd ?? null;
 
-        // Persist/cache in DataService
-        await DataService.updateLiveLocation({
+        // Persist/cache in SosService
+        await SosService.updateLiveLocation({
           alertId,
           latitude: lat,
           longitude: lng,
