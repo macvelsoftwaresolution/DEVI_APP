@@ -245,8 +245,10 @@ class ApiService {
         'userPhone': userPhone,
         'userName': userName,
         'location': location,
-        'latitude': latitude ?? 13.0827,
-        'longitude': longitude ?? 80.2707,
+        // null when GPS is unavailable; the server marks the alert "location pending"
+        // and live tracking fills it in. Never send a made-up default location.
+        'latitude': latitude,
+        'longitude': longitude,
         'accuracy': accuracy,
         'idempotency_key': idempotencyKey,
         'captured_at': capturedAt?.toIso8601String(),
@@ -261,7 +263,8 @@ class ApiService {
             headers: _headers,
             body: jsonEncode(payload),
           )
-          .timeout(const Duration(seconds: 8));
+          // Server waits up to 5s for WhatsApp before replying, so allow more than other calls
+          .timeout(const Duration(seconds: 12));
 
       if (res.statusCode == 201 || res.statusCode == 200) {
         final body = jsonDecode(res.body);

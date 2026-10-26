@@ -3,6 +3,9 @@ import { encryptField as enc, decryptField as dec } from '../utils/encryption.js
 import { liveTrackSessions } from './live-sessions.js';
 import { UserService } from './user.service.js';
 import { GeocodeService } from './geocode.service.js';
+import { toLatLng, hasFix, initialBreadcrumbs, NO_FIX_PLACEHOLDER } from '../utils/coords.js';
+
+const NO_LOCATION_TEXT = 'Location not yet available';
 
 // SOS alerts: creation, idempotency, live tracking, evidence, history, signal state, resolve
 export const SosService = {
@@ -41,6 +44,7 @@ export const SosService = {
           const ampm = hours >= 12 ? 'PM' : 'AM';
           const formattedHour = hours % 12 || 12;
 
+          const coords = toLatLng(existingAlert.latitude, existingAlert.longitude);
           const sessionData = {
             id: existingAlert.id.toString(),
             userId: existingAlert.user_id,
@@ -48,20 +52,18 @@ export const SosService = {
             idempotencyKey,
             timestamp: existingAlert.created_at,
             displayTime: `Today, ${formattedHour}:${minutes} ${ampm}`,
-            location: dec(existingAlert.location_address) || `GPS: ${existingAlert.latitude}, ${existingAlert.longitude}`,
-            latitude: existingAlert.latitude,
-            longitude: existingAlert.longitude,
+            location: dec(existingAlert.location_address) || NO_LOCATION_TEXT,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
             accuracy: existingAlert.accuracy || null,
             status: existingAlert.status || 'ACTIVE',
             lastUpdated: existingAlert.created_at || new Date().toISOString(),
             evidenceUrl: existingAlert.evidence_url || null,
-            breadcrumbs: [
-              {
-                latitude: existingAlert.latitude,
-                longitude: existingAlert.longitude,
-                timestamp: existingAlert.created_at || new Date().toISOString(),
-              },
-            ],
+            breadcrumbs: initialBreadcrumbs(
+              coords.latitude,
+              coords.longitude,
+              existingAlert.created_at || new Date().toISOString()
+            ),
           };
           liveTrackSessions.set(existingAlert.id.toString(), sessionData);
           return sessionData;
@@ -84,6 +86,11 @@ export const SosService = {
       if (user) userId = user.id;
     }
 
+    // Real GPS or nothing: never fall back to a default city
+    const coords = toLatLng(latitude, longitude);
+    latitude = coords.latitude;
+    longitude = coords.longitude;
+
     // Auto-resolve real place name if location is missing or generic coordinates or URL
     let resolvedAddress = location;
     const isGenericLocation =
@@ -95,22 +102,23 @@ export const SosService = {
       resolvedAddress.includes('Location disabled') ||
       /^\s*[-+]?[0-9]*\.?[0-9]+\s*,\s*[-+]?[0-9]*\.?[0-9]+\s*$/.test(resolvedAddress);
 
-    if (isGenericLocation && latitude && longitude) {
+    if (isGenericLocation && hasFix(latitude, longitude)) {
       const placeName = await GeocodeService.reverseGeocode(latitude, longitude);
       if (placeName) {
         resolvedAddress = placeName;
       }
     }
-    if (!resolvedAddress || resolvedAddress.startsWith('GPS')) {
-      resolvedAddress = (latitude && longitude)
-        ? (await GeocodeService.reverseGeocode(latitude, longitude)) || 'Sivakasi, Tamil Nadu'
-        : 'Emergency Location';
+    if (!hasFix(latitude, longitude)) {
+      // Device text such as "Location disabled on device" is kept; anything else becomes the honest default
+      resolvedAddress = (location && !isGenericLocation) ? location : NO_LOCATION_TEXT;
+    } else if (!resolvedAddress || isGenericLocation) {
+      resolvedAddress = `GPS ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
     }
 
     try {
       const alertPayload = {
-        latitude: latitude ? parseFloat(latitude) : 13.0827,
-        longitude: longitude ? parseFloat(longitude) : 80.2707,
+        latitude,
+        longitude,
         location_address: enc(resolvedAddress),
         status: 'ACTIVE',
       };
@@ -125,11 +133,20 @@ export const SosService = {
       }
 
       let alert;
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('sos_history')
         .insert([alertPayload])
         .select()
         .single();
+
+      // If latitude/longitude columns are NOT NULL, store the 0,0 "no fix" placeholder.
+      // An SOS must never be lost because GPS was unavailable; readers turn 0,0 back into null.
+      if (error && error.code === '23502' && alertPayload.latitude === null) {
+        console.warn('⚠️ sos_history latitude/longitude are NOT NULL; saving 0,0 placeholder for an SOS without GPS.');
+        alertPayload.latitude = NO_FIX_PLACEHOLDER;
+        alertPayload.longitude = NO_FIX_PLACEHOLDER;
+        ({ data, error } = await supabase.from('sos_history').insert([alertPayload]).select().single());
+      }
 
       if (error) {
         // Resilient fallback if idempotency_key/accuracy columns are not yet created in Supabase
@@ -164,20 +181,14 @@ export const SosService = {
         idempotencyKey: idempotencyKey || null,
         timestamp: alert.created_at,
         displayTime: `Today, ${formattedHour}:${minutes} ${ampm}`,
-        location: dec(alert.location_address) || `GPS: ${alert.latitude}, ${alert.longitude}`,
-        latitude: alert.latitude,
-        longitude: alert.longitude,
-        accuracy: accuracy != null ? parseFloat(accuracy) : null,
+        location: dec(alert.location_address) || NO_LOCATION_TEXT,
+        latitude,
+        longitude,
+        accuracy: latitude !== null && accuracy != null ? parseFloat(accuracy) : null,
         status: alert.status || 'ACTIVE',
         lastUpdated: alert.created_at || new Date().toISOString(),
         evidenceUrl: alert.evidence_url || null,
-        breadcrumbs: [
-          {
-            latitude: alert.latitude,
-            longitude: alert.longitude,
-            timestamp: alert.created_at || new Date().toISOString(),
-          },
-        ],
+        breadcrumbs: initialBreadcrumbs(latitude, longitude, alert.created_at || new Date().toISOString()),
       };
 
       liveTrackSessions.set(alert.id.toString(), sessionData);
@@ -244,14 +255,18 @@ export const SosService = {
 
         const resolvedTime = liveSession?.resolvedTime || (currentStatus === 'RESOLVED' ? (alert.updated_at || alert.created_at) : null);
 
+        const coords = hasFix(liveSession?.latitude, liveSession?.longitude)
+          ? toLatLng(liveSession.latitude, liveSession.longitude)
+          : toLatLng(alert.latitude, alert.longitude);
+
         return {
           id: alert.id,
           userId: alert.user_id,
           timestamp: alert.created_at,
           displayTime: displayTime,
-          location: dec(alert.location_address) || `GPS: ${alert.latitude}, ${alert.longitude}`,
-          latitude: liveSession?.latitude ?? alert.latitude,
-          longitude: liveSession?.longitude ?? alert.longitude,
+          location: dec(alert.location_address) || NO_LOCATION_TEXT,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
           status: currentStatus,
           resolvedTime: resolvedTime,
           displayResolvedTime: formatIsoTime(resolvedTime),
@@ -367,20 +382,19 @@ export const SosService = {
           .maybeSingle();
 
         if (data && !error) {
+          const coords = toLatLng(data.latitude, data.longitude);
           session = {
             id: data.id,
-            latitude: data.latitude || 13.0827,
-            longitude: data.longitude || 80.2707,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
             status: data.status || 'ACTIVE',
             lastUpdated: data.created_at || new Date().toISOString(),
             evidenceUrl: data.evidence_url || data.audio_url || null,
-            breadcrumbs: [
-              {
-                latitude: data.latitude || 13.0827,
-                longitude: data.longitude || 80.2707,
-                timestamp: data.created_at || new Date().toISOString(),
-              },
-            ],
+            breadcrumbs: initialBreadcrumbs(
+              coords.latitude,
+              coords.longitude,
+              data.created_at || new Date().toISOString()
+            ),
           };
           liveTrackSessions.set(key, session);
         }
@@ -389,6 +403,14 @@ export const SosService = {
       }
     }
 
+    return session;
+  },
+
+  // WhatsApp dispatch result for an alert (kept in memory with the live session)
+  attachWhatsAppStatus(alertId, whatsapp) {
+    const session = liveTrackSessions.get(String(alertId));
+    if (!session) return null;
+    session.whatsapp = whatsapp;
     return session;
   },
 

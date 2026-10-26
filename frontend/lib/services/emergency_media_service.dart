@@ -162,9 +162,13 @@ class EmergencyMediaService extends ChangeNotifier {
   /// Uploads the recorded video/audio stream to Cloudinary
   Future<void> _uploadEvidenceToCloudinary(String localOrBlobUrl) async {
     _localFilePath = localOrBlobUrl;
-    final alertId = (_currentAlertId != null && _currentAlertId!.isNotEmpty)
-        ? _currentAlertId!
-        : 'SOS_${DateTime.now().millisecondsSinceEpoch}';
+    final alertId = _currentAlertId;
+    // 'SOS_<time>' is only a local placeholder: the server has no such alert yet.
+    // Keep the file; setAlertId() uploads it once the SOS reaches the server.
+    if (alertId == null || alertId.isEmpty || alertId.startsWith('SOS_')) {
+      debugPrint('⏳ Evidence kept on device until the SOS reaches the server: $localOrBlobUrl');
+      return;
+    }
 
     _isUploading = true;
     notifyListeners();

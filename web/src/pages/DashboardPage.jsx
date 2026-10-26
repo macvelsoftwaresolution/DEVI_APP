@@ -228,6 +228,12 @@ export default function DashboardPage() {
               );
               if (lost && audioEnabled) speakSignalLost(msg.reason);
 
+            } else if (msg.type === 'incident:whatsapp' && msg.alertId) {
+              setIncidents((prev) =>
+                prev.map((inc) =>
+                  String(inc.id) === String(msg.alertId) ? { ...inc, whatsapp: msg.whatsapp } : inc
+                )
+              );
             } else if (msg.type === 'incident:evidence' && msg.alertId) {
               setIncidents((prev) =>
                 prev.map((inc) =>

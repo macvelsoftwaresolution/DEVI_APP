@@ -3,6 +3,20 @@
  * Dispatches emergency SOS alerts and location tracking links directly to WhatsApp
  */
 
+const SEND_TIMEOUT_MS = 5000;
+
+// Maps Meta Graph API errors to a short reason the app and dashboard can act on.
+// Note: "sent" only means Meta accepted the message; delivery receipts need a webhook.
+const classifyMetaError = (error) => {
+  if (!error) return 'UNKNOWN';
+  const code = Number(error.code);
+  if (code === 190 || error.type === 'OAuthException') return 'TOKEN_EXPIRED';
+  if (code === 131026) return 'NOT_ON_WHATSAPP';
+  if (code === 131056 || code === 130429 || code === 4 || code === 80007) return 'RATE_LIMITED';
+  if (code >= 132000 && code < 133000) return 'TEMPLATE_PROBLEM';
+  return 'META_ERROR';
+};
+
 export const WhatsAppService = {
   /**
    * Sends an emergency alert message to a WhatsApp number via Meta Cloud API
@@ -110,6 +124,7 @@ export const WhatsAppService = {
         },
       };
 
+      // Bounded wait: the SOS response to the phone must not hang on Meta
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -117,49 +132,17 @@ export const WhatsAppService = {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(templatePayload),
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.messages && data.messages.length > 0) {
         console.log(`✅ [APPROVED TEMPLATE DISPATCHED: devi_safety] ID: ${data.messages[0].id} to +${clean}`);
 
-        // Also attempt sending native WhatsApp interactive Location Pin if coordinates are valid
+        // Native WhatsApp location pin as a follow-up; not awaited so it never delays the SOS response
         if (hasValidCoords) {
-          try {
-            await fetch(url, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                messaging_product: 'whatsapp',
-                recipient_type: 'individual',
-                to: clean,
-                type: 'location',
-                location: {
-                  latitude: Number(latitude),
-                  longitude: Number(longitude),
-                  name: `🚨 SOS: ${victimName}`,
-                  address: (location && !location.startsWith('http')) ? location : 'Tap to open in Google Maps',
-                },
-              }),
-            });
-          } catch (pinErr) {
-            console.warn(`ℹ️ [WHATSAPP PIN NOTE] Native pin skipped: ${pinErr.message}`);
-          }
-        }
-
-        return { success: true, messageId: data.messages[0].id, googleMapsUrl };
-      } else {
-        // If 24-hour customer window is closed, fallback to template message if available
-        console.warn(`⚠️ [WHATSAPP API WARNING] Response:`, data);
-
-        // Fallback trial template attempt
-        if (data.error && data.error.code === 131047) {
-          console.log(`ℹ️ [WHATSAPP FALLBACK] Attempting template message to +${clean}...`);
-          const fallbackRes = await fetch(url, {
+          fetch(url, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${accessToken}`,
@@ -167,23 +150,33 @@ export const WhatsAppService = {
             },
             body: JSON.stringify({
               messaging_product: 'whatsapp',
+              recipient_type: 'individual',
               to: clean,
-              type: 'template',
-              template: {
-                name: 'hello_world',
-                language: { code: 'en_US' },
+              type: 'location',
+              location: {
+                latitude: Number(latitude),
+                longitude: Number(longitude),
+                name: `🚨 SOS: ${victimName}`,
+                address: (location && !location.startsWith('http')) ? location : 'Tap to open in Google Maps',
               },
             }),
-          });
-          const fbData = await fallbackRes.json();
-          return { success: fallbackRes.ok, data: fbData };
+            signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+          }).catch((pinErr) => console.warn(`ℹ️ [WHATSAPP PIN NOTE] Native pin skipped: ${pinErr.message}`));
         }
 
-        return { success: false, error: data.error };
+        return { success: true, messageId: data.messages[0].id, googleMapsUrl };
       }
+
+      const reason = classifyMetaError(data.error);
+      if (reason === 'TOKEN_EXPIRED') {
+        console.error('🚨 [WHATSAPP TOKEN EXPIRED/INVALID] Every SOS WhatsApp will fail until WHATSAPP_ACCESS_TOKEN is renewed. Use a permanent System User token.');
+      }
+      console.warn(`⚠️ [WHATSAPP FAILED] To +${clean}: ${reason}`, data.error || data);
+      return { success: false, reason, error: data.error };
     } catch (err) {
-      console.error(`❌ [WHATSAPP NETWORK ERROR] To +${clean}:`, err.message);
-      return { success: false, error: err.message };
+      const reason = err.name === 'TimeoutError' || err.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK';
+      console.error(`❌ [WHATSAPP ${reason}] To +${clean}:`, err.message);
+      return { success: false, reason, error: err.message };
     }
   },
 };

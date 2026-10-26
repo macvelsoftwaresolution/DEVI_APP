@@ -2,6 +2,16 @@ import React from 'react';
 import { X } from 'lucide-react';
 import { isActiveIncident, signalLostText } from '../../utils/incidents';
 
+const WHATSAPP_REASON_TEXT = {
+  TOKEN_EXPIRED: 'WhatsApp access token expired (renew it on the server)',
+  CREDENTIALS_MISSING: 'WhatsApp is not configured on the server',
+  NOT_ON_WHATSAPP: 'number is not on WhatsApp',
+  TEMPLATE_PROBLEM: 'message template rejected or paused by Meta',
+  RATE_LIMITED: 'WhatsApp rate limit reached',
+  TIMEOUT: 'WhatsApp did not respond in time',
+  NETWORK: 'server could not reach WhatsApp',
+};
+
 // Right panel for the selected incident: evidence, signal warning, victim details, notes, resolve
 export default function IncidentDrawer({ incident, note, onNoteChange, onSaveNote, onResolve, onClose }) {
   return (
@@ -50,6 +60,34 @@ export default function IncidentDrawer({ incident, note, onNoteChange, onSaveNot
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               Map shows the last known location. Call the victim or send help to this location.
             </div>
+          </div>
+        )}
+
+        {/* WHATSAPP DISPATCH RESULT */}
+        {incident.whatsapp && (
+          <div
+            style={{
+              background: incident.whatsapp.status === 'ALL_SENT' ? 'var(--bg-surface)' : 'rgba(220, 38, 38, 0.12)',
+              border: incident.whatsapp.status === 'ALL_SENT' ? '1px solid var(--border)' : '1px solid rgba(239, 68, 68, 0.5)',
+              borderRadius: '10px',
+              padding: '10px 12px',
+            }}
+          >
+            <div style={{ fontSize: '12px', fontWeight: '800', color: incident.whatsapp.status === 'ALL_SENT' ? '#34D399' : '#FCA5A5' }}>
+              {incident.whatsapp.status === 'ALL_SENT' ? '✅' : '⚠️'} WhatsApp: {incident.whatsapp.sent}/{incident.whatsapp.total} sent
+            </div>
+            {incident.whatsapp.status !== 'ALL_SENT' && (
+              <>
+                {(incident.whatsapp.results || []).filter((r) => !r.sent).map((r) => (
+                  <div key={r.phone} style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Not sent to {r.role === 'control_room' ? 'control room' : 'guardian'} +{r.phone}: {WHATSAPP_REASON_TEXT[r.reason] || r.reason}
+                  </div>
+                ))}
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  Call these contacts directly.
+                </div>
+              </>
+            )}
           </div>
         )}
 

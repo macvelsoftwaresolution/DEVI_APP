@@ -47,16 +47,16 @@ export async function speakEmergencyAlert(victimName, location, lat, lng) {
         if (res.ok) {
           const data = await res.json();
           const addr = data.address || {};
-          const town = addr.city || addr.town || addr.village || addr.suburb || addr.state_district || 'Sivakasi';
-          const state = addr.state || 'Tamil Nadu';
-          placeName = `${town}, ${state}`;
+          const town = addr.city || addr.town || addr.village || addr.suburb || addr.state_district || '';
+          const state = addr.state || '';
+          placeName = [town, state].filter(Boolean).join(', ');
         }
       } catch (_) {}
     }
 
     // Final fallback to clean human-readable place if still contains numbers
     if (!placeName || placeName.includes('GPS') || placeName.includes('http')) {
-      placeName = (lat && lng && Math.abs(lat - 9.466) < 0.1) ? 'Sivakasi, Tamil Nadu' : 'Current Incident Location';
+      placeName = (lat && lng) ? 'the location shown on the map' : 'a location not yet known';
     }
 
     const text = `Emergency SOS Alert! Victim ${victimName || 'User'} needs assistance at ${placeName}.`;
