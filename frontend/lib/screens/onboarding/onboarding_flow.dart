@@ -2,19 +2,15 @@ import 'package:flutter/material.dart';
 import '../../services/onboarding_service.dart';
 import '../login_screen.dart';
 import '../sos_screen.dart';
-import 'language_screen.dart';
 import 'quick_setup_screen.dart';
 import 'terms_screen.dart';
 
 /// Decides which screen comes next on launch:
-/// language → terms → (logged in ? SOS : quick setup → login).
+/// terms → (logged in ? SOS : quick setup → login).
 class OnboardingFlow {
   OnboardingFlow._();
 
   static Future<Widget> firstScreen({required bool isLoggedIn}) async {
-    if (await OnboardingService.language() == null) {
-      return LanguageScreen(isLoggedIn: isLoggedIn);
-    }
     if (!await OnboardingService.hasAcceptedCurrentTerms()) {
       return TermsScreen(isLoggedIn: isLoggedIn);
     }

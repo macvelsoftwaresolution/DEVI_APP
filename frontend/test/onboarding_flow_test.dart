@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:devi/screens/login_screen.dart';
-import 'package:devi/screens/onboarding/language_screen.dart';
 import 'package:devi/screens/onboarding/onboarding_flow.dart';
 import 'package:devi/screens/onboarding/quick_setup_screen.dart';
 import 'package:devi/screens/onboarding/terms_screen.dart';
@@ -22,22 +21,16 @@ void main() {
         .setMockMethodCallHandler(const MethodChannel('com.devi.app/sms'), (call) async => true);
   });
 
-  testWidgets('first run: language → terms → quick setup → login', (tester) async {
+  testWidgets('first run: terms → quick setup → login', (tester) async {
     tester.view.physicalSize = const Size(1440, 3200);
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
 
     final first = await OnboardingFlow.firstScreen(isLoggedIn: false);
-    expect(first, isA<LanguageScreen>());
+    expect(first, isA<TermsScreen>());
     await tester.pumpWidget(MaterialApp(home: first));
 
-    // Step 1: language
-    expect(find.text('Choose your language'), findsOneWidget);
-    expect(find.text('Coming soon'), findsNWidgets(2));
-    await tester.tap(find.text('Continue'));
-    await tester.pumpAndSettle();
-
-    // Step 2: terms — button disabled until the box is ticked
+    // Step 1: terms — button disabled until the box is ticked
     expect(find.byType(TermsScreen), findsOneWidget);
     await tester.tap(find.text('Agree & Continue'));
     await tester.pumpAndSettle();
@@ -47,7 +40,7 @@ void main() {
     await tester.tap(find.text('Agree & Continue'));
     await tester.pumpAndSettle();
 
-    // Step 3: quick setup — validation, then save
+    // Step 2: quick setup — validation, then save
     expect(find.byType(QuickSetupScreen), findsOneWidget);
     await tester.tap(find.text('Save & Continue'));
     await tester.pump();
@@ -68,7 +61,6 @@ void main() {
     expect(find.byType(LoginScreen), findsOneWidget);
 
     // Saved on the device
-    expect(await OnboardingService.language(), 'en');
     expect(await OnboardingService.hasAcceptedCurrentTerms(), isTrue);
     expect(await OnboardingService.isSetupDone(), isTrue);
     final prefs = await SharedPreferences.getInstance();
@@ -82,7 +74,6 @@ void main() {
   });
 
   testWidgets('"Already have an account?" opens sign in without Instant SOS', (tester) async {
-    await OnboardingService.setLanguage('en');
     await OnboardingService.acceptTerms();
     expect(await OnboardingFlow.firstScreen(isLoggedIn: false), isA<QuickSetupScreen>());
 
@@ -101,10 +92,9 @@ void main() {
   });
 
   test('logged-in users skip quick setup; a new terms version is asked again', () async {
-    await OnboardingService.setLanguage('en');
     expect(await OnboardingFlow.firstScreen(isLoggedIn: true), isA<TermsScreen>());
 
-    SharedPreferences.setMockInitialValues({'devi_language': 'en', 'devi_terms_version': 'v0-old'});
+    SharedPreferences.setMockInitialValues({'devi_terms_version': 'v0-old'});
     expect(await OnboardingFlow.firstScreen(isLoggedIn: true), isA<TermsScreen>());
   });
 }

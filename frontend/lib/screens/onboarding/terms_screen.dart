@@ -38,7 +38,7 @@ class _TermsScreenState extends State<TermsScreen> {
   @override
   Widget build(BuildContext context) {
     return OnboardingScaffold(
-      step: widget.isLoggedIn ? 'UPDATED TERMS' : 'STEP 2 OF 3',
+      step: widget.isLoggedIn ? 'UPDATED TERMS' : 'STEP 1 OF 2',
       title: 'Terms & Privacy',
       subtitle: 'Please read how DEVI keeps you safe and what it shares in an emergency.',
       bottom: Column(

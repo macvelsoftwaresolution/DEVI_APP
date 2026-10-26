@@ -83,7 +83,7 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
   @override
   Widget build(BuildContext context) {
     return OnboardingScaffold(
-      step: 'STEP 3 OF 3',
+      step: 'STEP 2 OF 2',
       title: 'Who should we alert?',
       subtitle: 'When you press SOS, this person gets a WhatsApp message with your live location.',
       bottom: Column(
