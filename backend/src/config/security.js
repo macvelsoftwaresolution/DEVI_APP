@@ -10,7 +10,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 //   ADMIN_JWT_SECRET dashboard login tokens
 //   SOS_LINK_SECRET  per-alert control tokens and guardian link keys (?k=)
 //   ENCRYPTION_KEY   database field encryption and the phone-number lookup index
-const REQUIRED_SECRETS = ['JWT_SECRET', 'ADMIN_JWT_SECRET', 'SOS_LINK_SECRET', 'ADMIN_SECRET_KEY', 'ENCRYPTION_KEY', 'ADMIN_PASSWORD'];
+const REQUIRED_SECRETS = ['JWT_SECRET', 'ADMIN_JWT_SECRET', 'SOS_LINK_SECRET', 'ADMIN_SECRET_KEY', 'ENCRYPTION_KEY'];
 
 const missing = REQUIRED_SECRETS.filter((key) => !process.env[key] || !process.env[key].trim());
 if (isProduction && missing.length > 0) {
@@ -88,9 +88,7 @@ export const supabaseKeyKind = (key) => {
   return 'unknown';
 };
 
-// Admin dashboard login credentials
-export const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'admin').trim();
-export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devi_admin_dev_password';
+// Dashboard logins are per-operator accounts in the admins table (R4); ADMIN_USERNAME/ADMIN_PASSWORD are no longer used
 export const ADMIN_TOKEN_EXPIRY = '12h';
 
 // A weak field-encryption key must never write to a real database, in any mode.

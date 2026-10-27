@@ -7,6 +7,7 @@ import { UserService } from '../services/user.service.js';
 import { uploadMediaToCloudinary, evidenceDeliveryUrl } from '../config/cloudinary.js';
 import { toEvidenceRef, parseEvidenceRef, evidenceLink, withEvidenceLink } from '../utils/evidence.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
+import { requireActiveAdmin } from '../middlewares/adminSession.js';
 import { maskPhone } from '../utils/logMask.js';
 import { pickSosRecipients, sanitizeVictimName, recipientLimiter, RECIPIENT_LIMIT } from '../utils/sosRecipients.js';
 import {
@@ -528,7 +529,7 @@ router.get('/history/:phone', optionalToken, async (req, res, next) => {
 });
 
 // GET /api/sos/history - Returns all SOS history (Protected: Operator / Admin only)
-router.get('/history', verifyAdmin, async (req, res, next) => {
+router.get('/history', verifyAdmin, requireActiveAdmin, async (req, res, next) => {
   try {
     const history = await SosService.getSosHistory();
 

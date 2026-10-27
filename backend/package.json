@@ -10,7 +10,11 @@
     "test": "node --test",
     "migrate:encrypt": "node scripts/encrypt-existing-data.js",
     "migrate:evidence": "node scripts/make-evidence-private.js",
-    "migrate:rekey": "node scripts/reencrypt-legacy-keys.js"
+    "migrate:rekey": "node scripts/reencrypt-legacy-keys.js",
+    "admin:create": "node scripts/admin.js create",
+    "admin:reset": "node scripts/admin.js reset",
+    "admin:disable": "node scripts/admin.js disable",
+    "admin:enable": "node scripts/admin.js enable"
   },
   "keywords": [
     "safety",
