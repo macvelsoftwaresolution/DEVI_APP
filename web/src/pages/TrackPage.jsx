@@ -237,7 +237,12 @@ export default function TrackPage() {
       const query = viewKey ? `?k=${encodeURIComponent(viewKey)}` : '';
       const res = await fetch(apiUrl(`/api/sos/live/${alertId}${query}`));
       if (res.status === 403) {
-        setLinkInvalid(true);
+        setLinkInvalid('incomplete');
+        return;
+      }
+      // Alert resolved more than 24h ago: guardian links no longer show the location
+      if (res.status === 410) {
+        setLinkInvalid('expired');
         return;
       }
       if (!res.ok) return;
@@ -409,7 +414,7 @@ export default function TrackPage() {
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {/* Link without (or with a wrong) key: location is private, explain instead of showing an empty map */}
+      {/* Link without (or with a wrong) key, or expired after resolve: location is private, explain instead of showing an empty map */}
       {linkInvalid && (
         <div
           role="alert"
@@ -426,11 +431,12 @@ export default function TrackPage() {
         >
           <div style={{ maxWidth: '360px', textAlign: 'center', color: '#E2E8F0', fontFamily: 'Outfit, sans-serif' }}>
             <div style={{ fontSize: '20px', fontWeight: '800', color: '#FFF', marginBottom: '10px' }}>
-              This tracking link is incomplete
+              {linkInvalid === 'expired' ? 'This alert has ended' : 'This tracking link is incomplete'}
             </div>
             <div style={{ fontSize: '14px', lineHeight: '1.5' }}>
-              For the person's safety, live location opens only from the full link in the DEVI WhatsApp alert.
-              Open that message and tap the link again.
+              {linkInvalid === 'expired'
+                ? "This SOS alert was resolved, and for the person's privacy this link no longer shows their location."
+                : "For the person's safety, live location opens only from the full link in the DEVI WhatsApp alert. Open that message and tap the link again."}
             </div>
           </div>
         </div>

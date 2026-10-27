@@ -389,6 +389,8 @@ export const SosService = {
             longitude: coords.longitude,
             status: data.status || 'ACTIVE',
             lastUpdated: data.created_at || new Date().toISOString(),
+            // No resolved_at column: created_at is the earliest possible resolve time (tracking links expire sooner)
+            resolvedTime: String(data.status || '').toUpperCase() === 'RESOLVED' ? data.created_at : null,
             evidenceUrl: data.evidence_url || data.audio_url || null,
             breadcrumbs: initialBreadcrumbs(
               coords.latitude,

@@ -1,6 +1,11 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { SosService } from './sos.service.js';
-import { decodeAdminToken, verifySosControlToken, verifySosViewToken } from '../middlewares/auth.middleware.js';
+import {
+  decodeAdminToken,
+  verifySosControlToken,
+  verifySosViewToken,
+  isTrackingLinkExpired,
+} from '../middlewares/auth.middleware.js';
 
 class SocketService {
   constructor() {
@@ -190,11 +195,14 @@ class SocketService {
         } else if (room.startsWith('alert:')) {
           // One alert's live location: needs that alert's link key (guardian), control token (victim's phone) or admin
           const alertId = room.slice('alert:'.length);
-          const allowed = isAdmin ||
-            verifySosViewToken(alertId, msg.key) ||
-            verifySosControlToken(alertId, msg.controlToken);
-          if (!allowed) {
+          const fullAccess = isAdmin || verifySosControlToken(alertId, msg.controlToken);
+          if (!fullAccess && !verifySosViewToken(alertId, msg.key)) {
             this.sendToClient(ws, { type: 'error', code: 'TRACKING_KEY_REQUIRED', room });
+            break;
+          }
+          // Guardian links stop receiving the location 24h after the alert is resolved
+          if (!fullAccess && isTrackingLinkExpired(await SosService.getLiveLocation(alertId))) {
+            this.sendToClient(ws, { type: 'error', code: 'TRACKING_LINK_EXPIRED', room });
             break;
           }
         } else {

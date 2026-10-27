@@ -15,6 +15,7 @@ import {
   canResolveSos,
   signSosViewToken,
   verifySosViewToken,
+  isTrackingLinkExpired,
   decodeAdminToken,
 } from '../middlewares/auth.middleware.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
@@ -39,12 +40,14 @@ const rejectSosControl = (res) =>
     message: 'This device is not allowed to update this SOS alert.',
   });
 
-// View access to an alert's evidence: the guardian link key (?k=) or an admin login
-const hasViewAccess = (req, alertId) => {
-  if (verifySosViewToken(String(alertId), req.query.k)) return true;
+const hasAdminLogin = (req) => {
   const auth = req.get('authorization') || '';
   return !!decodeAdminToken(auth.startsWith('Bearer ') ? auth.slice(7) : null);
 };
+
+// View access to an alert's evidence: the guardian link key (?k=) or an admin login
+const hasViewAccess = (req, alertId) =>
+  verifySosViewToken(String(alertId), req.query.k) || hasAdminLogin(req);
 
 // Strips internal fields (idempotency key, phone) before sending a session to clients.
 // The stored evidence reference becomes the protected link, or null without view access.
@@ -284,9 +287,10 @@ router.post('/live-update', async (req, res, next) => {
 router.get('/live/:alertId', async (req, res, next) => {
   try {
     const { alertId } = req.params;
-    // Alert IDs are sequential: without the link key anyone could follow strangers' live location.
+    // Without the link key anyone who learns an alert ID could follow the victim's live location.
     // Checked before the lookup so unknown and forbidden IDs look the same.
-    if (!hasViewAccess(req, alertId) && !hasSosControl(req, alertId)) {
+    const fullAccess = hasSosControl(req, alertId) || hasAdminLogin(req);
+    if (!fullAccess && !verifySosViewToken(String(alertId), req.query.k)) {
       return res.status(403).json({
         success: false,
         code: 'TRACKING_KEY_REQUIRED',
@@ -300,6 +304,15 @@ router.get('/live/:alertId', async (req, res, next) => {
       return res.status(404).json({
         success: false,
         message: 'Live tracking session not found or expired',
+      });
+    }
+
+    // Guardian links stop showing the location 24h after the alert is resolved
+    if (!fullAccess && isTrackingLinkExpired(session)) {
+      return res.status(410).json({
+        success: false,
+        code: 'TRACKING_LINK_EXPIRED',
+        message: 'This alert has ended and the tracking link has expired.',
       });
     }
 
