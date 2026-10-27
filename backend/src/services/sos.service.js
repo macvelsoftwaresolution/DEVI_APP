@@ -414,6 +414,19 @@ export const SosService = {
     return session;
   },
 
+  // User ID that owns an alert (live session first, then the database)
+  async getAlertOwnerId(alertId) {
+    const session = liveTrackSessions.get(String(alertId));
+    if (session?.userId) return session.userId;
+    try {
+      const { data } = await supabase.from('sos_history').select('user_id').eq('id', alertId).maybeSingle();
+      return data?.user_id || null;
+    } catch (e) {
+      console.error('Error reading alert owner:', e);
+      return null;
+    }
+  },
+
   // Stored evidence reference for an alert (live session first, then the database)
   async getEvidenceRef(alertId) {
     const session = liveTrackSessions.get(String(alertId));

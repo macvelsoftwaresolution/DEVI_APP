@@ -84,6 +84,17 @@ export const verifySosControlToken = (alertId, token) =>
   !!alertId && !!token && safeEqual(token, signSosControlToken(alertId));
 
 /**
+ * Who may resolve (close) an SOS alert: the creating device (control token), a signed-in admin,
+ * or the logged-in owner of the alert (the app loses its in-memory control token on restart).
+ * Knowing the alert ID or the guardian view key is never enough.
+ */
+export const canResolveSos = ({ alertId, controlToken, adminToken, user, ownerId }) => {
+  if (verifySosControlToken(String(alertId), controlToken)) return true;
+  if (decodeAdminToken(adminToken)) return true;
+  return !!user?.id && !user.isGuest && !!ownerId && String(user.id) === String(ownerId);
+};
+
+/**
  * Per-alert view key (`k` in the guardian tracking link). Alert IDs are sequential numbers,
  * so the key is what stops strangers from opening other people's evidence by guessing IDs.
  * Different prefix from the control token: viewing never grants control.

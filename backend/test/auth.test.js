@@ -9,6 +9,7 @@ import {
   verifyToken,
   signSosControlToken,
   verifySosControlToken,
+  canResolveSos,
 } from '../src/middlewares/auth.middleware.js';
 import { ADMIN_SECRET_KEY } from '../src/config/security.js';
 
@@ -70,4 +71,21 @@ test('verifyToken attaches the user and rejects missing or bad tokens', () => {
 
   assert.equal(runMiddleware(verifyToken, mockReq()).res.statusCode, 401);
   assert.equal(runMiddleware(verifyToken, mockReq({ authorization: 'Bearer junk' })).res.statusCode, 403);
+});
+
+test('canResolveSos: only the creating device, an admin or the logged-in owner can resolve', () => {
+  const alertId = '42';
+  // Knowing the alert ID (or anything else) without a credential is not enough
+  assert.equal(canResolveSos({ alertId }), false);
+  assert.equal(canResolveSos({ alertId, controlToken: 'guess' }), false);
+  assert.equal(canResolveSos({ alertId, controlToken: signSosControlToken('43') }), false);
+
+  assert.equal(canResolveSos({ alertId, controlToken: signSosControlToken(alertId) }), true);
+  assert.equal(canResolveSos({ alertId, adminToken: signAdminToken('admin') }), true);
+
+  const owner = { id: 'u-1', isGuest: false };
+  assert.equal(canResolveSos({ alertId, user: owner, ownerId: 'u-1' }), true);
+  assert.equal(canResolveSos({ alertId, user: owner, ownerId: 'u-2' }), false);
+  assert.equal(canResolveSos({ alertId, user: owner, ownerId: null }), false);
+  assert.equal(canResolveSos({ alertId, user: { id: 'u-1', isGuest: true }, ownerId: 'u-1' }), false);
 });
