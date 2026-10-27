@@ -24,6 +24,9 @@ class GuardianModel {
 
 class AppState extends ChangeNotifier {
   static final AppState instance = AppState._internal();
+
+  /// Most guardians a user can have (the server sends SOS WhatsApp to at most this many)
+  static const int maxGuardians = 3;
   factory AppState() => instance;
   AppState._internal();
 
@@ -358,13 +361,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// After sign in: add quick-setup guardians the account does not have yet (max 5 total)
+  /// After sign in: add quick-setup guardians the account does not have yet (max [maxGuardians] total)
   Future<void> mergeSetupGuardiansIntoAccount() async {
     if (_setupGuardians.isEmpty || isGuest || phone.isEmpty) return;
     final merged = List<GuardianModel>.from(_guardians);
     var changed = false;
     for (final g in _setupGuardians) {
-      if (merged.length >= 5) break;
+      if (merged.length >= maxGuardians) break;
       if (g.phone == phone) continue; // never the user's own number
       if (merged.any((m) => m.phone == g.phone)) continue;
       merged.add(g);
@@ -376,6 +379,7 @@ class AppState extends ChangeNotifier {
   }
 
   void addGuardian(String name, String phone) {
+    if (_guardians.length >= maxGuardians) return;
     _guardians.add(GuardianModel(name: name, phone: phone));
     notifyListeners();
     _autoSyncGuardians();

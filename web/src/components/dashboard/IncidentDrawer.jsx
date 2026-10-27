@@ -10,6 +10,7 @@ const WHATSAPP_REASON_TEXT = {
   RATE_LIMITED: 'WhatsApp rate limit reached',
   TIMEOUT: 'WhatsApp did not respond in time',
   NETWORK: 'server could not reach WhatsApp',
+  RECIPIENT_LIMIT: 'this number already got 3 SOS alerts in the last hour (spam protection)',
   CONTROL_ROOM_NOT_CONFIGURED: 'control room WhatsApp number is not set on the server (ADMIN_WHATSAPP)',
 };
 

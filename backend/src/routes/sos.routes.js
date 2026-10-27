@@ -7,6 +7,8 @@ import { UserService } from '../services/user.service.js';
 import { uploadMediaToCloudinary, evidenceDeliveryUrl } from '../config/cloudinary.js';
 import { toEvidenceRef, parseEvidenceRef, evidenceLink, withEvidenceLink } from '../utils/evidence.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
+import { maskPhone } from '../utils/logMask.js';
+import { pickSosRecipients, sanitizeVictimName, recipientLimiter, RECIPIENT_LIMIT } from '../utils/sosRecipients.js';
 import {
   verifyAdmin,
   optionalToken,
@@ -66,8 +68,12 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     // Transport is protected by HTTPS; the payload is plain JSON
     const reqData = req.body;
 
-    const { userPhone, location, latitude, longitude, accuracy, idempotency_key, idempotencyKey, captured_at } = reqData;
+    const { location, latitude, longitude, accuracy, idempotency_key, idempotencyKey, captured_at } = reqData;
     const finalIdempotencyKey = idempotency_key || idempotencyKey || null;
+
+    // A logged-in user is identified by the token, never by the request body (R6)
+    const account = req.user?.phone && !req.user.isGuest ? await UserService.findUserByPhone(req.user.phone) : null;
+    const userPhone = req.user?.phone || reqData.userPhone;
 
     // STEP 1: Idempotency & Active Session Check (Prevents duplicate DB alerts & duplicate SMS)
     const existingSession = await SosService.findExistingSos({
@@ -87,7 +93,8 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
 
     if (existingSession) {
       const trackingUrl = trackingLink(baseUrl, existingSession.id);
-      console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${userPhone}, Key: ${finalIdempotencyKey || 'N/A'}. 🛑 Skipping duplicate SMS broadcast.`);
+      // The idempotency key is not logged: with it, /trigger hands back the alert's control token
+      console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${maskPhone(userPhone)}. 🛑 Skipping duplicate SMS broadcast.`);
 
       // Hand the control token back only to the original device (same idempotency key)
       // or the logged-in owner, never to someone who only knows the phone number
@@ -118,17 +125,12 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     });
 
     const trackingUrl = trackingLink(baseUrl, alert.id);
-    console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
+    // The tracking URL carries the view key, so it is never logged
+    console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${maskPhone(userPhone)}`);
 
-    // Retrieve victim's friendly display name if available
-    let victimName = req.body.userName;
-    if (!victimName && userPhone) {
-      try {
-        const u = await UserService.findUserByPhone(userPhone);
-        if (u && u.name) victimName = u.name;
-      } catch (_) { }
-    }
-    if (!victimName) victimName = userPhone || 'DEVI User';
+    // Name shown in the WhatsApp: the account's own name, else the request's name stripped of links.
+    // An unverified request never gets a registered user's name from the database.
+    const victimName = account?.name || sanitizeVictimName(reqData.userName);
 
     // Dashboard first: operators see the alert immediately, before WhatsApp finishes
     socketService.broadcastNewSosAlert({
@@ -145,15 +147,14 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
 
     // STEP 3: Emergency Dispatch (WhatsApp with live tracking link).
     // Wait for Meta's answer (bounded by the service timeout) so the phone learns who was NOT reached.
-    const recipients = [];
-    const contactsToSend = req.body.emergencyContacts || req.body.contactsAlerted;
-    if (Array.isArray(contactsToSend)) {
-      for (const contact of contactsToSend) {
-        const raw = typeof contact === 'object' ? (contact.phone || contact.number) : String(contact);
-        const match = String(raw || '').match(/(?:\+?91|0)?[6-9]\d{9}/);
-        if (match) recipients.push({ phone: match[0].slice(-10), role: 'guardian' });
-      }
-    }
+    // Recipients: numbers saved on the account are verified; any other number is limited (R6)
+    const picked = pickSosRecipients({
+      account,
+      requestContacts: reqData.emergencyContacts || reqData.contactsAlerted,
+    });
+    const verifiedCount = picked.filter((r) => r.verified).length;
+    console.log(`📨 [SOS RECIPIENTS] Alert ${alert.id}: ${verifiedCount} verified, ${picked.length - verifiedCount} unverified`);
+    const recipients = picked.map((r) => ({ phone: r.phone, verified: r.verified, role: 'guardian' }));
 
     // Instant SOS / Guest user without personal guardians: alert the Emergency Control / Admin number
     let isControlRoomOnly = false;
@@ -161,7 +162,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       // No fallback number: an emergency must never go to an unknown person's phone
       const emergencyControlPhone = (process.env.ADMIN_WHATSAPP || '').replace(/\D/g, '');
       if (emergencyControlPhone) {
-        console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${emergencyControlPhone})...`);
+        console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${maskPhone(emergencyControlPhone)})...`);
       } else {
         console.error('🚨 [CONTROL ROOM NOT CONFIGURED] ADMIN_WHATSAPP is not set: this SOS has no guardian and no control room WhatsApp. Only the dashboard was alerted.');
       }
@@ -173,6 +174,11 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       recipients.map(async (r) => {
         if (!r.phone) {
           return { phone: '', role: r.role, sent: false, reason: 'CONTROL_ROOM_NOT_CONFIGURED' };
+        }
+        // Unverified numbers: at most 3 alerts an hour each (the alert still reaches the dashboard)
+        if (r.role === 'guardian' && !r.verified && !recipientLimiter.tryConsume(r.phone)) {
+          console.warn(`⚠️ [SOS RECIPIENT LIMIT] Alert ${alert.id}: +${maskPhone(r.phone)} already got ${RECIPIENT_LIMIT} alerts this hour`);
+          return { phone: r.phone, role: r.role, sent: false, reason: 'RECIPIENT_LIMIT' };
         }
         const out = await WhatsAppService.sendEmergencyAlert(
           r.phone,

@@ -123,7 +123,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _addGuardian() {
-    if (_guardianPhoneControllers.length < 5) {
+    if (_guardianPhoneControllers.length < AppState.maxGuardians) {
       setState(() {
         _guardianNameControllers.add(TextEditingController());
         _guardianPhoneControllers.add(TextEditingController());
@@ -139,7 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           content: const Text(
-            'You can add up to 5 guardians only',
+            'You can add up to ${AppState.maxGuardians} guardians only',
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
           duration: const Duration(seconds: 2),

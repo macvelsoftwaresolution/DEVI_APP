@@ -34,6 +34,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showAddGuardianDialog() {
+    if (_appState.rawGuardians.length >= AppState.maxGuardians) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('You can add up to ${AppState.maxGuardians} guardians only'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
     AddGuardianDialog.show(
       context,
       onGuardianAdded: (name, phone) => _appState.addGuardian(name, phone),

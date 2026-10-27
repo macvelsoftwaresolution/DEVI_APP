@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { UserService } from '../services/user.service.js';
+import { MAX_GUARDIANS } from '../utils/sosRecipients.js';
 import { optionalToken, verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -91,6 +92,12 @@ router.put('/profile', optionalToken, async (req, res, next) => {
           message: 'Guardians must be an array of contacts',
         });
       }
+      if (guardians.length > MAX_GUARDIANS) {
+        return res.status(400).json({
+          success: false,
+          message: `You can add up to ${MAX_GUARDIANS} guardians only`,
+        });
+      }
 
       const seen = new Set();
       for (let i = 0; i < guardians.length; i++) {
@@ -144,7 +151,9 @@ router.post('/guest', async (req, res, next) => {
       ? guestId.trim()
       : `GUEST_${Date.now().toString(36).toUpperCase()}`;
 
-    const guestUser = await UserService.createOrGetGuestUser(idToUse, guardians);
+    // Guests are not verified: anything past the guardian limit is dropped
+    const guestGuardians = Array.isArray(guardians) ? guardians.slice(0, MAX_GUARDIANS) : guardians;
+    const guestUser = await UserService.createOrGetGuestUser(idToUse, guestGuardians);
 
     res.status(200).json({
       success: true,
