@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<script>
+  // Seeds the app's SharedPreferences (web = localStorage, "flutter." prefix, JSON values)
+  // with clearly fake demo data, then opens the real app. ?s=terms|setup|login|sos
+  const s = new URLSearchParams(location.search).get('s');
+  const put = (k, v) => localStorage.setItem('flutter.' + k, JSON.stringify(v));
+  localStorage.clear();
+  if (s !== 'terms') put('devi_terms_version', 'v1-draft');
+  if (s === 'setup' || s === 'login' || s === 'sos') {
+    put('devi_setup_name', 'Priya');
+    put('devi_guest_guardians', JSON.stringify([{ name: 'Amma', phone: '9876543210' }]));
+  }
+  if (s === 'login' || s === 'sos') put('devi_quick_setup_done', true);
+  if (s === 'sos') {
+    // Signed-in demo state; the profile request goes to localhost (SERVER=local build) and fails harmlessly
+    put('devi_is_logged_in', true);
+    put('devi_logged_in_phone', '9876543210');
+  }
+  location.replace('index.html');
+</script>

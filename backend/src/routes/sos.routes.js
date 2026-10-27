@@ -154,14 +154,22 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     // Instant SOS / Guest user without personal guardians: alert the Emergency Control / Admin number
     let isControlRoomOnly = false;
     if (recipients.length === 0) {
-      const emergencyControlPhone = process.env.ADMIN_WHATSAPP || '916381592501';
-      console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${emergencyControlPhone})...`);
+      // No fallback number: an emergency must never go to an unknown person's phone
+      const emergencyControlPhone = (process.env.ADMIN_WHATSAPP || '').replace(/\D/g, '');
+      if (emergencyControlPhone) {
+        console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${emergencyControlPhone})...`);
+      } else {
+        console.error('🚨 [CONTROL ROOM NOT CONFIGURED] ADMIN_WHATSAPP is not set: this SOS has no guardian and no control room WhatsApp. Only the dashboard was alerted.');
+      }
       recipients.push({ phone: emergencyControlPhone, role: 'control_room' });
       isControlRoomOnly = true;
     }
 
     const results = await Promise.all(
       recipients.map(async (r) => {
+        if (!r.phone) {
+          return { phone: '', role: r.role, sent: false, reason: 'CONTROL_ROOM_NOT_CONFIGURED' };
+        }
         const out = await WhatsAppService.sendEmergencyAlert(
           r.phone,
           trackingUrl,

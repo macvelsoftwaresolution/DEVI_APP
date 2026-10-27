@@ -36,7 +36,7 @@ export const WhatsAppService = {
 
     if (!toNumber) return { success: false, reason: 'PHONE_EMPTY' };
 
-    // Clean phone number to E.164 format without '+' symbol for Meta API (e.g. 916381592501)
+    // Clean phone number to E.164 format without '+' symbol for Meta API (e.g. 91XXXXXXXXXX)
     let clean = toNumber.toString().replace(/\D/g, '');
     if (clean.length === 10) {
       clean = '91' + clean; // Default to India country code

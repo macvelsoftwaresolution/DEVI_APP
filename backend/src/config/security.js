@@ -27,6 +27,11 @@ if (isProduction && (encryptionKey === PUBLIC_LEGACY_KEY || encryptionKey.length
   process.exit(1);
 }
 
+// Not fatal (guardian alerts still work), but SOS from users without guardians reaches no phone
+if (!(process.env.ADMIN_WHATSAPP || '').replace(/\D/g, '')) {
+  console.warn('⚠️ [CONFIG] ADMIN_WHATSAPP is not set: SOS from users without guardians will alert the dashboard only, not the control room phone.');
+}
+
 export const IS_PRODUCTION = isProduction;
 
 // Browser origins allowed to call the API (mobile apps send no Origin and are always allowed)

@@ -10,6 +10,7 @@ const WHATSAPP_REASON_TEXT = {
   RATE_LIMITED: 'WhatsApp rate limit reached',
   TIMEOUT: 'WhatsApp did not respond in time',
   NETWORK: 'server could not reach WhatsApp',
+  CONTROL_ROOM_NOT_CONFIGURED: 'control room WhatsApp number is not set on the server (ADMIN_WHATSAPP)',
 };
 
 // Right panel for the selected incident: evidence, signal warning, victim details, notes, resolve
