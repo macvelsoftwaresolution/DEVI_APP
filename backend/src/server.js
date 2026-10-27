@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { isAllowedOrigin, WHATSAPP_VERIFY_TOKEN } from './config/security.js';
 import { safeEqual } from './middlewares/auth.middleware.js';
+import { maskUrl } from './utils/logMask.js';
 import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
@@ -43,8 +44,9 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging
-app.use(morgan('dev'));
+// Logging: same columns as morgan 'dev', but tracking/control keys and phone numbers in URLs are masked
+morgan.token('safe-url', (req) => maskUrl(req.originalUrl || req.url));
+app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]'));
 
 // Global API Rate Limiting
 app.use('/api', globalLimiter);
@@ -68,7 +70,10 @@ app.get(['/webhook', '/api/webhook'], (req, res) => {
 });
 
 app.post(['/webhook', '/api/webhook'], (req, res) => {
-  console.log('📩 [WHATSAPP EVENT RECEIVED]', JSON.stringify(req.body));
+  // Events carry recipients' phone numbers: log only what kind of event arrived
+  const change = req.body?.entry?.[0]?.changes?.[0];
+  const statuses = (change?.value?.statuses || []).map((s) => s.status).join(',') || '-';
+  console.log(`📩 [WHATSAPP EVENT RECEIVED] field: ${change?.field || 'unknown'}, statuses: ${statuses}`);
   return res.status(200).send('EVENT_RECEIVED');
 });
 

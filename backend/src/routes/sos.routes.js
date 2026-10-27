@@ -7,6 +7,7 @@ import { UserService } from '../services/user.service.js';
 import { uploadMediaToCloudinary, evidenceDeliveryUrl } from '../config/cloudinary.js';
 import { toEvidenceRef, parseEvidenceRef, evidenceLink, withEvidenceLink } from '../utils/evidence.js';
 import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
+import { maskPhone } from '../utils/logMask.js';
 import {
   verifyAdmin,
   optionalToken,
@@ -87,7 +88,8 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
 
     if (existingSession) {
       const trackingUrl = trackingLink(baseUrl, existingSession.id);
-      console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${userPhone}, Key: ${finalIdempotencyKey || 'N/A'}. 🛑 Skipping duplicate SMS broadcast.`);
+      // The idempotency key is not logged: with it, /trigger hands back the alert's control token
+      console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${maskPhone(userPhone)}. 🛑 Skipping duplicate SMS broadcast.`);
 
       // Hand the control token back only to the original device (same idempotency key)
       // or the logged-in owner, never to someone who only knows the phone number
@@ -118,7 +120,8 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     });
 
     const trackingUrl = trackingLink(baseUrl, alert.id);
-    console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${userPhone}, Track: ${trackingUrl}`);
+    // The tracking URL carries the view key, so it is never logged
+    console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${maskPhone(userPhone)}`);
 
     // Retrieve victim's friendly display name if available
     let victimName = req.body.userName;
@@ -161,7 +164,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       // No fallback number: an emergency must never go to an unknown person's phone
       const emergencyControlPhone = (process.env.ADMIN_WHATSAPP || '').replace(/\D/g, '');
       if (emergencyControlPhone) {
-        console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${emergencyControlPhone})...`);
+        console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${maskPhone(emergencyControlPhone)})...`);
       } else {
         console.error('🚨 [CONTROL ROOM NOT CONFIGURED] ADMIN_WHATSAPP is not set: this SOS has no guardian and no control room WhatsApp. Only the dashboard was alerted.');
       }

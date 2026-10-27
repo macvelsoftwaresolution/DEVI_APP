@@ -3,6 +3,8 @@
  * Dispatches emergency SOS alerts and location tracking links directly to WhatsApp
  */
 
+import { maskPhone } from '../utils/logMask.js';
+
 const SEND_TIMEOUT_MS = 5000;
 
 // Maps Meta Graph API errors to a short reason the app and dashboard can act on.
@@ -138,7 +140,7 @@ export const WhatsAppService = {
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.messages && data.messages.length > 0) {
-        console.log(`✅ [APPROVED TEMPLATE DISPATCHED: devi_safety] ID: ${data.messages[0].id} to +${clean}`);
+        console.log(`✅ [APPROVED TEMPLATE DISPATCHED: devi_safety] ID: ${data.messages[0].id} to +${maskPhone(clean)}`);
 
         // Native WhatsApp location pin as a follow-up; not awaited so it never delays the SOS response
         if (hasValidCoords) {
@@ -171,11 +173,12 @@ export const WhatsAppService = {
       if (reason === 'TOKEN_EXPIRED') {
         console.error('🚨 [WHATSAPP TOKEN EXPIRED/INVALID] Every SOS WhatsApp will fail until WHATSAPP_ACCESS_TOKEN is renewed. Use a permanent System User token.');
       }
-      console.warn(`⚠️ [WHATSAPP FAILED] To +${clean}: ${reason}`, data.error || data);
+      // Only Meta's code and message: the full response echoes the recipient's number
+      console.warn(`⚠️ [WHATSAPP FAILED] To +${maskPhone(clean)}: ${reason}`, data.error ? `(${data.error.code}) ${data.error.message}` : '');
       return { success: false, reason, error: data.error };
     } catch (err) {
       const reason = err.name === 'TimeoutError' || err.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK';
-      console.error(`❌ [WHATSAPP ${reason}] To +${clean}:`, err.message);
+      console.error(`❌ [WHATSAPP ${reason}] To +${maskPhone(clean)}:`, err.message);
       return { success: false, reason, error: err.message };
     }
   },
