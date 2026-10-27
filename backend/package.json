@@ -9,7 +9,8 @@
     "dev": "nodemon src/server.js",
     "test": "node --test",
     "migrate:encrypt": "node scripts/encrypt-existing-data.js",
-    "migrate:evidence": "node scripts/make-evidence-private.js"
+    "migrate:evidence": "node scripts/make-evidence-private.js",
+    "migrate:rekey": "node scripts/reencrypt-legacy-keys.js"
   },
   "keywords": [
     "safety",

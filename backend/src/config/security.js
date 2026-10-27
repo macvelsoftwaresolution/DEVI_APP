@@ -85,3 +85,18 @@ export const supabaseKeyKind = (key) => {
 export const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'admin').trim();
 export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devi_admin_dev_password';
 export const ADMIN_TOKEN_EXPIRY = '12h';
+
+// A weak field-encryption key must never write to a real database, in any mode.
+// On 26 Oct 2026 dev machines with the old public key / the dev default wrote 12 values to production.
+// A secret Supabase key means real data (with RLS on, nothing else can read or write it).
+export const WEAK_ENCRYPTION_KEYS = [PUBLIC_LEGACY_KEY, 'devi_local_dev_field_encryption_key_not_for_production'];
+if (
+  supabaseKeyKind(process.env.SUPABASE_KEY) === 'secret' &&
+  (encryptionKey.length < 32 || WEAK_ENCRYPTION_KEYS.includes(encryptionKey))
+) {
+  console.error(
+    '❌ [SECURITY] SUPABASE_KEY points at a real database but ENCRYPTION_KEY is missing or weak. ' +
+    'Use the SAME ENCRYPTION_KEY as the live server, or data becomes unreadable. Refusing to start.'
+  );
+  process.exit(1);
+}
