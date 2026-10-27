@@ -1,7 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import { encryptField as enc, decryptField as dec } from '../utils/encryption.js';
 import { liveTrackSessions } from './live-sessions.js';
-import { toLatLng, hasFix, initialBreadcrumbs } from '../utils/coords.js';
+import { toLatLng } from '../utils/coords.js';
 import { evidenceLink } from '../utils/evidence.js';
 
 // Admin dashboard: incident list (with user & guardian details) and operator notes
@@ -91,10 +91,8 @@ export const DashboardService = {
         });
         const displayTime = `${istDate}, ${istTime}`;
 
-        // Real GPS only: live session first, then the stored alert, else null ("GPS pending")
-        const coords = hasFix(liveSession?.latitude, liveSession?.longitude)
-          ? toLatLng(liveSession.latitude, liveSession.longitude)
-          : toLatLng(alert.latitude, alert.longitude);
+        // The location sent with the SOS (no live tracking); null when the phone had no GPS fix
+        const coords = toLatLng(alert.latitude, alert.longitude);
 
         return {
           id: alert.id.toString(),
@@ -104,23 +102,19 @@ export const DashboardService = {
           timeAgo,
           latitude: coords.latitude,
           longitude: coords.longitude,
-          accuracy: coords.latitude !== null ? (liveSession?.accuracy ?? alert.accuracy ?? null) : null,
+          accuracy: coords.latitude !== null ? (alert.accuracy ?? null) : null,
           location: dec(alert.location_address) || 'Location not yet available',
           status: liveSession?.status || alert.status || 'DISPATCHED',
-          signalLost: !!liveSession?.signalLost,
           whatsapp: liveSession?.whatsapp || null,
-          signalReason: liveSession?.signalReason || null,
-          lastSeen: liveSession?.lastUpdated || alert.created_at,
           evidenceUrl: evidenceLink(alert.id, alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null),
           operatorNotes: dec(alert.operator_notes) || liveSession?.operatorNotes || '',
           user: {
             name: dec(user?.full_name) || (user?.is_guest ? 'Guest Victim' : 'DEVI User'),
             phone: dec(user?.mobile_number) || null,
-            address: user ? [dec(user.address_1), dec(user.address_2)].filter(Boolean).join(', ') : 'Location on Map',
+            address: user ? [dec(user.address_1), dec(user.address_2)].filter(Boolean).join(', ') : '',
             isGuest: user?.is_guest || false,
           },
           guardians,
-          breadcrumbs: liveSession?.breadcrumbs || initialBreadcrumbs(coords.latitude, coords.longitude, alert.created_at),
         };
       });
     } catch (err) {

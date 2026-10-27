@@ -1,11 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { SosService } from './sos.service.js';
-import {
-  decodeAdminToken,
-  verifySosControlToken,
-  verifySosViewToken,
-  isTrackingLinkExpired,
-} from '../middlewares/auth.middleware.js';
+import { decodeAdminToken } from '../middlewares/auth.middleware.js';
+
+// Realtime channel for the admin dashboard only: new SOS alerts, WhatsApp results, evidence, status.
+// There is no live location tracking, so phones and guardians never connect here.
 
 class SocketService {
   constructor() {
@@ -104,7 +101,7 @@ class SocketService {
   }
 
   /**
-   * Joins a client to a room (e.g., 'alert:123', 'dashboard')
+   * Joins a client to a room ('dashboard')
    */
   joinRoom(ws, room) {
     if (!room) return;
@@ -187,26 +184,12 @@ class SocketService {
         const isAdmin = !!decodeAdminToken(msg.token);
 
         // The dashboard room carries every incident, so only signed-in admins may join it
-        if (room === 'dashboard') {
-          if (!isAdmin) {
-            this.sendToClient(ws, { type: 'error', code: 'ADMIN_AUTH_REQUIRED', room });
-            break;
-          }
-        } else if (room.startsWith('alert:')) {
-          // One alert's live location: needs that alert's link key (guardian), control token (victim's phone) or admin
-          const alertId = room.slice('alert:'.length);
-          const fullAccess = isAdmin || verifySosControlToken(alertId, msg.controlToken);
-          if (!fullAccess && !verifySosViewToken(alertId, msg.key)) {
-            this.sendToClient(ws, { type: 'error', code: 'TRACKING_KEY_REQUIRED', room });
-            break;
-          }
-          // Guardian links stop receiving the location 24h after the alert is resolved
-          if (!fullAccess && isTrackingLinkExpired(await SosService.getLiveLocation(alertId))) {
-            this.sendToClient(ws, { type: 'error', code: 'TRACKING_LINK_EXPIRED', room });
-            break;
-          }
-        } else {
+        if (room !== 'dashboard') {
           this.sendToClient(ws, { type: 'error', code: 'UNKNOWN_ROOM', room });
+          break;
+        }
+        if (!isAdmin) {
+          this.sendToClient(ws, { type: 'error', code: 'ADMIN_AUTH_REQUIRED', room });
           break;
         }
         this.joinRoom(ws, room);
@@ -217,54 +200,6 @@ class SocketService {
       case 'leave': {
         this.leaveRoom(ws, msg.room);
         this.sendToClient(ws, { type: 'left', room: msg.room });
-        break;
-      }
-
-      // Compact location update packet from Flutter App or Guardian
-      case 'loc': {
-        const { alertId, lat, lng, speed, heading, status, seq, accuracy, acc, spd, hd } = msg;
-        if (!alertId || lat == null || lng == null) return;
-
-        // Only the device that created the SOS may move its location
-        if (!verifySosControlToken(String(alertId), msg.controlToken)) {
-          this.sendToClient(ws, { type: 'error', code: 'SOS_CONTROL_REQUIRED', alertId });
-          return;
-        }
-        const currentAccuracy = (accuracy != null ? Number(accuracy) : (acc != null ? Number(acc) : null));
-        const currentSpeed = speed ?? spd ?? null;
-        const currentHeading = heading ?? hd ?? null;
-
-        // Persist/cache in SosService
-        await SosService.updateLiveLocation({
-          alertId,
-          latitude: lat,
-          longitude: lng,
-          accuracy: currentAccuracy,
-          status: status || 'ACTIVE',
-        });
-
-        const updatePayload = {
-          type: 'loc',
-          alertId: String(alertId),
-          latitude: Number(lat),
-          longitude: Number(lng),
-          accuracy: currentAccuracy,
-          speed: currentSpeed,
-          heading: currentHeading,
-          status: status || 'ACTIVE',
-          timestamp: new Date().toISOString(),
-        };
-
-        // Broadcast to guardian web tracker watching this alert
-        this.broadcastToRoom(`alert:${alertId}`, updatePayload);
-
-        // Broadcast to operator command dashboard
-        this.broadcastToRoom('dashboard', updatePayload);
-
-        // Send tiny ACK back to mobile device so it knows transmission succeeded (low-bandwidth)
-        if (seq != null) {
-          this.sendToClient(ws, { type: 'ack', seq, alertId });
-        }
         break;
       }
 
@@ -279,20 +214,6 @@ class SocketService {
   }
 
   // --- Outbound Convenience Broadcast Methods ---
-
-  /**
-   * Broadcasts real-time coordinate update (called by HTTP fallback or WS)
-   */
-  broadcastLocationUpdate(alertId, data) {
-    const payload = {
-      type: 'loc',
-      alertId: String(alertId),
-      ...data,
-      timestamp: data.timestamp || new Date().toISOString(),
-    };
-    this.broadcastToRoom(`alert:${alertId}`, payload);
-    this.broadcastToRoom('dashboard', payload);
-  }
 
   /**
    * Broadcasts new emergency SOS event to operator dashboard
@@ -317,7 +238,6 @@ class SocketService {
       status: statusData.status || 'RESOLVED',
       timestamp: new Date().toISOString(),
     };
-    this.broadcastToRoom(`alert:${alertId}`, payload);
     this.broadcastToRoom('dashboard', payload);
   }
 }

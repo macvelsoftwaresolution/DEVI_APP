@@ -22,12 +22,11 @@ const classifyMetaError = (error) => {
 export const WhatsAppService = {
   /**
    * Sends an emergency alert message to a WhatsApp number via Meta Cloud API
-   * @param {string} toNumber - Recipient phone number (e.g. '9500238347' or '919500238347')
-   * @param {string} trackingUrl - Live incident tracking web link
+   * @param {string} toNumber - Recipient phone number (e.g. '98XXXXXXXX' or '9198XXXXXXXX')
    * @param {string} victimName - Name of the user in emergency
    * @param {object} locationData - Coordinates and location description { latitude, longitude, location, mapsUrl }
    */
-  async sendEmergencyAlert(toNumber, trackingUrl, victimName = 'DEVI User', locationData = {}) {
+  async sendEmergencyAlert(toNumber, victimName = 'DEVI User', locationData = {}) {
     const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
     const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
 
@@ -65,22 +64,6 @@ export const WhatsAppService = {
       googleMapsUrl = 'https://maps.google.com';
     }
 
-    // Build comprehensive emergency dispatch text message
-    let messageText = `🚨 *EMERGENCY SOS ALERT — DEVI App* 🚨\n\n` +
-      `⚠️ *${victimName}* is in danger and triggered an Emergency SOS!\n\n`;
-
-    if (trackingUrl) {
-      messageText += `🔴 *LIVE MOVING GPS MAP (Real-time Live Movement):*\n${trackingUrl}\n\n`;
-    }
-
-    messageText += `📍 *GOOGLE MAPS NAVIGATION (Route Directions):*\n${googleMapsUrl}\n\n`;
-
-    if (location && typeof location === 'string' && !location.startsWith('http')) {
-      messageText += `📌 *Address / Landmark:* ${location}\n\n`;
-    }
-
-    messageText += `🛡️ *Immediate Action:* Please call them immediately or dial Police *112* / Women Helpline *1091*.`;
-
     const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
     const alertTime = new Date().toLocaleTimeString('en-US', {
       timeZone: 'Asia/Kolkata',
@@ -113,7 +96,8 @@ export const WhatsAppService = {
                 {
                   type: 'text',
                   parameter_name: 'location_link',
-                  text: trackingUrl || googleMapsUrl,
+                  // The SOS location only (no live tracking link)
+                  text: googleMapsUrl,
                 },
                 {
                   type: 'text',

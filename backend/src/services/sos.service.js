@@ -3,7 +3,7 @@ import { encryptField as enc, decryptField as dec } from '../utils/encryption.js
 import { liveTrackSessions } from './live-sessions.js';
 import { UserService } from './user.service.js';
 import { GeocodeService } from './geocode.service.js';
-import { toLatLng, hasFix, initialBreadcrumbs, NO_FIX_PLACEHOLDER } from '../utils/coords.js';
+import { toLatLng, hasFix, NO_FIX_PLACEHOLDER } from '../utils/coords.js';
 
 const NO_LOCATION_TEXT = 'Location not yet available';
 
@@ -59,11 +59,6 @@ export const SosService = {
             status: existingAlert.status || 'ACTIVE',
             lastUpdated: existingAlert.created_at || new Date().toISOString(),
             evidenceUrl: existingAlert.evidence_url || null,
-            breadcrumbs: initialBreadcrumbs(
-              coords.latitude,
-              coords.longitude,
-              existingAlert.created_at || new Date().toISOString()
-            ),
           };
           liveTrackSessions.set(existingAlert.id.toString(), sessionData);
           return sessionData;
@@ -188,7 +183,6 @@ export const SosService = {
         status: alert.status || 'ACTIVE',
         lastUpdated: alert.created_at || new Date().toISOString(),
         evidenceUrl: alert.evidence_url || null,
-        breadcrumbs: initialBreadcrumbs(latitude, longitude, alert.created_at || new Date().toISOString()),
       };
 
       liveTrackSessions.set(alert.id.toString(), sessionData);
@@ -279,135 +273,6 @@ export const SosService = {
     }
   },
 
-  // --- LIVE LOCATION TRACKING ---
-  async updateLiveLocation({ alertId, latitude, longitude, accuracy, address, status = 'ACTIVE' }) {
-    if (!alertId) return null;
-    const key = alertId.toString();
-    const lat = parseFloat(latitude);
-    const lng = parseFloat(longitude);
-    const acc = accuracy != null && !isNaN(parseFloat(accuracy)) ? parseFloat(accuracy) : null;
-
-    let session = liveTrackSessions.get(key);
-    const nowIso = new Date().toISOString();
-
-    if (!session) {
-      session = {
-        id: key,
-        latitude: lat,
-        longitude: lng,
-        accuracy: acc,
-        status,
-        lastUpdated: nowIso,
-        breadcrumbs: [],
-      };
-      liveTrackSessions.set(key, session);
-    } else {
-      session.latitude = lat;
-      session.longitude = lng;
-      if (acc != null) session.accuracy = acc;
-      session.status = status;
-      session.lastUpdated = nowIso;
-    }
-
-    if (!isNaN(lat) && !isNaN(lng)) {
-      if (!Array.isArray(session.breadcrumbs)) {
-        session.breadcrumbs = [];
-      }
-      const lastPt = session.breadcrumbs[session.breadcrumbs.length - 1];
-      let shouldAppend = true;
-      if (lastPt) {
-        const dLat = ((lat - lastPt.latitude) * Math.PI) / 180;
-        const dLng = ((lng - lastPt.longitude) * Math.PI) / 180;
-        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos((lastPt.latitude * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) *
-          Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        const distMeters = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        
-        // Smart jitter filter:
-        // When GPS precision is high (< 10m), record movements >= 3.5m; otherwise >= 7m to avoid false indoor zig-zags
-        const minMoveDist = (acc && acc < 10) ? 3.5 : 7.0;
-        if (distMeters < minMoveDist) {
-          shouldAppend = false;
-          lastPt.timestamp = nowIso;
-          if (acc != null) lastPt.accuracy = acc;
-        }
-      }
-
-      if (shouldAppend) {
-        session.breadcrumbs.push({
-          latitude: lat,
-          longitude: lng,
-          accuracy: acc,
-          timestamp: nowIso,
-        });
-        // Keep up to 1000 breadcrumb points (~33+ mins of live trail) while preserving origin point #0
-        if (session.breadcrumbs.length > 1000) {
-          session.breadcrumbs.splice(1, 1);
-        }
-      }
-    }
-
-    // Also update supabase asynchronously if possible
-    try {
-      supabase
-        .from('sos_history')
-        .update({
-          latitude: lat,
-          longitude: lng,
-          location_address: enc(address || `GPS Location (${lat}, ${lng})`),
-          status,
-        })
-        .eq('id', alertId)
-        .then(() => { })
-        .catch((e) => console.error('Supabase live update error:', e));
-    } catch (e) {
-      // ignore
-    }
-
-    return session;
-  },
-
-  async getLiveLocation(alertId) {
-    if (!alertId) return null;
-    const key = alertId.toString();
-    let session = liveTrackSessions.get(key);
-
-    if (!session) {
-      // Fallback query from supabase
-      try {
-        const { data, error } = await supabase
-          .from('sos_history')
-          .select('*')
-          .eq('id', alertId)
-          .maybeSingle();
-
-        if (data && !error) {
-          const coords = toLatLng(data.latitude, data.longitude);
-          session = {
-            id: data.id,
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            status: data.status || 'ACTIVE',
-            lastUpdated: data.created_at || new Date().toISOString(),
-            // No resolved_at column: created_at is the earliest possible resolve time (tracking links expire sooner)
-            resolvedTime: String(data.status || '').toUpperCase() === 'RESOLVED' ? data.created_at : null,
-            evidenceUrl: data.evidence_url || data.audio_url || null,
-            breadcrumbs: initialBreadcrumbs(
-              coords.latitude,
-              coords.longitude,
-              data.created_at || new Date().toISOString()
-            ),
-          };
-          liveTrackSessions.set(key, session);
-        }
-      } catch (e) {
-        console.error('Error fetching fallback live location:', e);
-      }
-    }
-
-    return session;
-  },
-
   // WhatsApp dispatch result for an alert (kept in memory with the live session)
   attachWhatsAppStatus(alertId, whatsapp) {
     const session = liveTrackSessions.get(String(alertId));
@@ -483,26 +348,6 @@ export const SosService = {
     }
 
     return session || { id: key, evidenceUrl };
-  },
-
-  // --- SIGNAL MONITORING (live tracking health) ---
-  // Active in-memory sessions, used by the signal watchdog
-  getActiveLiveSessions() {
-    return [...liveTrackSessions.values()].filter((s) => s.status === 'ACTIVE');
-  },
-
-  // Marks an alert's live signal as lost ('NO_UPDATES' or 'APP_CLOSED') or restored (lost = false)
-  setSignalState(alertId, { lost, reason = null }) {
-    const key = alertId.toString();
-    let session = liveTrackSessions.get(key);
-    if (!session) {
-      session = { id: key, status: 'ACTIVE', lastUpdated: new Date().toISOString(), breadcrumbs: [] };
-      liveTrackSessions.set(key, session);
-    }
-    session.signalLost = lost;
-    session.signalReason = lost ? reason : null;
-    session.signalLostAt = lost ? new Date().toISOString() : null;
-    return session;
   },
 
   async resolveSosAlert(alertId) {

@@ -67,12 +67,3 @@ export async function speakEmergencyAlert(victimName, location, lat, lng) {
     window.speechSynthesis.speak(utterance);
   } catch (_) {}
 }
-
-// Short spoken warning when a victim's live location stops
-export function speakSignalLost(reason) {
-  if (!('speechSynthesis' in window)) return;
-  try {
-    const why = reason === 'APP_CLOSED' ? 'The victim app was closed.' : 'Live location stopped updating.';
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Warning! Signal lost. ${why}`));
-  } catch (_) {}
-}

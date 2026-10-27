@@ -1,5 +1,5 @@
 import React from 'react';
-import { isActiveIncident, signalLostText } from '../../utils/incidents';
+import { isActiveIncident } from '../../utils/incidents';
 
 // Left panel: search, stats, filter tabs and incident cards
 export default function IncidentSidebar({
@@ -137,11 +137,6 @@ export default function IncidentSidebar({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-dim)', paddingTop: '4px', borderTop: '1px solid rgba(255, 255, 255, 0.04)' }}>
                   <span>{inc.timeAgo || 'Just now'}</span>
                 </div>
-                {isEmergency && inc.signalLost && (
-                  <div style={{ marginTop: '6px', fontSize: '10px', fontWeight: '700', color: '#FBBF24', background: 'var(--amber-soft)', borderRadius: '6px', padding: '4px 6px' }}>
-                    ⚠️ {signalLostText(inc)}
-                  </div>
-                )}
               </div>
             );
           })

@@ -1,7 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import DashboardPage from './pages/DashboardPage';
-import TrackPage from './pages/TrackPage';
 import LoginPage from './pages/LoginPage';
 import { getAdminToken } from './config/api';
 
@@ -17,8 +16,6 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<RequireAdmin><DashboardPage /></RequireAdmin>} />
         <Route path="/dashboard" element={<RequireAdmin><DashboardPage /></RequireAdmin>} />
-        <Route path="/track" element={<TrackPage />} />
-        <Route path="/track/:alertId" element={<TrackPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

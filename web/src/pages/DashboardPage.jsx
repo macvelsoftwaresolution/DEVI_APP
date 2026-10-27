@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useJsApiLoader } from '@react-google-maps/api';
 import { adminFetch, getAdminToken, logoutAdmin, WS_URL } from '../config/api';
-import { calcDistKm, isActiveIncident } from '../utils/incidents';
-import { playSirenTone, speakEmergencyAlert, speakSignalLost } from '../utils/alertSounds';
+import { isActiveIncident } from '../utils/incidents';
+import { playSirenTone, speakEmergencyAlert } from '../utils/alertSounds';
 import DashboardHeader from '../components/dashboard/DashboardHeader';
 import IncidentSidebar from '../components/dashboard/IncidentSidebar';
-import IncidentMap from '../components/dashboard/IncidentMap';
 import IncidentDrawer from '../components/dashboard/IncidentDrawer';
 import EmergencyAlertBanner from '../components/dashboard/EmergencyAlertBanner';
 
@@ -19,12 +17,6 @@ export default function DashboardPage() {
   const [emergencyAlertModal, setEmergencyAlertModal] = useState(null); // { id, name, phone, location, lat, lng }
   const [operatorNote, setOperatorNote] = useState('');
 
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-  });
-
-  const mapInstanceRef = useRef(null);
   const audioCtxRef = useRef(null);
   const prevActiveIdsRef = useRef(new Set());
   const initialLoadRef = useRef(true);
@@ -46,21 +38,6 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Smooth Cinematic Map FlyTo Helper (Prevents animation jitter / abrupt snap)
-  const isFlyingRef = useRef(false);
-  const smoothFlyTo = (lat, lng, zoom = 17) => {
-    const map = mapInstanceRef.current;
-    if (!map || isNaN(lat) || isNaN(lng)) return;
-    
-    // Stop any conflicting animation and smoothly glide
-    map.panTo({ lat, lng });
-    map.setZoom(zoom);
-
-    setTimeout(() => {
-      isFlyingRef.current = false;
-    }, 2900);
-  };
-
   // Siren + spoken announcement for a new SOS (respects the Sound ON/OFF toggle)
   const playSiren = (inc = null) => {
     if (!audioEnabled) return;
@@ -81,21 +58,7 @@ export default function DashboardPage() {
       if (!res.ok) return;
       const data = await res.json();
       if (data.success && Array.isArray(data.incidents)) {
-        setIncidents((prev) => {
-          const prevMap = new Map(prev.map((i) => [String(i.id), i]));
-          return data.incidents.map((serverInc) => {
-            const existing = prevMap.get(String(serverInc.id));
-            if (!existing) return serverInc;
-            const existingCrumbs = existing.breadcrumbs || [];
-            const serverCrumbs = serverInc.breadcrumbs || [];
-            const mergedCrumbs = existingCrumbs.length >= serverCrumbs.length ? existingCrumbs : serverCrumbs;
-            return {
-              ...serverInc,
-              accuracy: serverInc.accuracy != null ? serverInc.accuracy : existing.accuracy,
-              breadcrumbs: mergedCrumbs,
-            };
-          });
-        });
+        setIncidents(data.incidents);
 
         const currentActive = new Set();
         const isFirstLoad = initialLoadRef.current;
@@ -115,12 +78,11 @@ export default function DashboardPage() {
                 id: inc.id,
                 name: inc.user?.name || 'Emergency Victim',
                 phone: inc.user?.phone || 'N/A',
-                location: inc.location || 'Live GPS Location',
+                location: inc.location || 'Location not available',
                 lat,
                 lng,
               });
               setSelectedIncidentId(inc.id);
-              smoothFlyTo(lat, lng, 17);
             }
           }
         });
@@ -165,48 +127,7 @@ export default function DashboardPage() {
               return;
             }
 
-            // Immediate live coordinate updates for zero-latency movement on map & line
-            if (msg.type === 'loc' && msg.alertId) {
-              const vLat = parseFloat(msg.latitude);
-              const vLng = parseFloat(msg.longitude);
-              const acc = msg.accuracy != null && !isNaN(parseFloat(msg.accuracy)) ? parseFloat(msg.accuracy) : null;
-              if (!isNaN(vLat) && !isNaN(vLng)) {
-                setIncidents((prev) =>
-                  prev.map((inc) => {
-                    if (String(inc.id) === String(msg.alertId)) {
-                      // Filter stationary jitter: ignore if moved less than 3.5m from last crumb
-                      const existingCrumbs = inc.breadcrumbs || [{ latitude: inc.latitude, longitude: inc.longitude }];
-                      const lastCrumb = existingCrumbs[existingCrumbs.length - 1];
-                      let shouldAppend = true;
-                      if (lastCrumb) {
-                        const dist = calcDistKm(parseFloat(lastCrumb.latitude), parseFloat(lastCrumb.longitude), vLat, vLng);
-                        const minMoveKm = (acc && acc < 10) ? 0.0035 : 0.006;
-                        if (dist < minMoveKm) {
-                          shouldAppend = false;
-                        }
-                      }
-
-                      const updatedBreadcrumbs = shouldAppend
-                        ? [
-                            ...existingCrumbs,
-                            { latitude: vLat, longitude: vLng, accuracy: acc, timestamp: new Date().toISOString() },
-                          ]
-                        : existingCrumbs;
-
-                      return {
-                        ...inc,
-                        latitude: vLat,
-                        longitude: vLng,
-                        accuracy: acc ?? inc.accuracy,
-                        location: msg.address || inc.location,
-                        breadcrumbs: updatedBreadcrumbs,
-                      };
-                    }
-                    return inc;
-                  })
-                );
-              }
-            } else if (msg.type === 'sos:new') {
+            if (msg.type === 'sos:new') {
               const alertData = msg.data;
               if (alertData) {
                 const lat = parseFloat(alertData.latitude);
@@ -216,25 +137,13 @@ export default function DashboardPage() {
                   id: alertData.id,
                   name: alertData.userName || alertData.user?.name || 'Emergency Victim',
                   phone: alertData.userPhone || alertData.user?.phone || 'N/A',
-                  location: alertData.location || 'Live GPS Location',
+                  location: alertData.location || 'Location not available',
                   lat,
                   lng,
                 });
                 setSelectedIncidentId(alertData.id);
-                smoothFlyTo(lat, lng, 17);
               }
               fetchIncidents(true);
-            } else if ((msg.type === 'incident:signal_lost' || msg.type === 'incident:signal_restored') && msg.alertId) {
-              const lost = msg.type === 'incident:signal_lost';
-              setIncidents((prev) =>
-                prev.map((inc) =>
-                  String(inc.id) === String(msg.alertId)
-                    ? { ...inc, signalLost: lost, signalReason: lost ? msg.reason : null, lastSeen: msg.lastSeen || inc.lastSeen }
-                    : inc
-                )
-              );
-              if (lost && audioEnabled) speakSignalLost(msg.reason);
-
             } else if (msg.type === 'incident:whatsapp' && msg.alertId) {
               setIncidents((prev) =>
                 prev.map((inc) =>
@@ -256,7 +165,7 @@ export default function DashboardPage() {
                 setIncidents((prev) =>
                   prev.map((inc) =>
                     String(inc.id) === targetId
-                      ? { ...inc, status: 'RESOLVED', signalLost: false }
+                      ? { ...inc, status: 'RESOLVED' }
                       : inc
                   )
                 );
@@ -366,16 +275,8 @@ export default function DashboardPage() {
           onSelect={setSelectedIncidentId}
         />
 
-        <IncidentMap
-          isLoaded={isLoaded}
-          incidents={incidents}
-          selectedIncident={selectedIncident}
-          selectedIncidentId={selectedIncidentId}
-          onSelect={setSelectedIncidentId}
-          onMapLoad={(map) => { mapInstanceRef.current = map; }}
-        />
-
-        {selectedIncident && (
+        {/* Records only (no live map): the selected SOS fills the rest of the screen */}
+        {selectedIncident ? (
           <IncidentDrawer
             incident={selectedIncident}
             note={operatorNote}
@@ -384,6 +285,10 @@ export default function DashboardPage() {
             onResolve={handleResolveIncident}
             onClose={() => setSelectedIncidentId(null)}
           />
+        ) : (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)', fontSize: '13px' }}>
+            Select an SOS record to see its details
+          </div>
         )}
       </div>
 
@@ -391,7 +296,6 @@ export default function DashboardPage() {
         <EmergencyAlertBanner
           alert={emergencyAlertModal}
           onClose={() => setEmergencyAlertModal(null)}
-          onReZoom={() => smoothFlyTo(emergencyAlertModal.lat, emergencyAlertModal.lng, 19)}
         />
       )}
     </div>

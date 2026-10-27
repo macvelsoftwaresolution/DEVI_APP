@@ -64,12 +64,6 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(true)
                 }
-                "setAlertContext" -> {
-                    EmergencyService.alertId = call.argument<String>("alertId")
-                    EmergencyService.apiBaseUrl = call.argument<String>("apiBaseUrl")
-                    EmergencyService.controlToken = call.argument<String>("controlToken")
-                    result.success(true)
-                }
                 "minimize" -> {
                     moveTaskToBack(true)
                     result.success(true)

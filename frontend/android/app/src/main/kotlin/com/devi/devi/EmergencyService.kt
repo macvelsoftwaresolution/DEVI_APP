@@ -35,10 +35,9 @@ import java.io.File
  * Foreground service that runs for the whole SOS:
  * - records 2 minutes of front-camera video + audio (audio-only fallback) even when the app is minimized
  *   or a phone call is in progress,
- * - keeps live location tracking allowed in the background (foreground service type "location"),
  * - shows one discreetly worded ongoing notification.
  *
- * Android only allows camera/microphone/location in the background when the foreground service is
+ * Android only allows camera/microphone in the background when the foreground service is
  * started while the app is visible, so it is started at the moment SOS is pressed.
  */
 class EmergencyService : LifecycleService() {
@@ -56,11 +55,6 @@ class EmergencyService : LifecycleService() {
         // Read by MainActivity's method channel
         @Volatile var instance: EmergencyService? = null
         @Volatile var lastFilePath: String? = null
-
-        // Set after the SOS is created, so the service can report "app closed" to the server
-        @Volatile var alertId: String? = null
-        @Volatile var apiBaseUrl: String? = null
-        @Volatile var controlToken: String? = null
 
         fun hasPermission(context: Context, permission: String) =
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
@@ -100,35 +94,8 @@ class EmergencyService : LifecycleService() {
         super.onDestroy()
     }
 
-    /**
-     * The user swiped DEVI away from recent apps during an SOS. The Flutter side (live location,
-     * evidence upload) is gone now, so tell the server (the dashboard shows "App closed") and clean up.
-     */
+    /** The user swiped DEVI away from recent apps during an SOS: stop recording and clean up. */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val id = alertId
-        val base = apiBaseUrl
-        val token = controlToken
-        if (id != null && base != null && token != null) {
-            val sender = Thread {
-                try {
-                    val conn = (java.net.URL("$base/sos/app-closed/$id").openConnection() as java.net.HttpURLConnection).apply {
-                        requestMethod = "POST"
-                        connectTimeout = 5000
-                        readTimeout = 5000
-                        doOutput = true
-                        setRequestProperty("Content-Type", "application/json")
-                        setRequestProperty("X-SOS-Token", token)
-                    }
-                    conn.outputStream.use { it.write("{}".toByteArray()) }
-                    Log.d(TAG, "App-closed reported to server: HTTP ${conn.responseCode}")
-                    conn.disconnect()
-                } catch (e: Exception) {
-                    Log.e(TAG, "Could not report app-closed", e)
-                }
-            }
-            sender.start()
-            sender.join(6000)
-        }
         stopEverything()
         super.onTaskRemoved(rootIntent)
     }
@@ -138,11 +105,6 @@ class EmergencyService : LifecycleService() {
     private fun enterForeground(record: Boolean): Boolean {
         var types = 0
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (hasPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ||
-                hasPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-            ) {
-                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && record) {
                 if (hasPermission(this, Manifest.permission.CAMERA)) {
                     types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
@@ -152,7 +114,7 @@ class EmergencyService : LifecycleService() {
                 }
             }
             if (types == 0) {
-                Log.w(TAG, "No location/camera/microphone permission: cannot run emergency service")
+                Log.w(TAG, "No camera/microphone permission: cannot run emergency service")
                 return false
             }
         }
@@ -170,7 +132,7 @@ class EmergencyService : LifecycleService() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Location sharing", NotificationManager.IMPORTANCE_LOW).apply {
+                NotificationChannel(CHANNEL_ID, "Devi Safety", NotificationManager.IMPORTANCE_LOW).apply {
                     setShowBadge(false)
                 }
             )
@@ -188,7 +150,7 @@ class EmergencyService : LifecycleService() {
         // Worded discreetly so a bystander does not see that an SOS is active
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Location sharing on")
+            .setContentTitle("Devi Safety is active")
             .setContentText("Tap to open")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -339,8 +301,6 @@ class EmergencyService : LifecycleService() {
     }
 
     private fun stopEverything() {
-        alertId = null
-        controlToken = null
         stopRecording(null)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()

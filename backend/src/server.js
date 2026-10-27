@@ -11,7 +11,6 @@ import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
 import { socketService } from './services/socket.service.js';
-import { startSignalWatchdog } from './services/signal.watchdog.js';
 
 dotenv.config();
 
@@ -85,7 +84,7 @@ app.get('/favicon.ico', (req, res) => {
 
 // Redirect frontend portal routes to Web Domain (devi.macvelsoftware.com)
 const WEB_PORTAL_URL = process.env.WEB_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://devi.macvelsoftware.com';
-app.get(['/track/:alertId', '/dashboard'], (req, res) => {
+app.get(['/dashboard'], (req, res) => {
   return res.redirect(302, `${WEB_PORTAL_URL}${req.originalUrl}`);
 });
 
@@ -111,7 +110,6 @@ app.use(errorHandler);
 // Create HTTP and WebSocket Server
 const server = http.createServer(app);
 socketService.init(server);
-startSignalWatchdog();
 
 // Start server
 server.listen(PORT, () => {

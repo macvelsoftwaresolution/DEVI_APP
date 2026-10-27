@@ -2,9 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../utils/map_utils.dart';
-import 'api_service.dart';
-import 'emergency_foreground_service.dart';
-import 'socket_service.dart';
 
 /// Result of [LocationService.checkReadiness].
 enum LocationReadiness { ready, serviceOff, permissionDenied, permissionBlocked }
@@ -30,10 +27,6 @@ class LocationResult {
 }
 
 class LocationService {
-  static StreamSubscription<Position>? _positionStreamSub;
-  static String? _activeTrackingAlertId;
-  static Timer? _heartbeatTimer;
-  static Position? _lastTrackedPosition;
 
   /// Checks permission and retrieves current GPS coordinates.
   /// Includes a strict timeout so SOS trigger is never blocked or delayed.
@@ -126,129 +119,6 @@ class LocationService {
     );
   }
 
-  /// Starts real-time continuous GPS tracking stream to push coordinates to backend.
-  static void startLiveTracking({
-    required String alertId,
-    Function(double lat, double lng)? onUpdate,
-  }) {
-    // Cancel any existing active tracking session
-    stopLiveTracking();
-
-    _activeTrackingAlertId = alertId;
-    debugPrint('🛰️ [LIVE TRACKING INITIATED] For Alert #$alertId');
-
-    // Connect Low-Bandwidth WebSocket Channel
-    SocketService.instance.connect();
-
-    late LocationSettings locationSettings;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      locationSettings = AndroidSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 2, // High-precision live tracking: updates every 2 meters
-        forceLocationManager: false, // Google Play Services FusedLocationProviderClient for high accuracy (Wi-Fi + Cell + GPS)
-        intervalDuration: const Duration(seconds: 2),
-        // Background tracking needs a foreground service. When the SOS EmergencyService is running
-        // it already covers location (one notification); otherwise use geolocator's own service.
-        // Both notifications are worded discreetly so a bystander does not see an SOS is active.
-        foregroundNotificationConfig: EmergencyForegroundService.isRunning
-            ? null
-            : const ForegroundNotificationConfig(
-                notificationTitle: 'Location sharing on',
-                notificationText: 'Tap to open',
-                enableWakeLock: true,
-                setOngoing: true,
-              ),
-      );
-    } else if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS)) {
-      locationSettings = AppleSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        activityType: ActivityType.fitness,
-        distanceFilter: 2,
-        pauseLocationUpdatesAutomatically: false,
-        showBackgroundLocationIndicator: true,
-      );
-    } else {
-      locationSettings = const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 2,
-      );
-    }
-
-    try {
-      _positionStreamSub = Geolocator.getPositionStream(
-        locationSettings: locationSettings,
-      ).listen((Position position) {
-        // Discard low-accuracy / wild jitter readings (e.g. weak indoor satellite multipath)
-        if (position.accuracy > 35.0) {
-          debugPrint('⚠️ [GPS JITTER FILTER] Skipping low-accuracy reading: ±${position.accuracy.toStringAsFixed(1)}m');
-          return;
-        }
-
-        debugPrint('📍 [LIVE GPS MOVED] Lat: ${position.latitude}, Lng: ${position.longitude}, Acc: ±${position.accuracy.toStringAsFixed(1)}m');
-        
-        onUpdate?.call(position.latitude, position.longitude);
-        _lastTrackedPosition = position;
-        _pushPosition(position);
-      }, onError: (e) {
-        debugPrint('⚠️ Error in Live Tracking stream: $e');
-      });
-    } catch (e) {
-      debugPrint('⚠️ Failed to start live tracking stream: $e');
-    }
-
-    // Heartbeat: the stream only fires after 2m of movement, so a user standing still would
-    // look "signal lost" on the dashboard. Re-send the latest position every 20s.
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
-      final position = _lastTrackedPosition ?? await _safeLastKnownPosition();
-      if (position != null) _pushPosition(position);
-    });
-  }
-
-  static Future<Position?> _safeLastKnownPosition() async {
-    if (kIsWeb) return null;
-    try {
-      return await Geolocator.getLastKnownPosition();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  // Push update to backend in real-time via low-bandwidth WebSocket stream
-  static void _pushPosition(Position position) {
-    if (_activeTrackingAlertId == null) return;
-    SocketService.instance.sendLocationUpdate(
-      alertId: _activeTrackingAlertId!,
-      latitude: position.latitude,
-      longitude: position.longitude,
-      accuracy: position.accuracy,
-      speed: position.speed,
-      heading: position.heading,
-      status: 'ACTIVE',
-    );
-  }
-
-  /// Stops the real-time continuous GPS tracking stream.
-  static Future<void> stopLiveTracking({bool resolveBackend = false}) async {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    _lastTrackedPosition = null;
-    if (_positionStreamSub != null) {
-      debugPrint('🛑 [LIVE TRACKING STOPPED]');
-      await _positionStreamSub?.cancel();
-      _positionStreamSub = null;
-    }
-
-    // Disconnect WebSocket channel
-    SocketService.instance.disconnect();
-
-    if (resolveBackend && _activeTrackingAlertId != null) {
-      await ApiService.instance.resolveEmergencyAlert(_activeTrackingAlertId!);
-    }
-
-    _activeTrackingAlertId = null;
-  }
-
-  /// Whether location can be used right now, and if not, why.
   static Future<LocationReadiness> checkReadiness() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       return LocationReadiness.serviceOff;

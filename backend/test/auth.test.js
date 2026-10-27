@@ -10,8 +10,6 @@ import {
   signSosControlToken,
   verifySosControlToken,
   canResolveSos,
-  isTrackingLinkExpired,
-  TRACKING_LINK_GRACE_MS,
 } from '../src/middlewares/auth.middleware.js';
 import { ADMIN_SECRET_KEY } from '../src/config/security.js';
 
@@ -90,23 +88,6 @@ test('canResolveSos: only the creating device, an admin or the logged-in owner c
   assert.equal(canResolveSos({ alertId, user: owner, ownerId: 'u-2' }), false);
   assert.equal(canResolveSos({ alertId, user: owner, ownerId: null }), false);
   assert.equal(canResolveSos({ alertId, user: { id: 'u-1', isGuest: true }, ownerId: 'u-1' }), false);
-});
-
-test('isTrackingLinkExpired: guardian links expire 24h after resolve, never while active', () => {
-  const now = Date.parse('2026-10-27T12:00:00Z');
-  const hoursAgo = (h) => new Date(now - h * 60 * 60 * 1000).toISOString();
-
-  assert.equal(isTrackingLinkExpired(null, now), false);
-  assert.equal(isTrackingLinkExpired({ status: 'ACTIVE', lastUpdated: hoursAgo(100) }, now), false);
-  assert.equal(isTrackingLinkExpired({ status: 'active', lastUpdated: hoursAgo(100) }, now), false);
-
-  assert.equal(isTrackingLinkExpired({ status: 'RESOLVED', resolvedTime: hoursAgo(23) }, now), false);
-  assert.equal(isTrackingLinkExpired({ status: 'RESOLVED', resolvedTime: hoursAgo(25) }, now), true);
-  // No resolve time known: falls back to the last update
-  assert.equal(isTrackingLinkExpired({ status: 'RESOLVED', lastUpdated: hoursAgo(25) }, now), true);
-  // Resolved with no usable time at all: treat as expired
-  assert.equal(isTrackingLinkExpired({ status: 'RESOLVED' }, now), true);
-  assert.equal(TRACKING_LINK_GRACE_MS, 24 * 60 * 60 * 1000);
 });
 
 test('R8: admin and user tokens are signed with different secrets', () => {

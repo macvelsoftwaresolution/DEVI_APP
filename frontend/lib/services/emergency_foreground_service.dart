@@ -29,24 +29,6 @@ class EmergencyForegroundService {
     }
   }
 
-  /// Gives the native service what it needs to tell the server if the user swipes the app away.
-  static Future<void> setAlertContext({
-    required String alertId,
-    required String apiBaseUrl,
-    String? controlToken,
-  }) async {
-    if (!isSupported || controlToken == null) return;
-    try {
-      await _channel.invokeMethod('setAlertContext', {
-        'alertId': alertId,
-        'apiBaseUrl': apiBaseUrl,
-        'controlToken': controlToken,
-      });
-    } catch (e) {
-      debugPrint('⚠️ EmergencyForegroundService.setAlertContext failed: $e');
-    }
-  }
-
   /// Stops the evidence recording and returns the recorded file path (null if none).
   static Future<String?> stopRecording() async {
     if (!isSupported) return null;

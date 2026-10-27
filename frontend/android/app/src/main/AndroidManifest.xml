@@ -1,5 +1,6 @@
 <manifest 
-    xmlns:android="http://schemas.android.com/apk/res/android">
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -8,7 +9,6 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -20,18 +20,16 @@
         android:label="Devi Safety"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        <!-- Foreground Location Service for 24/7 Background SOS GPS Tracking -->
+        <!-- No background location: the geolocator plugin's location foreground service is not used -->
         <service
             android:name="com.baseflow.geolocator.GeolocatorLocationService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="location" />
-        <!-- SOS foreground service: background evidence recording (camera + mic) and live location -->
+            tools:node="remove" />
+        <!-- SOS foreground service: background evidence recording (camera + mic). No location: the SOS sends one location -->
         <service
             android:name=".EmergencyService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="camera|microphone|location" />
+            android:foregroundServiceType="camera|microphone" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

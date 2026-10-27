@@ -105,21 +105,6 @@ export const signSosViewToken = (alertId) =>
 export const verifySosViewToken = (alertId, token) =>
   !!alertId && !!token && safeEqual(token, signSosViewToken(alertId));
 
-// Guardian links stop showing live location this long after the alert is resolved
-export const TRACKING_LINK_GRACE_MS = 24 * 60 * 60 * 1000;
-
-/**
- * True when a guardian link (view key) may no longer show this alert's location:
- * the alert is resolved and the grace period has passed. Active alerts never expire.
- * Without a known resolve time the alert's last update is used, so old alerts expire sooner, not later.
- */
-export const isTrackingLinkExpired = (session, now = Date.now()) => {
-  if (!session || String(session.status || '').toUpperCase() !== 'RESOLVED') return false;
-  const endedAt = Date.parse(session.resolvedTime || session.lastUpdated || session.timestamp || '');
-  if (Number.isNaN(endedAt)) return true;
-  return now - endedAt > TRACKING_LINK_GRACE_MS;
-};
-
 /**
  * Signs a short-lived JWT for the admin dashboard
  */

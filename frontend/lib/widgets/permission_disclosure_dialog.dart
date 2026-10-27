@@ -22,7 +22,7 @@ Future<bool> showPermissionDisclosureDialog(BuildContext context) async {
           children: [
             _Point(
               icon: Icons.my_location_rounded,
-              text: 'Devi Safety collects location data to share your live location with your '
+              text: 'Devi Safety collects location data to share your location with your '
                   'guardians and the DEVI control room during an SOS, even when the app is '
                   'closed or the screen is off.',
             ),

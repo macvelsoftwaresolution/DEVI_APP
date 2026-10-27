@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { Readable } from 'node:stream';
 import multer from 'multer';
-import { GeocodeService } from '../services/geocode.service.js';
 import { SosService } from '../services/sos.service.js';
 import { UserService } from '../services/user.service.js';
 import { uploadMediaToCloudinary, evidenceDeliveryUrl } from '../config/cloudinary.js';
@@ -15,14 +14,11 @@ import {
   signSosControlToken,
   verifySosControlToken,
   canResolveSos,
-  signSosViewToken,
   verifySosViewToken,
-  isTrackingLinkExpired,
   decodeAdminToken,
 } from '../middlewares/auth.middleware.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { socketService } from '../services/socket.service.js';
-import { broadcastSignalLost } from '../services/signal.watchdog.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -31,7 +27,7 @@ const upload = multer({
 
 const router = Router();
 
-// Only the device that created the alert may change it (resolve, move location, attach evidence).
+// Only the device that created the alert may change it (resolve, attach evidence).
 // The token comes from the X-SOS-Token header or a `controlToken` field in the payload.
 const hasSosControl = (req, alertId, payload = {}) =>
   verifySosControlToken(String(alertId), req.get('x-sos-token') || payload.controlToken);
@@ -59,10 +55,8 @@ const publicSession = (session, { includeEvidence = true } = {}) => {
   return { ...rest, evidenceUrl: includeEvidence ? evidenceLink(rest.id, rest.evidenceUrl) : null };
 };
 
-// Guardian tracking link carries the view key so evidence opens only for people who got the link
-const trackingLink = (baseUrl, alertId) => `${baseUrl}/track/${alertId}?k=${signSosViewToken(String(alertId))}`;
 
-// POST /api/sos/trigger - Dispatches emergency alert, starts live tracking, and returns tracking URL
+// POST /api/sos/trigger - Records the SOS and sends guardians its location on WhatsApp (no live tracking)
 router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next) => {
   try {
     // Transport is protected by HTTPS; the payload is plain JSON
@@ -81,18 +75,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       userPhone,
     });
 
-    const getWebBaseUrl = () => {
-      if (process.env.WEB_BASE_URL) return process.env.WEB_BASE_URL;
-      if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL;
-      const host = req.get('host') || 'localhost:5005';
-      const cleanHost = host.replace(/^devi-api\./, 'devi.');
-      return `${req.protocol}://${cleanHost}`;
-    };
-
-    const baseUrl = getWebBaseUrl();
-
     if (existingSession) {
-      const trackingUrl = trackingLink(baseUrl, existingSession.id);
       // The idempotency key is not logged: with it, /trigger hands back the alert's control token
       console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${maskPhone(userPhone)}. 🛑 Skipping duplicate SMS broadcast.`);
 
@@ -107,7 +90,6 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
         message: 'Active emergency SOS already exists. Reusing existing session.',
         data: {
           ...publicSession(existingSession),
-          trackingUrl,
           ...((isSameDevice || isOwner) && { controlToken: signSosControlToken(existingSession.id) }),
         },
       });
@@ -124,8 +106,6 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       capturedAt: captured_at,
     });
 
-    const trackingUrl = trackingLink(baseUrl, alert.id);
-    // The tracking URL carries the view key, so it is never logged
     console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${maskPhone(userPhone)}`);
 
     // Name shown in the WhatsApp: the account's own name, else the request's name stripped of links.
@@ -140,12 +120,11 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       latitude: alert.latitude,
       longitude: alert.longitude,
       location: alert.location,
-      trackingUrl,
       timestamp: alert.timestamp || new Date().toISOString(),
       status: 'ACTIVE',
     });
 
-    // STEP 3: Emergency Dispatch (WhatsApp with live tracking link).
+    // STEP 3: Emergency Dispatch (WhatsApp with the SOS location as a Google Maps link, no live tracking).
     // Wait for Meta's answer (bounded by the service timeout) so the phone learns who was NOT reached.
     // Recipients: numbers saved on the account are verified; any other number is limited (R6)
     const picked = pickSosRecipients({
@@ -182,7 +161,6 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
         }
         const out = await WhatsAppService.sendEmergencyAlert(
           r.phone,
-          trackingUrl,
           isControlRoomOnly ? `${victimName} (Instant SOS)` : victimName,
           { latitude: alert.latitude, longitude: alert.longitude, location: alert.location }
         ).catch((e) => ({ success: false, reason: 'NETWORK', error: e.message }));
@@ -208,123 +186,13 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     res.status(201).json({
       success: true,
       duplicate: false,
-      message: 'Emergency SOS alert recorded and live tracking initiated',
+      message: 'Emergency SOS alert recorded',
       data: {
         ...publicSession(liveSession || alert),
         status: 'ACTIVE',
-        trackingUrl,
         whatsapp,
         controlToken: signSosControlToken(alert.id),
       },
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /api/sos/geocode?lat=...&lng=... - Server-side secure reverse geocoding (Google Maps API + Cache)
-router.get('/geocode', async (req, res, next) => {
-  try {
-    const { lat, lng } = req.query;
-    if (!lat || !lng) {
-      return res.status(400).json({ success: false, message: 'lat and lng query parameters are required' });
-    }
-    const address = await GeocodeService.reverseGeocode(lat, lng);
-    res.json({
-      success: true,
-      address: address || 'Live Emergency Location',
-      latitude: parseFloat(lat),
-      longitude: parseFloat(lng),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/sos/live-update - Updates live GPS coordinates stream from mobile app
-router.post('/live-update', async (req, res, next) => {
-  try {
-    const reqData = req.body;
-
-    const { alertId, latitude, longitude, address, status, accuracy, acc } = reqData;
-    const finalAccuracy = accuracy != null ? parseFloat(accuracy) : (acc != null ? parseFloat(acc) : null);
-
-    if (!alertId || latitude == null || longitude == null) {
-      return res.status(400).json({
-        success: false,
-        message: 'alertId, latitude, and longitude are required',
-      });
-    }
-
-    if (!hasSosControl(req, alertId, reqData)) {
-      return rejectSosControl(res);
-    }
-
-    const session = await SosService.updateLiveLocation({
-      alertId,
-      latitude,
-      longitude,
-      accuracy: finalAccuracy,
-      address,
-      status: status || 'ACTIVE',
-    });
-
-    // Real-time broadcast to WebSockets (Zero-overhead update for guardians & dashboard)
-    socketService.broadcastLocationUpdate(alertId, {
-      alertId,
-      latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude),
-      accuracy: finalAccuracy,
-      address,
-      status: status || 'ACTIVE',
-      lastUpdated: new Date().toISOString(),
-    });
-
-    res.status(200).json({
-      success: true,
-      data: publicSession(session),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /api/sos/live/:alertId - Returns real-time coordinates and breadcrumbs for guardians
-router.get('/live/:alertId', async (req, res, next) => {
-  try {
-    const { alertId } = req.params;
-    // Without the link key anyone who learns an alert ID could follow the victim's live location.
-    // Checked before the lookup so unknown and forbidden IDs look the same.
-    const fullAccess = hasSosControl(req, alertId) || hasAdminLogin(req);
-    if (!fullAccess && !verifySosViewToken(String(alertId), req.query.k)) {
-      return res.status(403).json({
-        success: false,
-        code: 'TRACKING_KEY_REQUIRED',
-        message: 'This tracking link is incomplete. Open the full link from the WhatsApp alert.',
-      });
-    }
-
-    const session = await SosService.getLiveLocation(alertId);
-
-    if (!session) {
-      return res.status(404).json({
-        success: false,
-        message: 'Live tracking session not found or expired',
-      });
-    }
-
-    // Guardian links stop showing the location 24h after the alert is resolved
-    if (!fullAccess && isTrackingLinkExpired(session)) {
-      return res.status(410).json({
-        success: false,
-        code: 'TRACKING_LINK_EXPIRED',
-        message: 'This alert has ended and the tracking link has expired.',
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: publicSession(session),
     });
   } catch (err) {
     next(err);
@@ -443,7 +311,7 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
   }
 });
 
-// POST /api/sos/resolve/:alertId - Deactivates live tracking when user marks as safe
+// POST /api/sos/resolve/:alertId - Closes the alert when the user marks themselves safe
 router.post('/resolve/:alertId', optionalToken, async (req, res, next) => {
   try {
     const { alertId } = req.params;
@@ -480,19 +348,6 @@ router.post('/resolve/:alertId', optionalToken, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
-
-// POST /api/sos/app-closed/:alertId - Sent by the phone when the user swipes the app away during an SOS
-router.post('/app-closed/:alertId', (req, res) => {
-  const { alertId } = req.params;
-  if (!hasSosControl(req, alertId, req.body)) {
-    return rejectSosControl(res);
-  }
-
-  const session = SosService.setSignalState(alertId, { lost: true, reason: 'APP_CLOSED' });
-  console.warn(`📴 [APP CLOSED DURING SOS] Alert ${alertId}`);
-  broadcastSignalLost(session);
-  res.json({ success: true });
 });
 
 // GET /api/sos/history/:phone - Returns SOS emergency history for a user

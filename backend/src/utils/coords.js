@@ -21,7 +21,3 @@ export const toLatLng = (latitude, longitude) => {
 };
 
 export const hasFix = (latitude, longitude) => toLatLng(latitude, longitude).latitude !== null;
-
-// Breadcrumb trail starts empty when there is no fix yet
-export const initialBreadcrumbs = (latitude, longitude, timestamp) =>
-  hasFix(latitude, longitude) ? [{ latitude, longitude, timestamp }] : [];

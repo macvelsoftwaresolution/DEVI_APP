@@ -2,7 +2,8 @@ import React from 'react';
 import { X, Phone, Navigation, MapPin } from 'lucide-react';
 
 // Floating banner shown when a new SOS arrives (does not block the map)
-export default function EmergencyAlertBanner({ alert, onClose, onReZoom }) {
+export default function EmergencyAlertBanner({ alert, onClose }) {
+  const hasFix = Number.isFinite(alert.lat) && Number.isFinite(alert.lng);
   return (
     <div
       style={{
@@ -41,7 +42,7 @@ export default function EmergencyAlertBanner({ alert, onClose, onReZoom }) {
             <div style={{ fontFamily: 'Outfit, sans-serif', fontSize: '15px', fontWeight: '900', letterSpacing: '0.5px' }}>
               EMERGENCY SOS TRIGGERED!
             </div>
-            <div style={{ fontSize: '10px', opacity: 0.9 }}>Auto-Zooming Map to Victim Location...</div>
+            <div style={{ fontSize: '10px', opacity: 0.9 }}>Location sent with the SOS</div>
           </div>
         </div>
         <button
@@ -91,9 +92,13 @@ export default function EmergencyAlertBanner({ alert, onClose, onReZoom }) {
             >
               <Phone size={13} /> Call
             </a>
-            <button
-              onClick={onReZoom}
+            <a
+              href={hasFix ? `https://maps.google.com/?q=${alert.lat},${alert.lng}` : undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => { if (!hasFix) e.preventDefault(); }}
               style={{
+                textDecoration: 'none',
                 background: 'var(--bg-elevated)',
                 border: '1px solid var(--border)',
                 color: '#67E8F9',
@@ -104,11 +109,12 @@ export default function EmergencyAlertBanner({ alert, onClose, onReZoom }) {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px',
-                cursor: 'pointer',
+                cursor: hasFix ? 'pointer' : 'not-allowed',
+                opacity: hasFix ? 1 : 0.5,
               }}
             >
-              <Navigation size={13} /> Re-Zoom
-            </button>
+              <Navigation size={13} /> Open Map
+            </a>
           </div>
         </div>
 
@@ -130,9 +136,7 @@ export default function EmergencyAlertBanner({ alert, onClose, onReZoom }) {
             </span>
           </div>
           <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '10px', color: 'var(--text-dim)', flexShrink: 0, marginLeft: '8px' }}>
-            {Number.isFinite(alert.lat) && Number.isFinite(alert.lng)
-              ? `${alert.lat.toFixed(5)}, ${alert.lng.toFixed(5)}`
-              : 'GPS pending'}
+            {hasFix ? `${alert.lat.toFixed(5)}, ${alert.lng.toFixed(5)}` : 'No GPS fix'}
           </span>
         </div>
       </div>

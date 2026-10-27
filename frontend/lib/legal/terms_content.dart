@@ -6,7 +6,7 @@
 class TermsContent {
   TermsContent._();
 
-  static const String version = 'v1-draft';
+  static const String version = 'v2-draft';
   static const String lastUpdated = 'October 2026';
   static const String company = 'Macvel Software Solutions';
 
@@ -17,8 +17,8 @@ class TermsContent {
     TermsSection(
       'What DEVI does',
       'DEVI helps you ask for help in an emergency. When you press SOS, DEVI sends an alert '
-          'with your live location to the guardians you add, and to the DEVI emergency control '
-          'room when you have no guardians.',
+          'with your location at that moment to the guardians you add, and records it for the '
+          'DEVI emergency control room.',
     ),
     TermsSection(
       'DEVI is not a replacement for police or ambulance',
@@ -30,14 +30,14 @@ class TermsContent {
       'What we collect and why',
       '• Your name and mobile number, to identify you in an alert.\n'
           '• Your guardians\' names and mobile numbers, to alert them.\n'
-          '• Your location, only while an SOS is active, including when the app is in the '
-          'background or the screen is off, so your guardians can follow you on a live map.\n'
+          '• Your location, read once when you press SOS, so your guardians know where you '
+          'were. DEVI does not track your location after that.\n'
           '• Camera video and microphone audio, recorded for up to 2 minutes when you press '
           'SOS, as evidence for your guardians and the control room.',
     ),
     TermsSection(
       'Who can see your SOS data',
-      'Your guardians (through WhatsApp and a live tracking link), and authorised DEVI '
+      'Your guardians (a WhatsApp message with a map link to your SOS location), and authorised DEVI '
           'control room staff. We do not sell your data. Police may receive it only when '
           'you or your guardians ask for help, or when the law requires it.',
     ),

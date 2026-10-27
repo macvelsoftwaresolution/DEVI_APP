@@ -1,6 +1,5 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { isActiveIncident, signalLostText } from '../../utils/incidents';
 
 const WHATSAPP_REASON_TEXT = {
   TOKEN_EXPIRED: 'WhatsApp access token expired (renew it on the server)',
@@ -14,12 +13,13 @@ const WHATSAPP_REASON_TEXT = {
   CONTROL_ROOM_NOT_CONFIGURED: 'control room WhatsApp number is not set on the server (ADMIN_WHATSAPP)',
 };
 
-// Right panel for the selected incident: evidence, signal warning, victim details, notes, resolve
+// Details of the selected SOS record: evidence, WhatsApp result, victim details, location link, notes, resolve
 export default function IncidentDrawer({ incident, note, onNoteChange, onSaveNote, onResolve, onClose }) {
   return (
     <aside
       style={{
-        width: '440px',
+        flex: 1,
+        minWidth: 0,
         background: 'var(--bg-dark)',
         borderLeft: '1px solid var(--border)',
         display: 'flex',
@@ -44,26 +44,16 @@ export default function IncidentDrawer({ incident, note, onNoteChange, onSaveNot
         {/* EVIDENCE */}
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '12px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>
-            Live Evidence
+            Evidence
           </div>
           {incident.evidenceUrl ? (
             <video src={incident.evidenceUrl} controls style={{ width: '100%', height: '190px', borderRadius: '8px', objectFit: 'cover' }} />
           ) : (
             <div style={{ height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)', fontSize: '11px' }}>
-              ⏳ Video evidence recording in progress or pending upload...
+              ⏳ Video evidence not uploaded yet (recording or uploading)
             </div>
           )}
         </div>
-
-        {/* SIGNAL LOST WARNING */}
-        {incident.signalLost && isActiveIncident(incident) && (
-          <div style={{ background: 'var(--amber-soft)', border: '1px solid rgba(245, 158, 11, 0.5)', borderRadius: '10px', padding: '10px 12px' }}>
-            <div style={{ fontSize: '12px', fontWeight: '800', color: '#FBBF24' }}>⚠️ {signalLostText(incident)}</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Map shows the last known location. Call the victim or send help to this location.
-            </div>
-          </div>
-        )}
 
         {/* WHATSAPP DISPATCH RESULT */}
         {incident.whatsapp && (
@@ -114,12 +104,27 @@ export default function IncidentDrawer({ incident, note, onNoteChange, onSaveNot
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: 'var(--text-dim)' }}>GPS Accuracy</span>
               <span style={{ fontFamily: 'JetBrains Mono, monospace', color: incident.accuracy && incident.accuracy <= 10 ? '#34D399' : '#FBBF24', fontWeight: '700' }}>
-                {incident.accuracy ? `±${Math.round(incident.accuracy)} meters` : 'High Precision'}
+                {incident.accuracy ? `±${Math.round(incident.accuracy)} meters` : 'Unknown'}
               </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: 'var(--text-dim)' }}>Time</span>
+              <span style={{ fontSize: '11px' }}>{incident.displayTime}</span>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '12px' }}>
+          {incident.latitude != null && incident.longitude != null && (
+            <a
+              href={`https://maps.google.com/?q=${incident.latitude},${incident.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'block', marginTop: '12px', padding: '8px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: '#67E8F9', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textAlign: 'center', textDecoration: 'none' }}
+            >
+              📍 Open SOS location in Google Maps
+            </a>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '6px' }}>
             <a href={`tel:${incident.user?.phone}`} style={{ padding: '8px', background: 'var(--red)', color: '#FFF', borderRadius: '6px', fontSize: '11px', fontWeight: '700', textAlign: 'center', textDecoration: 'none' }}>
               📞 Call Victim
             </a>

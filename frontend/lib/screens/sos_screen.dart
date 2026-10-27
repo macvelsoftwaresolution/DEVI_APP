@@ -229,7 +229,7 @@ class _SosScreenState extends State<SosScreen>
             ],
           ),
           content: const Text(
-            'This will stop live GPS tracking, finalize emergency evidence, and mark your alert as RESOLVED for the safety desk.',
+            'This will finish the emergency evidence and mark your alert as RESOLVED for the safety desk.',
             style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.4),
           ),
           actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -272,14 +272,11 @@ class _SosScreenState extends State<SosScreen>
     });
     _appState.clearActiveEmergency();
 
-    // 1. Stop live GPS tracking and resolve in backend
-    await LocationService.stopLiveTracking(resolveBackend: true);
-
-    // 2. Stop 2-minute emergency recording and finalize evidence upload
+    // 1. Stop 2-minute emergency recording and finalize evidence upload
     await EmergencyMediaService.instance.stopEmergencyRecording();
     await EmergencyForegroundService.stop();
 
-    // 3. Directly call backend resolve if alertId was tracked
+    // 2. Resolve the alert in the backend
     if (alertId != null && alertId.isNotEmpty) {
       await ApiService.instance.resolveEmergencyAlert(alertId);
     }
@@ -414,9 +411,8 @@ class _SosScreenState extends State<SosScreen>
       final delivered = alertData != null && alertData['id'] != null;
       final isDuplicate = delivered && alertData['duplicate'] == true;
 
-      // 4. Only a real server alert ID is used for tracking and evidence. If the server could
+      // 4. Only a real server alert ID is used for evidence. If the server could
       // not be reached, nothing is bound yet: a background retry binds it once delivered.
-      // Wait for the recording start so tracking can reuse the SOS foreground service.
       await recordingStarted;
       final alertId = delivered ? alertData['id'].toString() : initialId;
       _pressStartTime = null;
@@ -454,16 +450,10 @@ class _SosScreenState extends State<SosScreen>
     }
   }
 
-  // --- Attach live tracking & evidence to the server's real alert ID ---
+  // --- Attach evidence to the server's real alert ID (no live tracking: the SOS carries one location) ---
   Future<void> _bindDeliveredAlert(String alertId, {dynamic whatsapp}) async {
     _applyWhatsAppResult(whatsapp);
     EmergencyMediaService.instance.setAlertId(alertId);
-    LocationService.startLiveTracking(alertId: alertId);
-    await EmergencyForegroundService.setAlertContext(
-      alertId: alertId,
-      apiBaseUrl: ApiService.baseUrl,
-      controlToken: ApiService.instance.sosControlToken(alertId),
-    );
     if (mounted) {
       setState(() {
         _activeAlertId = alertId;

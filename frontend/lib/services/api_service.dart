@@ -42,8 +42,8 @@ class ApiService {
   // Error message from the last failed profile save (shown to the user)
   String? lastProfileError;
 
-  // Per-alert control tokens from /sos/trigger. Only this device can resolve the alert,
-  // move its live location, or attach evidence.
+  // Per-alert control tokens from /sos/trigger. Only this device can resolve the alert
+  // or attach evidence.
   final Map<String, String> _sosControlTokens = {};
 
   String? sosControlToken(String alertId) => _sosControlTokens[alertId];
@@ -283,42 +283,6 @@ class ApiService {
       debugPrint('API SOS Trigger Error: $e');
     }
     return null;
-  }
-
-  // --- SOS: Push Real-Time Live Location Update ---
-  Future<bool> updateLiveLocation({
-    required String alertId,
-    required double latitude,
-    required double longitude,
-    double? accuracy,
-    String? address,
-    String status = 'ACTIVE',
-  }) async {
-    try {
-      final payload = <String, dynamic>{
-        'alertId': alertId,
-        'latitude': latitude,
-        'longitude': longitude,
-        'address': address,
-        'status': status,
-      };
-      if (accuracy != null) {
-        payload['accuracy'] = accuracy;
-      }
-
-      final res = await http
-          .post(
-            Uri.parse('$baseUrl/sos/live-update'),
-            headers: _sosHeaders(alertId),
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 5));
-
-      return res.statusCode == 200;
-    } catch (e) {
-      debugPrint('API Live Location Update Error: $e');
-      return false;
-    }
   }
 
   // --- SOS: Resolve / Deactivate Alert ---

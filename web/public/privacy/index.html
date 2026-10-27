@@ -50,10 +50,10 @@
   <header>
     <div class="brand">DEVI · Women Safety</div>
     <h1>Privacy Policy</h1>
-    <p class="meta">Last updated: October 2026 · Applies to the DEVI Android app, the guardian tracking page and the DEVI control room.</p>
+    <p class="meta">Last updated: October 2026 · Applies to the DEVI Android app and the DEVI control room.</p>
   </header>
 
-  <p>DEVI is a personal safety app made by <strong>Macvel Software Solutions</strong> (“we”, “us”). When you press SOS, DEVI alerts the people you trust with your live location and records short evidence. This policy explains what we collect, why, who sees it and how you can control it.</p>
+  <p>DEVI is a personal safety app made by <strong>Macvel Software Solutions</strong> (“we”, “us”). When you press SOS, DEVI alerts the people you trust with your location at that moment and records short evidence. This policy explains what we collect, why, who sees it and how you can control it.</p>
 
   <div class="summary">
     <strong>In short</strong>
@@ -73,7 +73,7 @@
         <tr><td>Your name and mobile number</td><td>When you sign up, or your name in the first-run setup</td><td>To show who needs help in an alert, and to sign you in</td></tr>
         <tr><td>Your address (optional)</td><td>If you add it to your profile</td><td>To help responders find you</td></tr>
         <tr><td>Guardians’ names and mobile numbers</td><td>When you add guardians</td><td>To send them your SOS alert</td></tr>
-        <tr><td>Precise location (GPS), accuracy and time</td><td><strong>Only from the moment you trigger SOS until you mark yourself safe</strong>, including when the app is in the background or the screen is off</td><td>To share your live position and route with your guardians and the control room</td></tr>
+        <tr><td>Precise location (GPS), accuracy and time</td><td><strong>Once, at the moment you trigger SOS.</strong> DEVI does not follow your location after that</td><td>To tell your guardians and the control room where you were when you asked for help</td></tr>
         <tr><td>Camera video and microphone audio</td><td>Up to 2 minutes, starting when you trigger SOS</td><td>Evidence for your guardians, the control room and, if you choose, the police</td></tr>
         <tr><td>SOS history</td><td>Each SOS you trigger</td><td>So you and the control room can review past alerts</td></tr>
         <tr><td>Guest ID</td><td>If you use Instant SOS without an account</td><td>A random ID that links your alerts and guardians without a phone number</td></tr>
@@ -86,16 +86,16 @@
 
   <h3>Permissions the app asks for</h3>
   <ul>
-    <li><strong>Location</strong>: to share your position during an SOS. Once you press SOS, a running notification keeps sharing it even when the screen is off or the app is closed. It is not used outside an SOS.</li>
+    <li><strong>Location</strong>: read once, when you press SOS, to send where you are. DEVI does not track your location in the background and does not use it outside an SOS.</li>
     <li><strong>Camera and microphone</strong>: to record SOS evidence.</li>
     <li><strong>Phone calls</strong>: to call your guardian directly when you press SOS.</li>
     <li><strong>Contacts (optional)</strong>: to let you pick a guardian from your phone’s contact list. Your contact list is read only on your phone; only the guardian you choose is saved and sent to our server. You can type the number instead and deny this permission.</li>
-    <li><strong>Notifications</strong>: to keep the SOS running in the background. During an SOS the notification reads “Location sharing on”, without the word SOS, so a person near you is less likely to notice an alert.</li>
+    <li><strong>Notifications</strong>: to keep evidence recording running when the app is in the background. During an SOS the notification reads “Devi Safety is active”, without the word SOS, so a person near you is less likely to notice an alert.</li>
   </ul>
 
   <h2>2. Who can see your information</h2>
   <ul>
-    <li><strong>Your guardians.</strong> They receive a WhatsApp message with your name, the alert time and a private tracking link. The link shows your live location, route and evidence. Anyone your guardian forwards the link to can also open it, so ask guardians not to share it.</li>
+    <li><strong>Your guardians.</strong> They receive a WhatsApp message with your name, the alert time and a Google Maps link to the place where you pressed SOS. They do not get live location updates or your evidence.</li>
     <li><strong>DEVI control room staff.</strong> Authorised operators can see active and past alerts, your profile details, location and evidence, so they can coordinate help.</li>
     <li><strong>Police or emergency services</strong>, when you or your guardians ask for help, or when the law requires us to share information.</li>
     <li><strong>Service providers</strong> that run parts of DEVI for us. They process data only to provide their service:
@@ -104,7 +104,7 @@
         <li>Cloudinary: private storage for evidence video and audio</li>
         <li>Meta (WhatsApp Business Platform): delivers SOS messages to guardians</li>
         <li>Google Maps Platform and BigDataCloud: turn coordinates into a readable address</li>
-        <li>OpenStreetMap (Nominatim) and OSRM: address lookup and driving routes on the guardian tracking page. To draw a route, the guardian’s own browser location is sent to OSRM; we do not store it</li>
+        <li>OpenStreetMap (Nominatim): turns coordinates into a readable address</li>
       </ul>
     </li>
   </ul>
@@ -121,7 +121,6 @@
 
   <h2>4. How long we keep it</h2>
   <ul>
-    <li><strong>Live movement trail:</strong> kept in server memory only while the SOS is active.</li>
     <li><strong>Account, guardians, SOS history and evidence:</strong> kept until you ask us to delete them, or longer only if the law requires it (for example, an ongoing police case).</li>
     <li><strong>Data on your phone:</strong> removed when you uninstall the app.</li>
   </ul>
