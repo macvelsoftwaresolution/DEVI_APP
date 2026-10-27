@@ -12,6 +12,7 @@ import {
   optionalToken,
   signSosControlToken,
   verifySosControlToken,
+  canResolveSos,
   signSosViewToken,
   verifySosViewToken,
   decodeAdminToken,
@@ -427,6 +428,17 @@ router.post('/upload-evidence', upload.single('file'), async (req, res, next) =>
 router.post('/resolve/:alertId', optionalToken, async (req, res, next) => {
   try {
     const { alertId } = req.params;
+    const auth = req.get('authorization') || '';
+    const allowed = canResolveSos({
+      alertId,
+      controlToken: req.get('x-sos-token') || req.body?.controlToken,
+      adminToken: auth.startsWith('Bearer ') ? auth.slice(7) : null,
+      user: req.user,
+      ownerId: req.user ? await SosService.getAlertOwnerId(alertId) : null,
+    });
+    if (!allowed) {
+      return rejectSosControl(res);
+    }
 
     const session = await SosService.resolveSosAlert(alertId);
 
