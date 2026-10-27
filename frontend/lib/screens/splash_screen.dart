@@ -60,7 +60,8 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Permissions are asked only after the terms screen has explained why they are needed.
     // First-run users get the request from the terms screen instead.
-    if (await OnboardingService.hasAcceptedCurrentTerms()) {
+    if (await OnboardingService.hasAcceptedCurrentTerms() &&
+        await OnboardingService.hasAcceptedPermissionDisclosure()) {
       try {
         await PermissionService.requestAllSafetyPermissions();
       } catch (e) {

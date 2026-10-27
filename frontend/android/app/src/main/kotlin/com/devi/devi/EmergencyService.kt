@@ -170,7 +170,7 @@ class EmergencyService : LifecycleService() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Reminders", NotificationManager.IMPORTANCE_LOW).apply {
+                NotificationChannel(CHANNEL_ID, "Location sharing", NotificationManager.IMPORTANCE_LOW).apply {
                     setShowBadge(false)
                 }
             )
@@ -188,8 +188,8 @@ class EmergencyService : LifecycleService() {
         // Worded discreetly so a bystander does not see that an SOS is active
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Daily Reminder")
-            .setContentText("Your reminder is active. Tap to open.")
+            .setContentTitle("Location sharing on")
+            .setContentText("Tap to open")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setOngoing(true)

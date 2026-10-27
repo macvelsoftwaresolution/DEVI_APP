@@ -10,6 +10,7 @@ class OnboardingService {
   static const String _keyTermsVersion = 'devi_terms_version';
   static const String _keyTermsAcceptedAt = 'devi_terms_accepted_at';
   static const String _keySetupDone = 'devi_quick_setup_done';
+  static const String _keyDisclosureAccepted = 'devi_permission_disclosure_accepted';
 
   /// True only when the CURRENT terms version was accepted. A new version is shown again.
   static Future<bool> hasAcceptedCurrentTerms() async {
@@ -26,6 +27,22 @@ class OnboardingService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyTermsVersion, TermsContent.version);
     await prefs.setString(_keyTermsAcceptedAt, DateTime.now().toUtc().toIso8601String());
+  }
+
+  /// True once the user tapped Continue on the location/camera/microphone disclosure
+  static Future<bool> hasAcceptedPermissionDisclosure() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyDisclosureAccepted) ?? false;
+    } catch (e) {
+      debugPrint('Onboarding: could not read disclosure state: $e');
+      return false;
+    }
+  }
+
+  static Future<void> acceptPermissionDisclosure() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyDisclosureAccepted, true);
   }
 
   static Future<bool> isSetupDone() async {

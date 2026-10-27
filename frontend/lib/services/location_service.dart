@@ -153,8 +153,8 @@ class LocationService {
         foregroundNotificationConfig: EmergencyForegroundService.isRunning
             ? null
             : const ForegroundNotificationConfig(
-                notificationTitle: 'Daily Reminder',
-                notificationText: 'Your reminder is active. Tap to open.',
+                notificationTitle: 'Location sharing on',
+                notificationText: 'Tap to open',
                 enableWakeLock: true,
                 setOngoing: true,
               ),

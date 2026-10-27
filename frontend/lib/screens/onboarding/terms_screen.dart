@@ -4,6 +4,7 @@ import '../../services/onboarding_service.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/devi_button.dart';
+import '../../widgets/permission_disclosure_dialog.dart';
 import 'onboarding_flow.dart';
 
 class TermsScreen extends StatefulWidget {
@@ -22,12 +23,17 @@ class _TermsScreenState extends State<TermsScreen> {
     setState(() => _saving = true);
     await OnboardingService.acceptTerms();
 
-    // Permissions are requested only now, after the user has read what location,
-    // camera and microphone are used for (Play Store "prominent disclosure").
-    try {
-      await PermissionService.requestAllSafetyPermissions();
-    } catch (e) {
-      debugPrint('Error requesting safety permissions after terms: $e');
+    // Prominent disclosure (Google Play User Data policy): a separate dialog immediately
+    // before the system prompts. "Not now" skips them; the SOS screen asks for location later.
+    if (!mounted) return;
+    final allowed = await showPermissionDisclosureDialog(context);
+    if (allowed) {
+      await OnboardingService.acceptPermissionDisclosure();
+      try {
+        await PermissionService.requestAllSafetyPermissions();
+      } catch (e) {
+        debugPrint('Error requesting safety permissions after terms: $e');
+      }
     }
 
     final next = await OnboardingFlow.afterTerms(isLoggedIn: widget.isLoggedIn);
