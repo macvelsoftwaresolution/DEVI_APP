@@ -33,7 +33,7 @@ class DeviApp extends StatelessWidget {
         systemNavigationBarIconBrightness: Brightness.dark,
       ),
       child: MaterialApp(
-        title: 'DEVI Women Safety',
+        title: 'Devi Safety',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         builder: (context, child) {

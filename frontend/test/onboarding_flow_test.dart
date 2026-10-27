@@ -40,6 +40,14 @@ void main() {
     await tester.tap(find.text('Agree & Continue'));
     await tester.pumpAndSettle();
 
+    // Prominent disclosure appears before any system permission prompt
+    expect(find.text('Location, camera & microphone'), findsOneWidget);
+    expect(find.textContaining('even when the app is closed'), findsOneWidget);
+    expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isTrue);
+
     // Step 2: quick setup — validation, then save
     expect(find.byType(QuickSetupScreen), findsOneWidget);
     await tester.tap(find.text('Save & Continue'));
@@ -89,6 +97,30 @@ void main() {
     expect(find.text('OR'), findsNothing);
     // Backing out without signing in keeps setup pending
     expect(await OnboardingService.isSetupDone(), isFalse);
+  });
+
+  testWidgets('"Not now" on the disclosure skips permission prompts', (tester) async {
+    var permissionCalls = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('com.devi.app/sms'), (call) async {
+      permissionCalls++;
+      return true;
+    });
+    tester.view.physicalSize = const Size(1440, 3200);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(const MaterialApp(home: TermsScreen(isLoggedIn: false)));
+    await tester.tap(find.byType(Checkbox));
+    await tester.pump();
+    await tester.tap(find.text('Agree & Continue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Not now'));
+    await tester.pumpAndSettle();
+
+    expect(permissionCalls, 0, reason: 'no system prompt without accepting the disclosure');
+    expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
+    expect(find.byType(QuickSetupScreen), findsOneWidget);
   });
 
   test('logged-in users skip quick setup; a new terms version is asked again', () async {
