@@ -25,6 +25,14 @@ class EmergencyMediaService extends ChangeNotifier {
   String? _currentAlertId;
   String? _localFilePath;
   bool _isUploading = false;
+  String? _uploadingPath;
+
+  // Waits before each retry of a failed evidence upload
+  static const List<Duration> _uploadRetryDelays = [
+    Duration(seconds: 10),
+    Duration(seconds: 30),
+    Duration(seconds: 60),
+  ];
 
   AudioPlayer? _audioPlayer;
   bool _isPlayingAudio = false;
@@ -170,43 +178,61 @@ class EmergencyMediaService extends ChangeNotifier {
       return;
     }
 
+    // setAlertId() and stopEmergencyRecording() can both start an upload of the same file
+    if (_uploadingPath == localOrBlobUrl) return;
+    _uploadingPath = localOrBlobUrl;
     _isUploading = true;
     notifyListeners();
 
     try {
-      debugPrint('☁️ Uploading emergency evidence for Alert #$alertId to Cloudinary (File: $localOrBlobUrl)...');
+      // First try plus one retry per delay: a failed upload must not leave the evidence only on the phone
       String? remoteUrl;
-
-      if (kIsWeb && localOrBlobUrl.startsWith('blob:')) {
-        // Fetch recorded web Blob into raw bytes
-        final response = await http.get(Uri.parse(localOrBlobUrl));
-        if (response.statusCode == 200) {
-          remoteUrl = await ApiService.instance.uploadEmergencyEvidence(
-            alertId: alertId,
-            fileBytes: response.bodyBytes,
-            fileName: 'devi_sos_${alertId}_evidence.webm',
-          );
+      for (var attempt = 0; attempt <= _uploadRetryDelays.length; attempt++) {
+        if (attempt > 0) {
+          final wait = _uploadRetryDelays[attempt - 1];
+          debugPrint('🔁 Evidence upload failed, retry $attempt/${_uploadRetryDelays.length} in ${wait.inSeconds}s');
+          await Future.delayed(wait);
         }
-      } else {
-        // Native mobile file path
-        remoteUrl = await ApiService.instance.uploadEmergencyEvidence(
-          alertId: alertId,
-          filePath: localOrBlobUrl,
-          fileName: 'devi_sos_${alertId}_evidence.mp4',
-        );
+        remoteUrl = await _uploadOnce(alertId, localOrBlobUrl);
+        if (remoteUrl != null && remoteUrl.isNotEmpty) break;
       }
 
       if (remoteUrl != null && remoteUrl.isNotEmpty) {
         _lastRecordedUrl = remoteUrl;
         debugPrint('✅ Evidence successfully uploaded and accessible at: $remoteUrl');
       } else {
-        debugPrint('ℹ️ Cloud upload response empty, keeping local playable path: $localOrBlobUrl');
+        debugPrint('ℹ️ Evidence upload failed after all retries, keeping local playable path: $localOrBlobUrl');
       }
-    } catch (e) {
-      debugPrint('⚠️ Error uploading evidence to Cloudinary: $e');
     } finally {
+      _uploadingPath = null;
       _isUploading = false;
       notifyListeners();
+    }
+  }
+
+  /// One upload attempt; returns the server's evidence link, or null when it failed
+  Future<String?> _uploadOnce(String alertId, String localOrBlobUrl) async {
+    try {
+      debugPrint('☁️ Uploading emergency evidence for Alert #$alertId to Cloudinary (File: $localOrBlobUrl)...');
+      if (kIsWeb && localOrBlobUrl.startsWith('blob:')) {
+        // Fetch recorded web Blob into raw bytes
+        final response = await http.get(Uri.parse(localOrBlobUrl));
+        if (response.statusCode != 200) return null;
+        return await ApiService.instance.uploadEmergencyEvidence(
+          alertId: alertId,
+          fileBytes: response.bodyBytes,
+          fileName: 'devi_sos_${alertId}_evidence.webm',
+        );
+      }
+      // Native mobile file path
+      return await ApiService.instance.uploadEmergencyEvidence(
+        alertId: alertId,
+        filePath: localOrBlobUrl,
+        fileName: 'devi_sos_${alertId}_evidence.mp4',
+      );
+    } catch (e) {
+      debugPrint('⚠️ Error uploading evidence to Cloudinary: $e');
+      return null;
     }
   }
 

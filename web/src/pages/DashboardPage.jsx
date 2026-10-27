@@ -29,6 +29,11 @@ export default function DashboardPage() {
   const prevActiveIdsRef = useRef(new Set());
   const initialLoadRef = useRef(true);
   const wsRef = useRef(null);
+  // Latest selection, for callbacks created on mount (poll interval, WebSocket handlers)
+  const selectedIdRef = useRef(null);
+  useEffect(() => {
+    selectedIdRef.current = selectedIncidentId;
+  }, [selectedIncidentId]);
 
   // Digital Clock
   useEffect(() => {
@@ -121,7 +126,9 @@ export default function DashboardPage() {
         });
         prevActiveIdsRef.current = currentActive;
 
-        if (!selectedIncidentId && data.incidents.length > 0) {
+        // Read the ref: this function is also run from the mount-time poll and WebSocket handlers,
+        // where selectedIncidentId is still the first render's value (null)
+        if (!selectedIdRef.current && data.incidents.length > 0) {
           const activeOrAssigned = data.incidents.find((i) => isActiveIncident(i));
           if (activeOrAssigned) {
             setSelectedIncidentId(activeOrAssigned.id);

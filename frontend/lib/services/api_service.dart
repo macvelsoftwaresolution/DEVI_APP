@@ -413,7 +413,9 @@ class ApiService {
         return null;
       }
 
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
+      // A 2-minute video is ~35 MB: on mobile data the upload plus the server's own upload to
+      // Cloudinary takes well over 30 seconds, so allow up to 5 minutes before giving up
+      final streamedResponse = await request.send().timeout(const Duration(minutes: 5));
       final res = await http.Response.fromStream(streamedResponse);
 
       if (res.statusCode == 200 || res.statusCode == 201) {
