@@ -121,31 +121,10 @@ export const isTrackingLinkExpired = (session, now = Date.now()) => {
 };
 
 /**
- * Signs a short-lived JWT for the admin dashboard, for one operator account (admins table)
+ * Signs a short-lived JWT for the admin dashboard
  */
-export const signAdminToken = (admin) =>
-  jwt.sign(
-    { role: 'admin', adminId: admin.id, username: admin.username, adminRole: admin.role },
-    ADMIN_JWT_SECRET,
-    { expiresIn: ADMIN_TOKEN_EXPIRY }
-  );
-
-/**
- * Between the password step and the 6-digit code step of the admin login: proves the password
- * was right, for 5 minutes, and is useless as a dashboard token (no role).
- */
-const ADMIN_2FA_PURPOSE = 'admin-2fa';
-export const signAdmin2faChallenge = (adminId) =>
-  jwt.sign({ purpose: ADMIN_2FA_PURPOSE, adminId }, ADMIN_JWT_SECRET, { expiresIn: '5m' });
-
-export const verifyAdmin2faChallenge = (challenge) => {
-  try {
-    const decoded = jwt.verify(String(challenge || ''), ADMIN_JWT_SECRET);
-    return decoded.purpose === ADMIN_2FA_PURPOSE && decoded.adminId ? decoded.adminId : null;
-  } catch {
-    return null;
-  }
-};
+export const signAdminToken = (username) =>
+  jwt.sign({ role: 'admin', username }, ADMIN_JWT_SECRET, { expiresIn: ADMIN_TOKEN_EXPIRY });
 
 /**
  * Returns the decoded admin payload if the token is a valid admin JWT, otherwise null

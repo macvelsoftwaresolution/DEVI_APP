@@ -3,7 +3,6 @@ import { Router } from 'express';
 import { DashboardService } from '../services/dashboard.service.js';
 import { SosService } from '../services/sos.service.js';
 import { socketService } from '../services/socket.service.js';
-import { AdminService } from '../services/admin.service.js';
 
 const router = Router();
 
@@ -30,7 +29,6 @@ router.post('/add-note', async (req, res, next) => {
     }
 
     const updated = await DashboardService.addIncidentNote(alertId, note);
-    await AdminService.audit({ admin: req.adminAccount, username: req.admin.username, action: 'add_note', alertId, ip: req.ip });
     res.json({
       success: true,
       message: 'Operator note logged successfully',
@@ -46,7 +44,6 @@ router.post('/resolve/:alertId', async (req, res, next) => {
   try {
     const { alertId } = req.params;
     const session = await SosService.resolveSosAlert(alertId);
-    await AdminService.audit({ admin: req.adminAccount, username: req.admin.username, action: 'resolve', alertId, ip: req.ip });
     try {
       socketService.broadcastToRoom('dashboard', {
         type: 'incident:resolved',

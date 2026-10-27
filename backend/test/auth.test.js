@@ -15,8 +15,6 @@ import {
 } from '../src/middlewares/auth.middleware.js';
 import { ADMIN_SECRET_KEY } from '../src/config/security.js';
 
-const TEST_ADMIN = { id: 'admin-1', username: 'ops1', role: 'operator' };
-
 // Minimal Express req/res doubles
 const mockReq = (headers = {}) => ({ headers, get: (name) => headers[name.toLowerCase()] });
 const mockRes = () => {
@@ -48,14 +46,14 @@ test('SOS control token only works for its own alert', () => {
 });
 
 test('admin token decodes as admin, user token does not', () => {
-  assert.equal(decodeAdminToken(signAdminToken(TEST_ADMIN))?.role, 'admin');
+  assert.equal(decodeAdminToken(signAdminToken('admin'))?.role, 'admin');
   assert.equal(decodeAdminToken(signUserToken({ id: 1, name: 'A' }, '9876543210')), null);
   assert.equal(decodeAdminToken('not-a-token'), null);
   assert.equal(decodeAdminToken(undefined), null);
 });
 
 test('verifyAdmin accepts admin token or x-admin-key, rejects others', () => {
-  assert.equal(runMiddleware(verifyAdmin, mockReq({ authorization: `Bearer ${signAdminToken(TEST_ADMIN)}` })).nextCalled, true);
+  assert.equal(runMiddleware(verifyAdmin, mockReq({ authorization: `Bearer ${signAdminToken('admin')}` })).nextCalled, true);
   assert.equal(runMiddleware(verifyAdmin, mockReq({ 'x-admin-key': ADMIN_SECRET_KEY })).nextCalled, true);
 
   const userToken = signUserToken({ id: 1 }, '9876543210');
@@ -85,7 +83,7 @@ test('canResolveSos: only the creating device, an admin or the logged-in owner c
   assert.equal(canResolveSos({ alertId, controlToken: signSosControlToken('43') }), false);
 
   assert.equal(canResolveSos({ alertId, controlToken: signSosControlToken(alertId) }), true);
-  assert.equal(canResolveSos({ alertId, adminToken: signAdminToken(TEST_ADMIN) }), true);
+  assert.equal(canResolveSos({ alertId, adminToken: signAdminToken('admin') }), true);
 
   const owner = { id: 'u-1', isGuest: false };
   assert.equal(canResolveSos({ alertId, user: owner, ownerId: 'u-1' }), true);
@@ -112,7 +110,7 @@ test('isTrackingLinkExpired: guardian links expire 24h after resolve, never whil
 });
 
 test('R8: admin and user tokens are signed with different secrets', () => {
-  const adminToken = signAdminToken(TEST_ADMIN);
+  const adminToken = signAdminToken('admin');
   const userToken = signUserToken({ id: 1 }, '9876543210');
   // An admin token is not a user login, and a user token is not an admin login
   assert.equal(runMiddleware(verifyToken, mockReq({ authorization: `Bearer ${adminToken}` })).res.statusCode, 403);

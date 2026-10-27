@@ -7,7 +7,6 @@ import dashboardRoutes from './dashboard.routes.js';
 import adminRoutes from './admin.routes.js';
 import { authLimiter } from '../middlewares/rateLimiter.js';
 import { verifyAdmin } from '../middlewares/auth.middleware.js';
-import { requireActiveAdmin } from '../middlewares/adminSession.js';
 
 const router = Router();
 
@@ -16,6 +15,6 @@ router.use('/auth', authLimiter, authRoutes);
 router.use('/admin', adminRoutes);
 router.use('/user', userRoutes);
 router.use('/sos', sosRoutes);
-router.use('/dashboard', verifyAdmin, requireActiveAdmin, dashboardRoutes);
+router.use('/dashboard', verifyAdmin, dashboardRoutes);
 
 export default router;

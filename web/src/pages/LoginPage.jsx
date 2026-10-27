@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { Lock, User, LogIn } from 'lucide-react';
 import { apiUrl, getAdminToken, setAdminToken } from '../config/api';
 
 const inputWrapStyle = {
@@ -38,58 +38,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  // Second step after a correct password: 'totp' (enter code) or 'setup' (first sign-in, add to an app)
-  const [step, setStep] = useState('password');
-  const [challenge, setChallenge] = useState('');
-  const [setup, setSetup] = useState(null); // { secret, otpauthUrl }
-  const [code, setCode] = useState('');
 
   // Already signed in: go straight to the dashboard
   if (getAdminToken()) {
     return <Navigate to="/dashboard" replace />;
   }
-
-  const backToPassword = () => {
-    setStep('password');
-    setChallenge('');
-    setSetup(null);
-    setCode('');
-    setPassword('');
-    setError('');
-  };
-
-  // Step 2: the 6-digit code from the authenticator app
-  const handleCodeSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!/^\d{6}$/.test(code.trim())) {
-      setError('Enter the 6-digit code from your authenticator app');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      const res = await fetch(apiUrl('/api/admin/login/verify'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ challenge, code: code.trim() }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success && data.token) {
-        setAdminToken(data.token);
-        navigate('/dashboard', { replace: true });
-      } else if (res.status === 401 && /expired/i.test(data.message || '')) {
-        backToPassword();
-        setError(data.message);
-      } else {
-        setError(data.message || 'Login failed');
-        setCode('');
-      }
-    } catch {
-      setError('Unable to reach server. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -107,11 +60,9 @@ export default function LoginPage() {
         body: JSON.stringify({ username: username.trim(), password }),
       });
       const data = await res.json();
-      if (res.ok && data.success && (data.step === 'totp' || data.step === 'setup')) {
-        setChallenge(data.challenge);
-        setSetup(data.step === 'setup' ? { secret: data.secret, otpauthUrl: data.otpauthUrl } : null);
-        setStep(data.step);
-        setCode('');
+      if (res.ok && data.success && data.token) {
+        setAdminToken(data.token);
+        navigate('/dashboard', { replace: true });
       } else {
         setError(data.message || 'Login failed');
       }
@@ -121,8 +72,6 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
-
-  const isCodeStep = step === 'totp' || step === 'setup';
 
   return (
     <div
@@ -136,7 +85,7 @@ export default function LoginPage() {
       }}
     >
       <form
-        onSubmit={isCodeStep ? handleCodeSubmit : handleSubmit}
+        onSubmit={handleSubmit}
         style={{
           width: '380px',
           maxWidth: '100%',
@@ -167,65 +116,9 @@ export default function LoginPage() {
           <h1 style={{ fontFamily: 'Outfit, sans-serif', fontSize: '20px', fontWeight: '800', color: 'var(--text)' }}>
             DEVI Response Center
           </h1>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            {step === 'setup' ? 'Set up two-step verification' : step === 'totp' ? 'Two-step verification' : 'Admin sign in'}
-          </p>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>Admin sign in</p>
         </div>
 
-        {step === 'setup' && setup && (
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '14px' }}>
-            <p style={{ marginBottom: '8px' }}>
-              First sign-in: open Google Authenticator or Microsoft Authenticator, choose{' '}
-              <strong style={{ color: 'var(--text)' }}>Enter a setup key</strong>, and type this key:
-            </p>
-            <div
-              style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: '14px',
-                fontWeight: '700',
-                color: 'var(--text)',
-                background: 'var(--bg-dark)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-                padding: '10px',
-                textAlign: 'center',
-                letterSpacing: '1px',
-                wordBreak: 'break-all',
-                userSelect: 'all',
-              }}
-            >
-              {setup.secret.match(/.{1,4}/g).join(' ')}
-            </div>
-            <p style={{ marginTop: '8px' }}>
-              On a phone with the app installed you can also{' '}
-              <a href={setup.otpauthUrl} style={{ color: 'var(--blue)' }}>open it directly</a>.
-              Then enter the 6-digit code the app shows.
-            </p>
-          </div>
-        )}
-
-        {isCodeStep && (
-          <div style={{ marginBottom: '18px' }}>
-            <label style={labelStyle} htmlFor="admin-code">6-digit code</label>
-            <div style={inputWrapStyle}>
-              <ShieldCheck size={16} color="var(--text-dim)" />
-              <input
-                id="admin-code"
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                autoFocus
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                style={{ ...inputStyle, letterSpacing: '4px', fontFamily: 'JetBrains Mono, monospace' }}
-              />
-            </div>
-          </div>
-        )}
-
-        {!isCodeStep && (
-        <>
         <div style={{ marginBottom: '14px' }}>
           <label style={labelStyle} htmlFor="admin-username">Username</label>
           <div style={inputWrapStyle}>
@@ -256,8 +149,6 @@ export default function LoginPage() {
             />
           </div>
         </div>
-        </>
-        )}
 
         {error && (
           <div
@@ -298,30 +189,8 @@ export default function LoginPage() {
           }}
         >
           <LogIn size={16} />
-          {isLoading ? 'Signing in...' : isCodeStep ? 'Verify' : 'Sign In'}
+          {isLoading ? 'Signing in...' : 'Sign In'}
         </button>
-
-        {isCodeStep && (
-          <button
-            type="button"
-            onClick={backToPassword}
-            style={{
-              width: '100%',
-              marginTop: '10px',
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-muted)',
-              fontSize: '12px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-            }}
-          >
-            <ArrowLeft size={14} /> Use a different account
-          </button>
-        )}
       </form>
     </div>
   );
