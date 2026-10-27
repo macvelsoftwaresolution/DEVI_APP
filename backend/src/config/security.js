@@ -62,6 +62,25 @@ if (isProduction && !whatsappVerifyToken) {
 }
 export const WHATSAPP_VERIFY_TOKEN = whatsappVerifyToken || (isProduction ? null : 'devi_whatsapp_dev_verify_token');
 
+/**
+ * Tells a Supabase server key from a public one: 'secret' (sb_secret_… or legacy service_role JWT),
+ * 'public' (sb_publishable_… or legacy anon JWT) or 'unknown'.
+ * The tables have Row Level Security on with no policies, so only a secret key can read or write them.
+ */
+export const supabaseKeyKind = (key) => {
+  const k = (key || '').trim();
+  if (k.startsWith('sb_secret_')) return 'secret';
+  if (k.startsWith('sb_publishable_')) return 'public';
+  try {
+    const role = JSON.parse(Buffer.from(k.split('.')[1], 'base64url').toString('utf8')).role;
+    if (role === 'service_role') return 'secret';
+    if (role === 'anon') return 'public';
+  } catch {
+    // Not a JWT
+  }
+  return 'unknown';
+};
+
 // Admin dashboard login credentials
 export const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'admin').trim();
 export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devi_admin_dev_password';

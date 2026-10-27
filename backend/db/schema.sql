@@ -43,3 +43,9 @@ create table if not exists public.sos_history (
 create index if not exists guardians_user_id_idx    on public.guardians (user_id);
 create index if not exists sos_history_user_id_idx  on public.sos_history (user_id);
 create index if not exists sos_history_created_idx  on public.sos_history (created_at desc);
+
+-- Row Level Security: only the backend (secret key) may touch these tables — see db/rls.sql
+alter table public.users       enable row level security;
+alter table public.guardians   enable row level security;
+alter table public.sos_history enable row level security;
+revoke all on table public.users, public.guardians, public.sos_history from anon, authenticated;
