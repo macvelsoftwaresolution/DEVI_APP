@@ -115,7 +115,7 @@ export const DashboardService = {
           operatorNotes: dec(alert.operator_notes) || liveSession?.operatorNotes || '',
           user: {
             name: dec(user?.full_name) || (user?.is_guest ? 'Guest Victim' : 'DEVI User'),
-            phone: user?.mobile_number || alert.user_id || '9500238347',
+            phone: dec(user?.mobile_number) || null,
             address: user ? [dec(user.address_1), dec(user.address_2)].filter(Boolean).join(', ') : 'Location on Map',
             isGuest: user?.is_guest || false,
           },

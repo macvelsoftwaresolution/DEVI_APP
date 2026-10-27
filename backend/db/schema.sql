@@ -6,7 +6,8 @@
 
 create table if not exists public.users (
   id             uuid primary key default gen_random_uuid(),
-  mobile_number  text not null unique,
+  mobile_number  text not null,          -- encrypted (phone number or guest ID)
+  mobile_hash    text not null unique,   -- keyed HMAC of mobile_number, used for lookups
   full_name      text,
   address_1      text,
   address_2      text,

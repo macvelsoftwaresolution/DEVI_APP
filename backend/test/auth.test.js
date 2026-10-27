@@ -108,3 +108,12 @@ test('isTrackingLinkExpired: guardian links expire 24h after resolve, never whil
   assert.equal(isTrackingLinkExpired({ status: 'RESOLVED' }, now), true);
   assert.equal(TRACKING_LINK_GRACE_MS, 24 * 60 * 60 * 1000);
 });
+
+test('R8: admin and user tokens are signed with different secrets', () => {
+  const adminToken = signAdminToken('admin');
+  const userToken = signUserToken({ id: 1 }, '9876543210');
+  // An admin token is not a user login, and a user token is not an admin login
+  assert.equal(runMiddleware(verifyToken, mockReq({ authorization: `Bearer ${adminToken}` })).res.statusCode, 403);
+  assert.equal(decodeAdminToken(userToken), null);
+  assert.ok(decodeAdminToken(adminToken));
+});

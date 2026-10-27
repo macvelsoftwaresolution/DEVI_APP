@@ -39,3 +39,11 @@ test('already encrypted values are not encrypted twice', () => {
   assert.equal(encryptField(once), once);
   assert.equal(decryptField(once), 'Guardian');
 });
+
+test('blindIndex: same input same hash, never the plain value', async () => {
+  const { blindIndex } = await import('../src/utils/encryption.js');
+  assert.equal(blindIndex('9876543210'), blindIndex(' 9876543210 '));
+  assert.notEqual(blindIndex('9876543210'), blindIndex('9876543211'));
+  assert.ok(!blindIndex('9876543210').includes('9876543210'));
+  assert.match(blindIndex('GUEST_AB12'), /^[0-9a-f]{64}$/);
+});

@@ -1,8 +1,8 @@
 import { supabase } from '../config/supabase.js';
-import { encryptField as enc, decryptField as dec } from '../utils/encryption.js';
+import { encryptField as enc, decryptField as dec, blindIndex } from '../utils/encryption.js';
 
-// Users & guardians. Sensitive columns are stored AES-256-GCM encrypted; users.mobile_number
-// stays plain because it is the login lookup key.
+// Users & guardians. Sensitive columns are stored AES-256-GCM encrypted, users.mobile_number too;
+// users.mobile_hash (keyed HMAC of the number or guest ID) is what lookups search on.
 export const UserService = {
   async findUserByPhone(phone) {
     if (!phone) return null;
@@ -12,7 +12,7 @@ export const UserService = {
       const { data: user, error } = await supabase
         .from('users')
         .select('*')
-        .eq('mobile_number', cleanPhone)
+        .eq('mobile_hash', blindIndex(cleanPhone))
         .maybeSingle();
 
       if (error) {
@@ -35,7 +35,7 @@ export const UserService = {
 
       return {
         id: user.id,
-        phone: user.mobile_number,
+        phone: dec(user.mobile_number),
         name: dec(user.full_name) || '',
         address1: dec(user.address_1) || '',
         address2: dec(user.address_2) || '',
@@ -67,7 +67,8 @@ export const UserService = {
         .from('users')
         .insert([
           {
-            mobile_number: cleanPhone,
+            mobile_number: enc(cleanPhone),
+            mobile_hash: blindIndex(cleanPhone),
             full_name: '',
             address_1: '',
             address_2: '',
@@ -84,7 +85,7 @@ export const UserService = {
 
       return {
         id: newUser.id,
-        phone: newUser.mobile_number,
+        phone: dec(newUser.mobile_number),
         name: dec(newUser.full_name) || '',
         address1: dec(newUser.address_1) || '',
         address2: dec(newUser.address_2) || '',
@@ -112,7 +113,8 @@ export const UserService = {
           .from('users')
           .insert([
             {
-              mobile_number: cleanId,
+              mobile_number: enc(cleanId),
+              mobile_hash: blindIndex(cleanId),
               full_name: enc('Guest User'),
               address_1: enc('Guest Session'),
               address_2: enc('Unregistered'),
@@ -129,7 +131,7 @@ export const UserService = {
 
         user = {
           id: newUser.id,
-          phone: newUser.mobile_number,
+          phone: dec(newUser.mobile_number),
           name: dec(newUser.full_name),
           address1: dec(newUser.address_1),
           address2: dec(newUser.address_2),

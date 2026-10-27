@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { JWT_SECRET, ADMIN_SECRET_KEY, ADMIN_TOKEN_EXPIRY } from '../config/security.js';
+import { JWT_SECRET, ADMIN_JWT_SECRET, SOS_LINK_SECRET, ADMIN_SECRET_KEY, ADMIN_TOKEN_EXPIRY } from '../config/security.js';
 
 /**
  * Signs a 30-day JWT for an app user (used by login & first-time sign up)
@@ -78,7 +78,7 @@ export const safeEqual = (a, b) => {
  * Stateless HMAC of the alert ID, so it survives server restarts without DB storage.
  */
 export const signSosControlToken = (alertId) =>
-  crypto.createHmac('sha256', JWT_SECRET).update(`sos-control:${alertId}`).digest('base64url');
+  crypto.createHmac('sha256', SOS_LINK_SECRET).update(`sos-control:${alertId}`).digest('base64url');
 
 export const verifySosControlToken = (alertId, token) =>
   !!alertId && !!token && safeEqual(token, signSosControlToken(alertId));
@@ -100,7 +100,7 @@ export const canResolveSos = ({ alertId, controlToken, adminToken, user, ownerId
  * Different prefix from the control token: viewing never grants control.
  */
 export const signSosViewToken = (alertId) =>
-  crypto.createHmac('sha256', JWT_SECRET).update(`sos-view:${alertId}`).digest('base64url').slice(0, 22);
+  crypto.createHmac('sha256', SOS_LINK_SECRET).update(`sos-view:${alertId}`).digest('base64url').slice(0, 22);
 
 export const verifySosViewToken = (alertId, token) =>
   !!alertId && !!token && safeEqual(token, signSosViewToken(alertId));
@@ -124,7 +124,7 @@ export const isTrackingLinkExpired = (session, now = Date.now()) => {
  * Signs a short-lived JWT for the admin dashboard
  */
 export const signAdminToken = (username) =>
-  jwt.sign({ role: 'admin', username }, JWT_SECRET, { expiresIn: ADMIN_TOKEN_EXPIRY });
+  jwt.sign({ role: 'admin', username }, ADMIN_JWT_SECRET, { expiresIn: ADMIN_TOKEN_EXPIRY });
 
 /**
  * Returns the decoded admin payload if the token is a valid admin JWT, otherwise null
@@ -132,7 +132,7 @@ export const signAdminToken = (username) =>
 export const decodeAdminToken = (token) => {
   if (!token) return null;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
     return decoded.role === 'admin' ? decoded : null;
   } catch {
     return null;

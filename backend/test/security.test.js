@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAllowedOrigin, IS_PRODUCTION, supabaseKeyKind } from '../src/config/security.js';
+import { isAllowedOrigin, IS_PRODUCTION, supabaseKeyKind, secretProblems } from '../src/config/security.js';
 
 test('CORS allows the dashboard domain and mobile apps (no Origin)', () => {
   assert.equal(isAllowedOrigin('https://devi.macvelsoftware.com'), true);
@@ -24,4 +24,15 @@ test('supabaseKeyKind tells the secret key from public keys', () => {
   assert.equal(supabaseKeyKind(jwt('anon')), 'public');
   assert.equal(supabaseKeyKind(''), 'unknown');
   assert.equal(supabaseKeyKind('junk'), 'unknown');
+});
+
+test('secretProblems: every secret long and different', () => {
+  const long = (c) => c.repeat(40);
+  const good = {
+    JWT_SECRET: long('a'), ADMIN_JWT_SECRET: long('b'), SOS_LINK_SECRET: long('c'),
+    ADMIN_SECRET_KEY: long('d'), ENCRYPTION_KEY: long('e'),
+  };
+  assert.deepEqual(secretProblems(good), []);
+  assert.deepEqual(secretProblems({ ...good, SOS_LINK_SECRET: long('a') }), ['JWT_SECRET and SOS_LINK_SECRET have the same value']);
+  assert.deepEqual(secretProblems({ ...good, ADMIN_JWT_SECRET: 'short' }), ['ADMIN_JWT_SECRET is shorter than 32 characters']);
 });

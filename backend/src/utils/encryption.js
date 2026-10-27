@@ -58,6 +58,16 @@ export const Encryption = {
   },
 };
 
+// Lookup key for an encrypted column (E1). The stored value is encrypted with a random IV, so it
+// cannot be searched; this keyed HMAC of the plain value is deterministic and can.
+// Its own key, derived from ENCRYPTION_KEY, so it never equals the encryption key.
+const INDEX_KEY = Buffer.from(
+  crypto.hkdfSync('sha256', Buffer.from(ENCRYPTION_KEY, 'utf8'), Buffer.alloc(0), 'devi-db-index-v1', 32)
+);
+
+export const blindIndex = (value) =>
+  crypto.createHmac('sha256', INDEX_KEY).update(String(value ?? '').trim()).digest('hex');
+
 // Shorthands for database field encryption in services
 export const encryptField = (value) => Encryption.encrypt(value);
 export const decryptField = (value) => Encryption.decrypt(value);
