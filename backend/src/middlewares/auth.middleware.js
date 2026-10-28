@@ -88,10 +88,18 @@ export const verifySosControlToken = (alertId, token) =>
  * or the logged-in owner of the alert (the app loses its in-memory control token on restart).
  * Knowing the alert ID or the guardian view key is never enough.
  */
-export const canResolveSos = ({ alertId, controlToken, adminToken, user, ownerId }) => {
-  if (verifySosControlToken(String(alertId), controlToken)) return true;
-  if (decodeAdminToken(adminToken)) return true;
-  return !!user?.id && !user.isGuest && !!ownerId && String(user.id) === String(ownerId);
+export const canResolveSos = (args) => !!sosResolver(args);
+
+/**
+ * Who is closing the alert: 'user' (the creating device or the logged-in owner, i.e. she marked
+ * herself safe), 'admin' (dashboard login only) or null (not allowed).
+ * Guardian links show SAFE only for 'user'.
+ */
+export const sosResolver = ({ alertId, controlToken, adminToken, user, ownerId }) => {
+  if (verifySosControlToken(String(alertId), controlToken)) return 'user';
+  if (!!user?.id && !user.isGuest && !!ownerId && String(user.id) === String(ownerId)) return 'user';
+  if (decodeAdminToken(adminToken)) return 'admin';
+  return null;
 };
 
 /**
@@ -104,6 +112,21 @@ export const signSosViewToken = (alertId) =>
 
 export const verifySosViewToken = (alertId, token) =>
   !!alertId && !!token && safeEqual(token, signSosViewToken(alertId));
+
+// Guardian links stop showing the SOS location this long after the alert is resolved
+export const TRACKING_LINK_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * True when a guardian link (view key) may no longer show this alert's location:
+ * the alert is resolved and the grace period has passed. Active alerts never expire.
+ * Without a known resolve time the alert's last update is used, so old alerts expire sooner, not later.
+ */
+export const isTrackingLinkExpired = (session, now = Date.now()) => {
+  if (!session || String(session.status || '').toUpperCase() !== 'RESOLVED') return false;
+  const endedAt = Date.parse(session.resolvedTime || session.lastUpdated || session.timestamp || '');
+  if (Number.isNaN(endedAt)) return true;
+  return now - endedAt > TRACKING_LINK_GRACE_MS;
+};
 
 /**
  * Signs a short-lived JWT for the admin dashboard

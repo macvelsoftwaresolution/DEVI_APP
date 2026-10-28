@@ -37,7 +37,9 @@ create table if not exists public.sos_history (
   evidence_url      text,
   idempotency_key   uuid unique,
   accuracy          numeric,
-  operator_notes    text
+  operator_notes    text,
+  resolved_at       timestamptz,            -- when the alert was closed (db/resolved-by.sql)
+  resolved_by       text                    -- 'user' (she marked herself safe) or 'admin'
 );
 
 -- Recommended indexes (not part of the information_schema export)

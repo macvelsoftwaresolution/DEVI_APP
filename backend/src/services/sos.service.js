@@ -294,6 +294,38 @@ export const SosService = {
     }
   },
 
+  // Where the SOS was pressed, for the guardian link page (no live tracking: the saved location only)
+  async getAlertLocation(alertId) {
+    if (!alertId) return null;
+    const session = liveTrackSessions.get(String(alertId));
+    try {
+      const { data, error } = await supabase
+        .from('sos_history')
+        .select('*')
+        .eq('id', alertId)
+        .maybeSingle();
+      if (error || !data) return null;
+
+      const status = String(session?.status || data.status || 'ACTIVE').toUpperCase();
+      const coords = toLatLng(data.latitude, data.longitude);
+      return {
+        id: data.id,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        location: dec(data.location_address) || NO_LOCATION_TEXT,
+        status,
+        timestamp: data.created_at,
+        // Without a stored resolve time created_at is used, so links expire sooner, not later
+        resolvedTime: status === 'RESOLVED' ? (session?.resolvedTime || data.resolved_at || data.created_at) : null,
+        // Unknown (older alerts) counts as not closed by her: never shown as SAFE
+        resolvedBy: status === 'RESOLVED' ? (session?.resolvedBy || data.resolved_by || null) : null,
+      };
+    } catch (e) {
+      console.error('Error reading alert location:', e);
+      return null;
+    }
+  },
+
   // Stored evidence reference for an alert (live session first, then the database)
   async getEvidenceRef(alertId) {
     const session = liveTrackSessions.get(String(alertId));
@@ -350,7 +382,8 @@ export const SosService = {
     return session || { id: key, evidenceUrl };
   },
 
-  async resolveSosAlert(alertId) {
+  // resolvedBy: 'user' (she marked herself safe) or 'admin' (closed on the dashboard)
+  async resolveSosAlert(alertId, resolvedBy = 'admin') {
     if (!alertId) return null;
     const key = alertId.toString();
     let session = liveTrackSessions.get(key);
@@ -359,17 +392,22 @@ export const SosService = {
     if (session) {
       session.status = 'RESOLVED';
       session.resolvedTime = nowIso;
+      session.resolvedBy = resolvedBy;
       session.lastUpdated = nowIso;
     } else {
-      session = { id: key, status: 'RESOLVED', resolvedTime: nowIso, lastUpdated: nowIso };
+      session = { id: key, status: 'RESOLVED', resolvedTime: nowIso, resolvedBy, lastUpdated: nowIso };
       liveTrackSessions.set(key, session);
     }
 
     try {
-      await supabase
+      const { error } = await supabase
         .from('sos_history')
-        .update({ status: 'RESOLVED' })
+        .update({ status: 'RESOLVED', resolved_at: nowIso, resolved_by: resolvedBy })
         .eq('id', alertId);
+      // Database without the resolved_at / resolved_by columns yet (db/resolved-by.sql not run)
+      if (error) {
+        await supabase.from('sos_history').update({ status: 'RESOLVED' }).eq('id', alertId);
+      }
     } catch (e) {
       console.error('Supabase resolve alert error:', e);
     }

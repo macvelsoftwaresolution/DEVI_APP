@@ -43,7 +43,7 @@ router.post('/add-note', async (req, res, next) => {
 router.post('/resolve/:alertId', async (req, res, next) => {
   try {
     const { alertId } = req.params;
-    const session = await SosService.resolveSosAlert(alertId);
+    const session = await SosService.resolveSosAlert(alertId, 'admin');
     try {
       socketService.broadcastToRoom('dashboard', {
         type: 'incident:resolved',

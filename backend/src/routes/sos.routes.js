@@ -13,9 +13,10 @@ import {
   optionalToken,
   signSosControlToken,
   verifySosControlToken,
-  canResolveSos,
+  sosResolver,
   verifySosViewToken,
   decodeAdminToken,
+  isTrackingLinkExpired,
 } from '../middlewares/auth.middleware.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { socketService } from '../services/socket.service.js';
@@ -199,6 +200,49 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
   }
 });
 
+// GET /api/sos/location/:alertId?k=<view key> - Where the SOS was pressed, for the guardian link page.
+// The saved SOS location only (there is no live tracking); hidden 24h after the alert is resolved.
+router.get('/location/:alertId', async (req, res, next) => {
+  try {
+    const { alertId } = req.params;
+    // Checked before the lookup so unknown and forbidden IDs look the same
+    const isAdmin = hasAdminLogin(req);
+    if (!isAdmin && !verifySosViewToken(String(alertId), req.query.k)) {
+      return res.status(403).json({
+        success: false,
+        code: 'TRACKING_KEY_REQUIRED',
+        message: 'This link is incomplete. Open the full link from the WhatsApp alert.',
+      });
+    }
+
+    const alert = await SosService.getAlertLocation(alertId);
+    if (!alert) {
+      return res.status(404).json({ success: false, message: 'This SOS alert was not found.' });
+    }
+
+    if (!isAdmin && isTrackingLinkExpired(alert)) {
+      return res.status(410).json({
+        success: false,
+        code: 'TRACKING_LINK_EXPIRED',
+        message: 'This alert has ended and the link has expired.',
+      });
+    }
+
+    // Guardian view: SAFE only when she marked herself safe. A dashboard close is CLOSED and the
+    // page shows it like an alert (no mention of the control room)
+    const { resolvedBy, resolvedTime, ...rest } = alert;
+    const status = alert.status !== 'RESOLVED' ? 'ACTIVE' : resolvedBy === 'user' ? 'SAFE' : 'CLOSED';
+
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(200).json({
+      success: true,
+      data: { ...rest, status, ...(status === 'SAFE' && { safeAt: resolvedTime }) },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/sos/evidence/:alertId?k=<view key> - Streams the private evidence file.
 // The Cloudinary URL is never sent to the client; Range is forwarded so video seeking works.
 router.get('/evidence/:alertId', async (req, res, next) => {
@@ -316,18 +360,18 @@ router.post('/resolve/:alertId', optionalToken, async (req, res, next) => {
   try {
     const { alertId } = req.params;
     const auth = req.get('authorization') || '';
-    const allowed = canResolveSos({
+    const resolvedBy = sosResolver({
       alertId,
       controlToken: req.get('x-sos-token') || req.body?.controlToken,
       adminToken: auth.startsWith('Bearer ') ? auth.slice(7) : null,
       user: req.user,
       ownerId: req.user ? await SosService.getAlertOwnerId(alertId) : null,
     });
-    if (!allowed) {
+    if (!resolvedBy) {
       return rejectSosControl(res);
     }
 
-    const session = await SosService.resolveSosAlert(alertId);
+    const session = await SosService.resolveSosAlert(alertId, resolvedBy);
 
     console.log(`✅ [SOS RESOLVED/DEACTIVATED] ID: ${alertId}`);
 
