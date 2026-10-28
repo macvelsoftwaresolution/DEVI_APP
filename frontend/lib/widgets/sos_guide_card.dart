@@ -129,7 +129,8 @@ class SosGuideCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    '📍 Live location: devi.app/track/…',
+                    // Matches the real alert: one Google Maps link to where SOS was pressed (no live tracking)
+                    '📍 Location: maps.google.com/?q=…',
                     style: TextStyle(fontSize: 13, color: Color(0xFF027EB5), height: 1.4),
                   ),
                   const SizedBox(height: 4),

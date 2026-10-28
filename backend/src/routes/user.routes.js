@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { UserService } from '../services/user.service.js';
 import { MAX_GUARDIANS } from '../utils/sosRecipients.js';
+import { guestSyncLimiter } from '../middlewares/rateLimiter.js';
 import { optionalToken, verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -144,7 +145,7 @@ router.put('/profile', optionalToken, async (req, res, next) => {
 });
 
 // POST /api/user/guest - Tracks anonymous guest users with is_guest = true
-router.post('/guest', async (req, res, next) => {
+router.post('/guest', guestSyncLimiter, async (req, res, next) => {
   try {
     const { guestId, guardians } = req.body;
     const idToUse = (guestId && typeof guestId === 'string' && guestId.trim().length > 0)

@@ -46,6 +46,19 @@ export const adminLoginLimiter = rateLimit({
 });
 
 /**
+ * Guest sync rate limiter: /user/guest needs no login, so it must not be usable to create
+ * guest records or rewrite guest guardians in bulk.
+ * The app calls it at start-up and when a guest edits guardians: 30 per 15 minutes per IP is plenty.
+ */
+export const guestSyncLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler('Too many guest requests. Please wait a few minutes.'),
+});
+
+/**
  * SOS Trigger rate limiter: Prevents spamming emergency alerts
  * Max 10 trigger calls per minute per IP
  */

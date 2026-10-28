@@ -1,0 +1,1847 @@
+--- PAGE 1 ---
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+​Oct 27, 2026 · ​@Someone
+1. Quick summary
+DEVI SOS ku best combo: India voice IVR ku Plivo (India-region account), SMS ku India
+DLT route, WhatsApp ku direct Meta Cloud API (already namma code la iruku). Global
+reach venumna Twilio voice + Meta WhatsApp.
+SOS trigger aana guardian ku 3 channel la alert pogum:
+1. IVR call: guardian phone ring aagum, TTS la emergency message pesum, "1 press
+pannunga" nu acknowledge (DTMF) vaangum.
+2. SMS: internet illatha phone kum location link pogum.
+3. WhatsApp: devi_safety template la name, location link, time pogum.
+Gold rule: Plivo SMS/WhatsApp self-serve la illa (Enterprise ~$1,000/month). So Plivo ah
+voice ku mattum use pannunga, SMS ah vera route la anupunga.
+Intha document la iruka ella prices um October 2026 approx figures. Buy panna munnadi
+provider pricing page la verify pannanum.
+Option
+Combo
+Yaaruku best
+Main risk
+A (recommended,
+India-first)
+Plivo voice + India
+DLT SMS + Meta
+WhatsApp
+Guardians mostly
+India la
+DLT registration
+mudiyama SMS/IVR live
+aagathu
+B (global)
+Twilio voice + SMS +
+Meta WhatsApp
+Many countries,
+fast setup, Studio
+no-code
+India call rate 4–5x
+costly, Indian number
+kidaikathu,
+international CLI la call
+pogum
+C (developer
+control)
+Telnyx voice + SMS
++ Meta WhatsApp
+Low latency, full
+API control
+India rate publish
+aagala, India numbers 4
+cities mattum
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 1 of 34
+
+
+--- PAGE 2 ---
+2. Twilio, Plivo, Telnyx – yaaru ivanga?
+Moonum CPaaS (Communications Platform as a Service) platforms. API/SDK vechu SMS
+anupalam, voice call (IVR menu) pannalam, WhatsApp message anupalam, pala countries
+la virtual numbers rent pannalam. Moonume "voice only" illa, Voice + SMS + WhatsApp
+ellam support pannum (Twilio la video, fax, email kooda iruku).
+India-native providers (Exotel, Ozonetel, Knowlarity) um iruku. Avanga DoT/TRAI
+compliance ah base pannitu build pannavanga. India-only IVR ku avangalayum compare
+pannalam.
+3. Global number vaanga mudiyuma? IVR panna mudiyuma?
+Aamaa, moonu provider layum pala countries la number vaangalam. Every number (local,
+mobile, national, toll-free) ah IVR ku connect pannalam. Aana "global number" na ella
+country kum free ah call panra oru number illa:
+Provider
+Founded /
+HQ
+Core strength
+Best known for
+Twilio
+2008, USA
+Periya global coverage, best
+docs, Studio no-code flow
+builder
+Enterprise reliability, athiga
+countries/number types
+Plivo
+2011,
+USA/India
+Kammi per-minute/SMS cost,
+strong India presence
+Budget voice & SMS, India–US
+corridor
+Telnyx
+2009, USA
+Sontha private IP voice
+network (carrier resell illa)
+Lowest latency voice,
+transparent pay-as-you-go,
+built-in AI voice tools
+Vishayam
+Artham
+Call receive panradhu
+Ulagathula yaar venaalum call/SMS pannalam,
+caller oda carrier allow panna
+Call out panradhu
+Oru country ku dial panna account la andha
+country permission ON pannanum. Andha country
+oda per-minute rate pay pannanum
+Number type
+Ella country layum ella type (local/toll-free/mobile)
+kidaikathu. Sila country ku local ID/address proof
+venum
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 2 of 34
+
+
+--- PAGE 3 ---
+Free global number kidaikuma? Illa. Ellame monthly rent. Trial credit mattum first number
++ konjam usage ah temporary ah cover pannum.
+4. Free trial – actual ah enna kidaikum
+Trial vechu namma sontha verified number la mattum dhan test panna mudiyum. Real
+guardians ku anupanumna payment + compliance mudikanum, moonu provider kum idhu
+dhan rule.
+Provider
+Number kidaikura
+countries
+IVR markup
+Notes
+Twilio
+100+
+TwiML ( <Say> , <Gather> ,
+<Dial> ) or Studio
+Sila countries ku address
+proof, local contact,
+business registration venum
+Plivo
+65+
+PlivoXML (TwiML mathiri)
+Self-serve plan la US & India
+mattum. Mathathuku
+Enterprise
+Telnyx
+50+ (US/UK/EU
+strong)
+TeXML (TwiML accept
+pannum) or Call Control API
+(JSON)
+US/UK numbers cheap. Sila
+countries ku ID documents
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 3 of 34
+
+
+--- PAGE 4 ---
+WhatsApp testing: Twilio trial venaam. Meta developer console
+(developers.facebook.com → WhatsApp → API Setup) la free test number kudupaanga.
+Max 5 recipient numbers add panni OTP vechu verify pannitu test pannalam.
+5. IVR capability & DEVI SOS call flow
+Moonu provider layum Voice IVR + SMS + WhatsApp ore account la pannalam. IVR na
+namma server oru XML-mathiri markup return pannum, provider adha pesi key press
+vaangum.
+Provider
+Free credit
+Card venuma?
+Restrictions
+Twilio
+~100 SMS, ~75 voice
+minutes, 3,000 SendGrid
+emails (fixed $ amount
+illa)
+Start panna venaam
+Console la verify panna
+numbers ku mattum
+call/SMS. 1 active trial
+number (lifetime max 3).
+Live ku card add panni
+upgrade
+Plivo
+$10 credit
+Start panna venaam
+Self-serve usage
+$2,500/month cap. US &
+India mattum. SMS,
+WhatsApp, Verify API self-
+serve la illa (Enterprise +
+sales)
+Telnyx
+Pretrial $25 AI credit
+(card illama); verified
+trial ku $5 testing credit
+Pretrial ku venaam;
+full sending ku card
+venum
+Business email mandatory
+(Gmail/Yahoo reject). Scale
+panna KYC document
+check
+Provider
+IVR markup
+No-code option
+SMS/WhatsApp kooda?
+Twilio
+TwiML
+Twilio Studio (drag &
+drop)
+Aamaa, same account
+Plivo
+PlivoXML
+Plivo Flow (basic)
+Aamaa, aana Enterprise
+plan venum
+Telnyx
+TeXML (TwiML-compatible)
+or Call Control API
+Limited, code-first +
+AI voice builder
+Aamaa
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 4 of 34
+
+
+--- PAGE 5 ---
+WhatsApp + SMS um IVR call um ore nerathula pogum. Call la yaarum 1 press pannala na
+adutha guardian ku pogum; ellarum fail aana control room ku ( ADMIN_WHATSAPP ) pogum.
+Step by step:
+1. App la SOS press → backend POST /api/sos/trigger .
+2. Backend WhatsApp ( devi_safety template) + SMS anupum, same time la provider ku
+outbound call request ( calls.create ) anupum.
+3. Provider guardian number ku PSTN la dial pannum.
+4. Guardian edutha, provider namma webhook ku POST pannum (e.g. /api/ivr/answer ).
+5. Backend XML return pannum: <Say> emergency message + <Gather
+numDigits="1"> "1 press pannunga".
+6. Guardian 1 press → provider /api/ivr/gather ku digit anupum → SOS
+"acknowledged" nu dashboard la update.
+7. Eduthala / busy / voicemail → status callback ( /api/ivr/status ) → adutha guardian ku
+call.
+Voicemail problem: voicemail call ah "answer" pannidum. Answering Machine Detection
+(AMD) on pannunga, illana DTMF "1" vandha mattum dhan acknowledged nu count
+pannunga.
+DEVI SOS IVR flow · 2 decisions, next-guardian loop
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 5 of 34
+
+
+--- PAGE 6 ---
+Inbound helpline – guardian thirumbi call panna
+Guardian missed call ah paathu adhe number ku thirumbi call pannuvaanga, so SOS call
+panna adhe Plivo number la inbound IVR venum. Illana call dead number ku pogum.
+Thaniya number venaam, cost ~₹0.38/min dhan.
+Flow:
+1. Guardian Plivo 080/022 number ku call → Plivo namma /api/ivr/inbound webhook ah
+call pannum (caller number From la varum).
+2. Backend From number ah active SOS la registered guardian ah nu check pannum.
+3. Registered guardian + active SOS iruntha: "Ungaloda contact ku SOS active ah iruku.
+Details WhatsApp/SMS la anupirukom. Control room kooda pesa 2 press pannunga."
+Indha call ah acknowledged ah mark pannalam (guardian respond pannaanga).
+4. 2 press panna: <Dial> vechu control room phone ku connect.
+5. Theriyaadha number or active SOS illa: general message mattum ("This is the DEVI
+safety line"). Location, name edhuvum solla koodathu.
+112 (ERSS) kooda integrate pannalama?
+Ippo private apps ku 112 ERSS public API illa; direct integration mudiyathu. ERSS MHA
+keezha Nirbhaya Fund la run aagudhu, C-DAC build pannadhu; ovvoru state kum
+Emergency Response Centre (ERC) iruku.
+Item
+Detail
+Number
+Adhe Plivo India number (outbound caller ID)
+Inbound cost
+₹0.38/min (Plivo India)
+Control room ku forward
+Inbound ₹0.38 + outbound leg ₹0.38 = ~₹0.76/min
+Toll-free (1800) venumna
+Plivo toll-free inbound ~₹1.30/min (conflicting
+listings, confirm), Knowlarity toll-free ~₹1.05/min
+Security
+Caller ID spoof aagalam, so location/name voice la
+solla koodathu; already WhatsApp/SMS la secure
+ah poyirukum
+Code
+ivr.routes.js la /inbound route + signature
+validation (Section 13.3 mathiri)
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 6 of 34
+
+
+--- PAGE 7 ---
+Presentation answer: "DEVI 112 ah replace pannala. Guardian network + control room ah
+alert pannudhu; app la 112 one-tap button um iruku. Official integration ku state ERC kitta
+pesanum."
+Sources: 112.gov.in, PIB on ERSS, ERSS explainer (Factly).
+Guardian unknown number call ah edukkalaina?
+Theriyaadha 080 number la irundhu vara call ah pala per edukka maataanga, idhu dhan
+IVR oda periya real-world risk. Naalu vazhi la fix pannalam:
+1. Guardian add pannumbodhu: "DEVI SOS line" number ah contact ah save panna
+sollunga (T2 SMS + WhatsApp la vCard/number anupunga).
+2. Same number always: oru fixed Plivo number dhan use pannunga; maathita save panna
+contact waste.
+3. Truecaller Verified Business Caller ID: green badge + business name kaatum, pick-up
+rate increase aagum. India pricing public ah illa; Truecaller business team or Route
+Mobile mathiri partners kitta quote. Verified badge irundhalum users spam mark panna
+mudiyum.
+4. WhatsApp + SMS first: call mattum rely pannama, rendu message um call ku munnadi /
+kooda pogum (already flow la iruku).
+Sources: Truecaller for Business (Capterra India), Route Mobile verified caller ID webinar.
+6. Pricing – number, voice, SMS, WhatsApp, MMS
+India calls ku Plivo dhan cheap (₹0.38/min ≈ $0.0045); Twilio India ku ~$0.05–$0.07/min, 5–
+10x costly. Ella figures um approx USD, October 2026.
+Option
+Eppadi
+DEVI ku
+App la "Call 112"
+button
+SOS screen la one-tap tel:112
+Ippove pannalam, cost illa. Best
+quick win
+User ku 112 India app
+suggest
+Official app la SOS, location
+state control room ku pogum;
+SHOUT feature women ku
+volunteers alert
+Onboarding la recommend
+pannalam
+Formal integration
+State ERC / state police or MHA /
+C-DAC kitta partnership
+Long process, public path illa;
+partnership ah try pannalam
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 7 of 34
+
+
+--- PAGE 8 ---
+6.1 Monthly number rental
+6.2 Voice per minute
+India la irundhu vera country ku call: "international flat rate" illa. Destination country oda
+rate dhan (e.g. US ku Twilio ~$0.014/min).
+Number type
+Twilio
+Plivo
+Telnyx
+US local
+$1.15/mo
+$0.50/mo
+$1.00/mo
+US toll-free
+$2.15/mo
+$1.00/mo
+~$1/mo (800 numbers: $500 one-
+time/yr, apram $40/mo)
+UK local /
+mobile
+$3.50 / $2.50 per
+mo
+Country poruthu
+Country poruthu
+India
+Kidaikathu
+₹200/mo (about
+$2.40)
+Mobile numbers 4 cities mattum,
+rate confirm aagala
+Other (e.g.
+Nigeria)
+Often $1–$5/mo
+Country poruthu
+Nigeria $25/mo la irundhu
+Direction
+Twilio
+Plivo
+Telnyx
+US outbound
+$0.014
+$0.010–$0.012
+Competitive (live rate card)
+US inbound to
+local
+$0.0085
+$0.0055–$0.0085
+Similar
+US inbound to
+toll-free
+$0.022
+Twilio vida konjam
+kammi
+Competitive
+India outbound
+(local / mobile)
+$0.0699 /
+$0.0496
+₹0.38 in & out, 30-sec
+pulse (official India
+page)
+Public page la India rate illa
+(Oct 2026 check panninom).
+Base $0.002/min API +
+destination SIP rate; India
+rate Mission Control rate
+deck or sales quote la dhan
+Call recording
+$0.0025
+India free (90 days
+storage)
+Live rate check
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 8 of 34
+
+
+--- PAGE 9 ---
+6.3 SMS & WhatsApp (provider fee mattum)
+Meta charge thaniya: July 2025 la irundhu Meta per message bill pannum (24-hour
+conversation illa). Oct 1, 2026 la irundhu per phone number per month first 1,000 service
+messages free. SOS alert business-initiated utility template, so adhu free list la varaathu.
+Oct 1, 2026 la irundhu customer service window kulla anupura utility messages um charge
+aagum (munnadi free). India utility template approx ~₹0.12/message (Meta rate card la
+verify pannunga). Direct Meta Cloud API use panna provider fee zero – DEVI already
+ippadi dhan pannudhu.
+6.4 MMS (picture/video message)
+India la MMS practically use illa; WhatsApp dhan media ku.
+6.5 Cost examples
+Twilio IVR, US, 100,000 inbound + 50,000 outbound min/month: inbound 100,000 ×
+$0.0085 = $850, outbound 50,000 × $0.014 = $700, recording 150,000 × $0.0025 = $375.
+Total ~$1,925/month + number rent. Plivo/Telnyx usually 20–40% kammi.
+DEVI India voice, 5,000 SOS/month, oru SOS ku 2 guardian × 1 min = 10,000 min:
+Item
+Twilio
+Plivo
+Telnyx
+SMS US
+outbound
+~$0.0079/msg +
+carrier fee
+Twilio vida kammi (self-
+serve US/India mattum)
+Competitive
+WhatsApp
+provider fee
+$0.005/msg (sent &
+received)
+$0.0044/msg (Enterprise
+plan la)
+$0.004/msg
+WhatsApp
+calling
+Supported
+$0.0040/min
+$0.0025/min (in
+& out)
+Provider
+Outbound MMS
+Inbound MMS
+Twilio
+~$0.022/msg (US) + carrier fee ~$0.007–$0.01
+~$0.01–$0.02/msg
+Plivo
+US numbers la support, rate publish aagala (sales
+kitta kelunga)
+Same
+Telnyx
+$0.015/part (US) + carrier fee
+$0.005/part (US) + carrier
+fee
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 9 of 34
+
+
+--- PAGE 10 ---
+Idhoda SMS (DLT route rate provider poruthu) + WhatsApp (~₹0.12 × messages) +
+number rent add pannanum. Average call length and guardians per SOS maarina cost um
+maarum.
+6.6 India SMS rates (DLT route)
+India transactional/service SMS ku ~₹0.15–₹0.25 per SMS dhan market rate; Twilio India
+~₹0.45, idhu 2–3x costly. Ella providers um same TRAI DLT route use pannuvaanga, so
+rates close ah irukum; volume and hidden fees dhan difference.
+Hidden costs: sticker rate mela ~25–40% add aagalam (DLT scrubbing fee, failed-delivery
+buffer, wallet minimum) + 18% GST. Quote vaangum bodhu "all-in rate" kelunga.
+Sources: MSG91 pricing (aggregator), Gupshup pricing audit, SMS OTP pricing India,
+Exotel pricing guide. Ellam third-party; final quote provider sales kitta.
+6.7 Monthly total cost – ella channel um sethu
+5,000 SOS/month ku Plivo combo ~₹6,750–₹7,650 (oru SOS ku ~₹1.5); Twilio combo
+~₹47,450–₹64,450, 7–8x costly. Voice dhan periya cost; SMS + WhatsApp chinna part.
+Assumptions: 5,000 SOS/month, oru SOS ku 2 guardians, guardian ku 1 call (avg 1 min) + 1
+SMS + 1 WhatsApp. So 10,000 call-min + 10,000 SMS + 10,000 WhatsApp. $1 = ₹84.
+Provider
+Calculation
+Voice cost/month
+Plivo
+10,000 × ₹0.38
+₹3,800 (about $45)
+Twilio
+10,000 × $0.0496–$0.0699
+~$496–$699
+Provider
+Per SMS (approx, GST thaniya)
+Notes
+MSG91
+₹0.25 (5,000 SMS pack) → ₹0.16 (~9.6
+lakh pack); negotiated ₹0.13 varai
+Prepaid packs
+Gupshup
+₹0.10–₹0.18 transactional
+Public rate card illa; wallet minimum
+₹10,000–₹25,000 nu reports
+Exotel
+₹0.18 la irundhu
+Exotel plan kooda add-on; sila
+reports 1 lakh minimum volume
+Twilio
+(India)
+~₹0.45 (forex surcharge kooda)
+DLT idhukum venum
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 10 of 34
+
+
+--- PAGE 11 ---
+One-time: DLT ~₹5,900; Plivo KYC, Meta verification free. GST 18% ellathukum mela.
+Scale: cost SOS count kooda linear ah maarum (e.g. 1,000 SOS/month na A ~₹1,500). Call
+30 sec la mudinja Plivo 30-second pulse la half cost dhan.
+Sources: Plivo India voice pricing (₹0.38/min in & out, ₹200/month number, 30-sec pulse),
+Meta WhatsApp pricing, WhatsApp India rates (Robylon), Exotel pricing guide. Twilio
+rates Section 6.2 la irundhu.
+7. India – certificates, DLT, numbers, rates
+Aamaa, India number ku automated IVR call/SMS anupa registration venum. TRAI oda
+TCCCPR rules (2024–2025 amendments) apply aagum. DLT mudiyama SMS operator level
+la drop aagum.
+Item
+A: Plivo + MSG91 +
+Meta (recommended)
+B: Twilio voice +
+SMS + Meta
+C: Exotel voice + SMS +
+Meta
+Voice (10,000
+min)
+₹0.38/min → ₹3,800
+$0.0496–
+$0.0699/min →
+₹41,700–₹58,700
+₹0.80–₹1.15/min
+(historical) → ₹8,000–
+₹11,500
+Number rent
+₹200
+US number ~₹100
+(Indian number illa)
+Quote venum
+Plan / platform
+fee
+Illa (pay-as-you-go)
+Illa
+Believer ₹19,999 / 12
+months (usage credit
+kooda) →
+~₹1,700/month
+SMS (10,000)
+₹0.16–₹0.25 → ₹1,600–
+₹2,500
+~₹0.45 → ₹4,500
+₹0.18 → ₹1,800
+WhatsApp
+(10,000, direct
+Meta)
+~₹0.115 → ₹1,150
+₹1,150
+₹1,150
+AMD, recording,
+Tamil/Hindi TTS
+Free (Plivo India page)
+Extra (recording
+$0.0025/min)
+Quote
+Monthly total
+(GST thaniya)
+~₹6,750–₹7,650
+~₹47,450–₹64,450
+~₹12,650–₹16,150 +
+number
+Oru SOS ku
+~₹1.35–₹1.55
+~₹9.5–₹12.9
+~₹2.5–₹3.2
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 11 of 34
+
+
+--- PAGE 12 ---
+7.1 TRAI rules
+DEVI SOS = transactional / service category. Promotional illa, so time window restriction
+illa. Aana guardian consent record pannanum.
+7.2 DLT registration steps
+1. Entity documents ready: Company PAN, GST certificate or Certificate of
+Incorporation (or Udyam), company letterhead la Letter of Authorization, authorized
+signatory ID/address proof.
+2. PE registration oru operator DLT portal la (Jio TrueConnect, Airtel, Vi). Approx ₹5,900
+one-time, usually 1–3 working days (sila case 7 varai). Full details Section 12 la.
+3. Header (Sender ID) register: 6 characters, e.g. DEVIAP . 1–2 days.
+4. Content templates register: SMS text + variables {#var#} . Anupura text template
+kooda exact ah match aaganum, illana drop. 24–48 hrs.
+5. Consent template (transactional/service ku venumna).
+6. PE ID, Header, Template ID ah CPaaS account la bind pannunga → India live ready.
+Requirement
+Artham
+DLT registration
+Business ah "Principal Entity" (PE) ah operator DLT
+portal la register pannanum, apram Registered
+Telemarketer (RTM) kooda link. Usually CPaaS
+provider idha arrange pannuvaanga
+Number series
+160-series = BFSI service/transactional calls. 140-
+series = promotional. Non-BFSI service calls (DEVI)
+Plivo 080/022 number la pannalam
+DND / NCPR
+Promotional calls Do-Not-Disturb registry numbers
+ku poga koodathu
+Calling window
+Promotional calls 9 AM – 9 PM IST mattum
+Consent
+Explicit consent venum. Violation: 1st time 15-day
+service bar, repeat panna 1-year blacklist
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 12 of 34
+
+
+--- PAGE 13 ---
+7.3 Indian virtual number vaanga documents
+Twilio CLI risk: Twilio call international caller ID la varum. Indian operators international-
+CLI calls ah label/block pannalam, guardian edukama poga chance iruku. SOS ku idhu
+periya risk.
+OSP licence: DoT 2020–21 la mandatory OSP licence ah eduthutaanga. Providers ippo
+VNO authorisation la operate pannuvaanga. Rules adikadi maarum; production ku
+munnadi DoT or telecom lawyer kitta confirm pannunga.
+7.4 India-first project ku practical note
+Twilio India ku best fit illa: Indian number illa, Voice OTP block, highest India rate. Plivo
+(India-region account) India-friendly. Telnyx India expand pannudhu (4 cities), aana VNO
+scope ah support kitta confirm pannunga. India-only ku Exotel, Ozonetel, Knowlarity
+kooda compare pannunga.
+7.5 Exotel / Ozonetel / Knowlarity comparison
+DEVI SOS mathiri automated outbound IVR ku Plivo dhan simple & cheap. Indha moonu
+India-native providers um contact-centre (agents, plans, per-user fee) ku build pannadhu;
+pure API pay-as-you-go illa. Public rate card yaarukum illa, so ellam third-party figures.
+Provider
+Enna venum
+Plivo
+Dedicated India-region account + GST Certificate /
+Certificate of Incorporation / Udyam Registration la
+onnu (PAN mattum accept illa). First application ku
+authorized signatory signature + company seal
+Telnyx
+Mobile numbers 4 cities mattum (Mumbai,
+Gurugram, Noida, Bangalore). Andha city la
+business/residential address proof + KYC
+Twilio
+Standard Indian local number kudukathu. India ku
+outbound call international (non-Indian) number la
+irundhu mattum. India ku Voice OTP/2FA blocked
+Provider
+Pricing model
+Plans (approx)
+Per-minute
+(approx)
+SMS
+DEVI ku fit
+Plivo
+(compare
+ku)
+Pay-as-you-go
+API
+Illa
+₹0.38/min in & out
+(official page)
+Self-
+serve la
+illa
+Best: API-first,
+AMD + TTS free
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 13 of 34
+
+
+--- PAGE 14 ---
+GST 18% ellathukum mela. Final rate sales quote la dhan confirm aagum.
+Sources: Exotel pricing guide (DialNexa), Exotel pricing (CloudTalk), Ozonetel pricing
+(CloudTalk, Jul 2026), Knowlarity IVR (FitGap), CCaaS pricing India 2026.
+7.6 TRAI 2025 amendment & 1600-series – DEVI ku impact
+Ippo DEVI ku 1600-series kattayam illa. 1600-series DoT Government + BFSI (RBI, SEBI,
+PFRDA, IRDAI regulated) ku mattum dhan allocate pannirukku; adhanala non-BFSI ku
+andha number vaanga mudiyathu. Aana TRAI phases extend aagura chance iruku, adhu
+dhan risk.
+Provider
+Pricing model
+Plans (approx)
+Per-minute
+(approx)
+SMS
+DEVI ku fit
+Exotel
+Prepaid plan
+(software rental
++ usage credit)
+Micro ₹5,555/3 mo,
+Dabbler ₹9,999/6
+mo, Believer
+₹19,999/12 mo,
+Influencer
+₹49,499/12 mo
+Historical: local out
+₹0.80, national out
+₹1.15, local in ₹0.40
+₹0.18 la
+irundhu
+Good backup: API
+iruku, DLT/TRAI
+handle
+pannuvaanga; plan
+commitment
+venum
+Ozonetel
+Per user per
+month
+Starter $25,
+Standard $45,
+Premium $55 per
+user/month,
+Enterprise custom
+Publish aagala
+(subscription ku
+mela thaniya)
+Thaniya
+Low: agent-based
+call centre ku dhan
+Knowlarity
+Per agent + per-
+minute/pulse
+₹1,999–₹3,499 per
+agent/month;
+Advance
+₹16,800/year
+(1,200 free
+min/month)
+30 paise / 30 sec;
+toll-free incoming
+₹1.05/min
+Thaniya
+Low–medium: toll-
+free helpline ku
+consider pannalam
+Point
+Detail
+TCCCPR 2nd amendment
+12 Feb 2025 publish; category + consent rules 14
+Mar 2025 la irundhu
+1600-series direction
+TRAI 19 Nov 2025: BFSI service/transactional calls
+1600 la irundhu mattum. Deadlines 1 Jan 2026
+(banks) to 15 Mar 2026 (stockbrokers)
+140-series
+Promotional calls mattum
+Non-BFSI service calls
+Clear series rule illa. Plivo 080/022 number non-
+BFSI service/transactional calls ku allow pannudhu
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 14 of 34
+
+
+--- PAGE 15 ---
+DEVI position (presentation la solla): SOS call user trigger panna personal emergency
+relay; marketing illa. Guardian ah add pannumbodhu OTP vechu consent vaangi record
+pannrom. Adhanala service category la varum.
+Action items:
+Sources: TRAI regulation text (Feb 2025), PIB press release, TRAI 1600-series direction
+(NCDEX circular), 1600-series guide (FreJun), Feb 2025 amendment summary (Rootle).
+Non-BFSI interpretation telecom lawyer kitta confirm pannunga.
+7.7 India/US thaandi irukura guardians (UAE, UK, NRI)
+Foreign guardians ku WhatsApp dhan main channel; IVR/SMS international ah costly +
+unreliable. WhatsApp ulagathula enga irundhalum ore Meta API la pogum, extra setup illa.
+Code impact: guardian number country code ( +91 illana) paathu routing: WhatsApp
+always; call/SMS international route enabled ah iruntha mattum. Ippo
+whatsapp.service.js 10-digit number ku 91 add pannudhu; foreign number full country
+code oda save pannanum.
+Point
+Detail
+Consent (vendor reports)
+Explicit consent record (OTP or digital) venum; sila
+guides "service explicit" rules tight aagudhu nu
+solludhu
+Guardian add pannumbodhu OTP consent + timestamp store (DLT consent template
+kooda match)
+Plivo kitta "non-BFSI SOS service calls ku 080/022 OK ah, 160/1600 future la venuma" nu
+written confirmation
+TRAI direction updates ah 3 maasathuku oru thadava check
+Channel
+India number guardian
+Foreign number guardian
+WhatsApp
+Yes, devi_safety
+Yes, same template; Meta charge recipient country
+rate poruthu
+IVR call
+Yes, Plivo ₹0.38/min
+Check: Plivo India account la international enable
+aagudha + rate confirm aagala (console la check).
+Illana Twilio/Telnyx ah international route ah use
+pannalam (destination rate)
+SMS
+Yes, DLT route
+Check: International SMS DLT route la pogathu;
+provider international route + country rules (e.g.
+UAE sender ID registration) venum
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 15 of 34
+
+
+--- PAGE 16 ---
+Plivo note: Plivo India pages la India rate ku conflict iruku (₹0.38 / ₹0.40 / ₹0.60 per min
+vera vera pages la). Console la final rate check pannunga. (Plivo India pricing, Plivo country
+pricing help)
+8. US compliance – A2P 10DLC & Toll-Free Verification
+US numbers ku SMS anupanumna registration mandatory; illana carriers (AT&T, T-Mobile,
+Verizon) throttle or block pannuvaanga. DEVI guardians US la irundha mattum idhu
+venum.
+Brand/campaign fees provider console la kaatum; register panna munnadi current fee
+check pannunga.
+9. WhatsApp – Meta Cloud API
+DEVI already direct Meta Cloud API use pannudhu
+( backend/src/services/whatsapp.service.js , Graph API v21.0 ), so provider markup
+zero. Approved template: devi_safety .
+9.1 Ippo namma setup
+Requirement
+Enga apply
+Enna pannanum
+A2P 10DLC
+US long-code (10-digit) number
+la irundhu application SMS
+The Campaign Registry (TCR) la
+Brand + Campaign register
+(provider console vazhiya). 2021
+la irundhu mandatory
+Toll-Free
+Verification
+US/Canada toll-free number la
+irundhu SMS
+Use case submit pannanum. Free,
+mandatory, few days
+Geo / dialing
+permissions
+High-risk countries ku outbound
+call
+Default ah off. Venum na explicit
+ah on pannanum (toll fraud
+prevention)
+Item
+Value
+Endpoint
+https://graph.facebook.com/v21.0/{WHATSAPP_
+PHONE_NUMBER_ID}/messages
+Env variables
+WHATSAPP_PHONE_NUMBER_ID ,
+WHATSAPP_ACCESS_TOKEN , ADMIN_WHATSAPP
+(control room)
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 16 of 34
+
+
+--- PAGE 17 ---
+9.2 Business verification & template
+1. business.facebook.com → Business Settings → Security Center la business verify
+pannunga (business licence / incorporation + business name & address match aagura
+document).
+2. WhatsApp Manager la phone number add + display name approval.
+3. Template Utility category la submit pannunga. Marketing category la potta SOS
+delay/block aagalam.
+4. Verification free; Meta delivered message ku dhan charge pannum.
+9.3 Watch out
+Messaging limits: new business account ku daily business-initiated message limit
+iruku. Verification + good quality rating apram dhan limit increase aagum. SOS scale
+aagura munnadi limit ah check pannunga.
+Quality rating: users block/report panna rating kuraiyum, limit um kuraiyum.
+Delivery status: Meta webhook la sent , delivered , read , failed status varum.
+Adha store panni dashboard la kaatunga.
+Language: ippo en_US mattum. Tamil/Hindi template thaniya approve pannalam.
+Testing: Meta API Setup page la test number + max 5 verified recipients (Section 4).
+Action items (Meta): India WhatsApp account ah Dec 31, 2026 kulla INR billing ku
+maathanum, illana delivery disruption aagalam. Business Manager la payment method
+irukanum; Sep 30, 2026 kulla illatha accounts ku Oct 1 la irundhu service messages
+nikkalam. (Meta pricing)
+Item
+Value
+Template
+devi_safety , language en_US , category Utility
+Parameters
+name , location_link (Google Maps link),
+alert_time (IST)
+No guardian case
+ADMIN_WHATSAPP control room ku pogum
+Abuse limit
+Unverified guardian number ku 1 hour la max 3
+alerts
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 17 of 34
+
+
+--- PAGE 18 ---
+10. Package / bundle / Enterprise tiers
+Moonula yaarum fixed-price "all-in-one combo" package vikkala. Ellame pay-as-you-go:
+number rent, voice minute, SMS/MMS segment, WhatsApp message ellam thani thani bill.
+Difference: cheap self-serve tier la SMS/WhatsApp kidaikuma illa Enterprise la mattuma.
+Takeaway: Twilio & Telnyx la Number + SMS + MMS + WhatsApp ellam pay-as-you-go la
+kidaikum. Plivo voice ku cheap, aana SMS/WhatsApp venumna Enterprise
+(~$1,000/month) ku poganum; appo combined use case ku Plivo dhan costly aagidum.
+Adhanala DEVI la Plivo = voice mattum.
+11. Number vaangura process + Terms & Conditions
+Moonu provider layum same 7 steps dhan.
+11.1 Buying steps
+1. Sign up: email vechu account. Telnyx ku business email venum (Gmail/Yahoo illa).
+2. KYC: Telnyx mandatory document check. Twilio/Plivo full limits ku business details
+kekkum.
+3. Payment + balance: card add panni balance top-up (number rent + expected usage).
+4. Search numbers: country, area code, type (local / mobile / toll-free) vechu filter.
+5. Buy: monthly rent udane charge aagum, auto-renew. Usage thaniya bill.
+6. Regulatory steps: India, Brazil, EU mathiri countries ku address/business proof. US
+SMS ku A2P 10DLC or Toll-Free Verification.
+Provider
+Self-serve la
+kidaikuradhu
+Enterprise venum
+Approx Enterprise cost
+Twilio
+Voice + SMS + MMS +
+WhatsApp + Numbers,
+day 1 la irundhu
+Volume discount /
+dedicated support
+mattum
+Sales kitta custom pricing
+Plivo
+Voice + Numbers + SIP
+Trunking + Audio
+Streaming + AI Agents;
+US & India mattum;
+$2,500/month cap
+SMS, WhatsApp API,
+Verify API + US/India
+thaandi coverage
+~$1,000/month la irundhu
+(third-party reports $750–
+$999; plivo.com/pricing la
+confirm)
+Telnyx
+Voice + SMS + MMS +
+Numbers + WhatsApp
+calling, day 1 la irundhu
+Volume discount /
+priority support
+optional
+Reported (unverified):
+Committed ~$500/mo,
+Growth ~$1,000/mo,
+Enterprise ~$5,000/mo
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 18 of 34
+
+
+--- PAGE 19 ---
+7. App kooda connect: Voice/SMS/WhatsApp webhook URL ah namma server ku point
+pannunga (Section 13).
+11.2 Accept panna vendiya rules
+12. Certificates & approvals – process, templates, evlo days
+Documents ready ah irundha usual ah ~7 working days la, worst case ~15 working days (3
+weeks) la SMS + IVR + WhatsApp ellam live aagidum. Critical path DLT dhan: PE → header
+→ templates onnu apram onnu. Plivo, Meta rendum parallel ah pogum.
+Requirement
+Yaaruku
+Yen
+KYC / business
+verification
+Telnyx (mandatory), Twilio & Plivo
+(higher limits/Enterprise)
+Anti-fraud: spam, robocall, SIM-
+box fraud thadukka
+A2P 10DLC
+US long-code la irundhu
+application SMS
+US carrier rule (2021 la irundhu);
+unregistered traffic
+throttle/block
+Toll-Free
+Verification
+US/Canada toll-free la SMS
+Free, mandatory
+Local presence
+documents
+India, Brazil, sila EU/APAC
+numbers
+Local regulator real presence
+proof kekkum
+Geo / dialing
+permissions
+High-risk/high-fraud destinations
+ku outbound
+Default off, toll fraud thadukka
+Acceptable Use
+Policy
+Moonu perum
+Consent illatha robocall, spam
+SMS, unsolicited WhatsApp
+ban. Violation panna account
+suspend
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 19 of 34
+
+
+--- PAGE 20 ---
+DLT steps sequence la pogum, so DLT ah day 1 laye start pannunga. Meta verification late
+aanalum WhatsApp 250 contacts/day limit oda munnadiye work aagum.
+12.1 Ella approvals um oru paarvai la
+Approvals timeline · approx working days
+Approval
+Enga apply
+Documents
+Fee (approx)
+Days (approx)
+Kidaikuradhu
+DLT
+Principal
+Entity (PE)
+Oru operator DLT portal:
+Jio TrueConnect, Airtel,
+Vi, BSNL (oru idathula
+panna ellarukum share
+aagum)
+Company PAN,
+GST certificate
+(or COI /
+Udyam),
+letterhead la
+Letter of
+Authorization,
+signatory ID +
+address proof,
+business email
+~₹5,900 one-
+time (sila
+guides "₹5,900
++ GST" nu
+solludhu;
+portal la
+check)
+1–3 working
+days (sila case
+7 varai)
+PE ID
+DLT Header
+(sender ID)
+Same DLT portal
+PE ID
+Free
+1–2 working
+days
+6-letter
+header, e.g.
+DEVIAP
+DLT content
+templates
+Same DLT portal
+Header +
+template text
+Free
+1–2 working
+days per
+template
+Template ID
+per message
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 20 of 34
+
+
+--- PAGE 21 ---
+Sources: Plivo India Number KYC, Meta messaging limits, DLT guide (QuickAuth, 2026),
+Infobip DLT docs, Bandwidth 10DLC fees (Feb 2026). DLT fees/timelines third-party
+guides la irundhu; operator portal la final check pannunga.
+12.2 Step by step
+A. DLT (SMS ku)
+1. Documents ready: company PAN, GST certificate (or COI / Udyam), LOA (template
+12.3), signatory Aadhaar/Passport.
+Approval
+Enga apply
+Documents
+Fee (approx)
+Days (approx)
+Kidaikuradhu
+DLT consent
+template
+Same DLT portal
+(Service Explicit
+messages ku)
+Consent text
+Free
+1–2 working
+days
+Consent
+template ID
+Plivo India
+number KYC
+Plivo console → Phone
+Numbers → KYC (India-
+region account)
+GST certificate,
+COI, or Udyam
+la onnu. First
+application ku
+authorized
+signatory sign
++ company
+seal. PAN
+mattum accept
+illa
+KYC free;
+number
+~₹200/month
+080/022
+number ~5
+min
+(automated);
+140/160 series
+thaniya SLA
+India number
+for IVR
+Meta
+business
+verification
+business.facebook.com
+→ Security Center
+Legal business
+document
+(GST / COI /
+Udyam),
+business name
++ address
+match
+aaganum,
+website
+Free
+Usually few
+days,
+sometimes ~2
+weeks
+Verified
+business,
+2,000/day
+limit
+WhatsApp
+display
+name +
+template
+WhatsApp Manager
+Display name,
+template text,
+Utility category
+Free (message
+ku dhan
+charge)
+Minutes to 24
+hours
+Approved
+template
+US A2P
+10DLC (US
+guardians
+iruntha
+mattum)
+Twilio/Telnyx console
+(TCR)
+EIN, business
+details,
+website,
+sample
+messages, opt-
+in proof
+Brand ~$4
+(standard
+brand +
+vetting ~$46),
+campaign
+vetting ~$15,
+monthly
+campaign fee
+~$1.50–$10
+Brand
+minutes–days,
+campaign
+days–weeks
+Registered
+campaign
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 21 of 34
+
+
+--- PAGE 22 ---
+2. Oru operator portal la (e.g. Jio TrueConnect) "Principal Entity" ah sign up, documents
+upload, fee pay → PE ID (1–3 days).
+3. Header register: 6 letters, brand name kooda related, Service/Transactional category
+→ 1–2 days.
+4. Consent template + content templates (12.3) submit. Message la varra URL domain
+(e.g. maps.google.com ) whitelist pannunga → 1–2 days.
+5. Telemarketer (namma SMS provider) ah PE kooda bind pannunga.
+6. PE ID, Header, Template IDs ah SMS provider account + namma .env la podunga. Test
+SMS anupi delivery check.
+B. Plivo India number (IVR ku)
+1. Plivo la India data region organization create (US region la Indian number kidaikathu;
+region apram maatha mudiyathu).
+2. Phone Numbers → KYC → New Application → India.
+3. GST / COI / Udyam la onnu upload. First time signatory sign + company seal.
+4. Business type: Direct Brand.
+5. Approve aana (080/022 ~5 min) Buy Phone Numbers → India → number rent → Voice
+webhook set.
+C. Meta WhatsApp
+1. Meta Business Manager → Security Center → Start verification → legal name, address,
+phone, website + document upload.
+2. WhatsApp Manager la phone number add + display name ("DEVI") approval.
+3. Template Utility category la submit (12.3). Verification mudiyaama kooda template
+approve aagum.
+4. Verify aana 250 → 2,000 unique contacts/24h. Apram quality nalla irundha + 7 days la
+half limit use panna, automatic ah 10,000 → 100,000 → unlimited (6 hours la upgrade).
+D. US 10DLC (US guardians iruntha mattum)
+1. Provider console la Brand register (EIN, legal name, website).
+2. Campaign register: use case, sample messages, opt-in method, privacy policy link.
+3. Approve aana number ah campaign kooda link.
+12.3 Ready templates
+Letter of Authorization (DLT ku, company letterhead la)
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 22 of 34
+
+
+--- PAGE 23 ---
+[Company letterhead]
+Date: ____
+To,
+The DLT Operator (Jio / Airtel / Vi / BSNL)
+Subject: Letter of Authorization for DLT Principal Entity registration
+We, [Company legal name] (PAN: ____, GSTIN: ____), authorize
+[Name], [Designation], to register and manage our Principal Entity,
+Headers, Content Templates and Consent Templates on your DLT platform
+on behalf of the company.
+Authorized person: Name ____  Mobile ____  Email ____  ID proof ____
+For [Company legal name]
+[Signature]  [Company seal]
+[Director / Authorized Signatory name]
+DLT SMS templates (Service Explicit category + consent; variable {#var#} ; start la
+variable vekka koodathu, rendu variable pakkathu pakkathu vekka koodathu)
+T1 SOS alert:
+DEVI SOS: {#var#} needs urgent help. Location: https://maps.google.com/?q=
+{#var#} Time: {#var#} - DEVI
+T2 Guardian added:
+DEVI: You are added as an emergency contact by {#var#}. You will get SOS 
+alerts with location from the DEVI app. - DEVI
+T3 SOS closed:
+DEVI: The SOS alert for {#var#} raised at {#var#} is now closed and marked 
+safe. - DEVI
+Consent template:
+I agree to receive emergency SOS alerts from the DEVI app for my contact.
+Sila operator URL ku {#url#} variable type kekkum; SMS provider kitta confirm
+pannunga. Anupura text template kooda exact ah match aaganum (space, punctuation
+kooda).
+IVR voice script (TTS ku; English + Tamil)
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 23 of 34
+
+
+--- PAGE 24 ---
+EN: This is an emergency alert from the DEVI app. {name} needs your help 
+right now.
+    Press 1 if you are responding. Location link is on WhatsApp and SMS.
+TA: இது DEVI செயலியின் அவசர அழைப்பு. {name} அவர்களுக்கு உடனடி உதவி 
+தேவை.
+    நீங்கள் உதவிக்கு வருகிறீர்கள் என்றால் 1 ஐ அழுத்தவும்.
+WhatsApp templates (Utility category)
+Existing (approved): devi_safety, en_US
+  params: name, location_link, alert_time
+New (suggest): devi_safety_closed, en_US
+  Update from DEVI: the SOS alert from {{name}} at {{alert_time}} is now 
+closed and marked safe.
+New (suggest): devi_safety, ta (Tamil version of the same alert)
+12.4 Reject aagura common reasons
+Approval
+Reason
+Fix
+DLT PE
+Legal name PAN/GST la oru mathiri,
+form la vera mathiri
+Ella documents la exact same legal
+name
+DLT template
+Live SMS text template la irundhu
+maaridichu
+Code la template text ah constant
+ah vechu, variable mattum maathu
+DLT template
+Start la variable, back-to-back
+{#var#}{#var#} , undeclared URL
+Fixed text la start, variables
+naduvula text, URL whitelist
+Plivo KYC
+Document expired / inactive, govt
+record kooda match aagala, blurry,
+sign + seal illa
+Portal la irundhu fresh copy,
+signatory sign + seal
+Meta
+verification
+Business name/address Business
+Manager la oru mathiri, document la
+vera
+Same legal name + address;
+website la business details
+Meta template
+Marketing words (offer, discount) →
+marketing category ku maathum
+Pure alert/update text mattum
+US 10DLC
+Website la privacy policy / opt-in illa,
+sample messages match aagala
+Privacy policy + opt-in proof + real
+sample messages
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 24 of 34
+
+
+--- PAGE 25 ---
+12.5 Presentation la varra questions – ready answers
+13. DEVI project la implement panra steps
+WhatsApp already ready; IVR + SMS dhan puthusa build pannanum. Provider maarinalum
+(Twilio / Plivo / Telnyx) concept same: REST call + webhook + XML. Keela Twilio SDK
+example.
+Question
+Answer
+OSP licence venuma?
+Venaam. DoT 2020–21 la remove pannitaanga;
+provider VNO authorisation la operate
+pannum
+DLT illama SMS anupa mudiyuma?
+Mudiyathu. Operator scrub panni drop
+pannidum
+IVR call ku DLT venuma?
+Plivo 080/022 number non-BFSI
+service/transactional calls ku allowed, KYC
+mattum podhum. 140/160 series venumna
+extra setup. TRAI rule maarina Plivo kitta
+confirm
+DLT ovvoru operator layum thaniya
+pannanuma?
+Venaam. Oru operator la register panna
+ellarukum share aagum
+Meta verification mudiyaama WhatsApp
+anupa mudiyuma?
+Mudiyum, 250 unique contacts/24h limit oda.
+Verify aana 2,000, apram auto scaling
+Template reject aana?
+Edit panni resubmit. DLT 1–2 days, Meta
+minutes–24h
+One-time cost evlo?
+DLT ~₹5,900; header/templates free; Plivo
+KYC free (number ~₹200/month); Meta free;
+US 10DLC (venumna) ~$4–$46 + $15 vetting +
+monthly fee
+Total evlo naal?
+Usual ~7 working days, worst ~15 (3 weeks),
+documents ready ah irundha
+Yaar sign pannanum?
+Director / authorized signatory + company
+seal
+Individual ah (company illama) panna
+mudiyuma?
+Plivo India number ku registered Indian
+business venum (GST / COI / Udyam). DLT ku
+business PAN/GST venum
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 25 of 34
+
+
+--- PAGE 26 ---
+13.1 Steps
+1. Account + keys: sign up, KYC, API credentials copy. Code la hard-code panna
+koodathu, .env la mattum.
+2. Env variables add: IVR_ACCOUNT_SID , IVR_AUTH_TOKEN , IVR_FROM_NUMBER ,
+BACKEND_PUBLIC_URL , SMS provider keys + DLT PE_ID / TEMPLATE_ID .
+3. Number vaangu: Voice capability ulla number (India ku Plivo India-region).
+4. SDK install: npm install twilio (or plivo , telnyx ) backend la.
+5. Public webhook URL: production la HTTPS domain. Local testing ku ngrok mathiri
+tunnel.
+6. backend/src/services/ivr.service.js create: call start + answer XML.
+7. backend/src/routes/ivr.routes.js create: /api/ivr/answer , /api/ivr/gather ,
+/api/ivr/status . Ella route layum signature validation.
+8. backend/src/services/sms.service.js create: DLT approved template text mattum
+anupum.
+9. sos.routes.js la wire pannunga: WhatsApp dispatch pakkathula SMS + first
+guardian call start.
+10. Call status store: SOS alert kooda call attempts (guardian, status, acknowledged time)
+save panni dashboard la kaatunga.
+11. Multi-level menu venumna oru menu screen ku oru webhook.
+13.2 IVR service (sketch)
+// backend/src/services/ivr.service.js
+import twilio from 'twilio';
+const client = twilio(process.env.IVR_ACCOUNT_SID, 
+process.env.IVR_AUTH_TOKEN);
+const BASE = process.env.BACKEND_PUBLIC_URL;
+export const IVRService = {
+  // Guardian ku call start. Victim name URL la anupa koodathu (logs la PII).
+  callGuardian(toNumber, sosId) {
+    return client.calls.create({
+      to: toNumber,
+      from: process.env.IVR_FROM_NUMBER,
+      url: `${BASE}/api/ivr/answer?sosId=${sosId}`,
+      statusCallback: `${BASE}/api/ivr/status?sosId=${sosId}`,
+      statusCallbackEvent: ['completed'], // CallStatus: completed / busy / 
+no-answer / failed
+      machineDetection: 'Enable',         // voicemail ah "answered" nu count 
+panna koodathu
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 26 of 34
+
+
+--- PAGE 27 ---
+      timeout: 25,
+    });
+  },
+  // VoiceResponse XML escape pannum, so name la & or < irundhalum break 
+aagathu
+  answerTwiml(victimName, sosId) {
+    const r = new twilio.twiml.VoiceResponse();
+    const g = r.gather({ numDigits: 1, timeout: 10, action: `/api/ivr/gather?
+sosId=${sosId}` });
+    g.say({ voice: 'Polly.Aditi', language: 'en-IN' },
+      `Emergency alert from DEVI. ${victimName} needs help now. Press 1 if 
+you are responding.`);
+    r.say({ voice: 'Polly.Aditi', language: 'en-IN' }, 'No input received. 
+Please check WhatsApp and SMS.');
+    return r.toString();
+  },
+};
+13.3 Routes (sketch)
+// backend/src/routes/ivr.routes.js
+import express from 'express';
+import twilio from 'twilio';
+const router = express.Router();
+const verify = twilio.webhook(process.env.IVR_AUTH_TOKEN); // fake POST block
+router.post('/answer', verify, async (req, res) => {
+  const alert = await getAlert(req.query.sosId); // name DB la irundhu
+  res.type('text/xml').send(IVRService.answerTwiml(alert.victimName, 
+alert.id));
+});
+router.post('/gather', verify, async (req, res) => {
+  if (req.body.Digits === '1') await markAcknowledged(req.query.sosId, 
+req.body.To);
+  res.type('text/xml').send('<Response><Say>Thank you. Location link is on 
+WhatsApp and SMS.</Say></Response>');
+});
+router.post('/status', verify, async (req, res) => {
+  const failed = ['busy', 'no-answer', 
+'failed'].includes(req.body.CallStatus)
+    || req.body.AnsweredBy?.startsWith('machine');
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 27 of 34
+
+
+--- PAGE 28 ---
+  if (failed && !(await isAcknowledged(req.query.sosId))) await 
+callNextGuardian(req.query.sosId);
+  res.sendStatus(204);
+});
+getAlert , markAcknowledged , isAcknowledged , callNextGuardian namma DB/SOS
+logic la ezhudhanum. Proxy pinnadi run aana signature check ku BACKEND_PUBLIC_URL
+exact ah match aaganum.
+13.4 SMS (India)
+SMS text DLT template kooda exact match aaganum; variable mattum maarum. Example
+template: DEVI SOS: {#var#} needs help. Location: {#var#} - DEVI (DLT la register
+panna text). Free text anupuna operator drop pannum.
+13.5 Provider down aana backup
+Plivo SLA 99.95% (Plivo infosheet) = maasathuku ~22 nimisham varai down aagalam;
+SOS ku backup route venum. WhatsApp (Meta) thaniya provider, so voice down aanalum
+WhatsApp pogum.
+Code: IVRService ah provider-agnostic interface ah ezhudhunga ( callGuardian ,
+answerXml ); IVR_PROVIDER_PRIMARY / IVR_PROVIDER_BACKUP env. Primary 2 thadava fail
+aana circuit breaker open panni few minutes backup ku route pannunga. Backup provider
+ku separate number + KYC + balance munnadiye ready ah vechukonga.
+Sources: Plivo infrastructure infosheet (99.95% SLA). Sila Plivo marketing pages 99.99%
+solludhu; contract SLA sales kitta confirm.
+Channel
+Primary
+Backup
+Switch eppo
+Voice IVR
+Plivo India
+Twilio (pay-as-you-go, minimum
+illa; costly + international CLI)
+or Exotel (plan commitment)
+Plivo API error / 5 sec
+timeout / carrier failure
+status
+SMS
+MSG91
+(DLT)
+Gupshup (same PE +
+templates, telemarketer
+binding rendukum)
+Send API fail or DLR failed
+WhatsApp
+Meta
+Cloud API
+SMS + call already parallel ah
+pogudhu
+Meta error code
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 28 of 34
+
+
+--- PAGE 29 ---
+13.6 Development effort (estimate)
+Oru backend + oru Flutter developer ku ~3 weeks (~15.5–16.5 dev days); approvals (7–15
+working days) kooda parallel ah pogum. Idhu namma code base paathu potta estimate;
+team velocity poruthu maarum.
+Provider backup (2 days) ah phase 2 ku thalli vechaa first release ~2.5 weeks la ready.
+14. Security, abuse & privacy
+IVR webhook open ah irundha yaar venaalum fake ah SOS ah "acknowledged" panna
+mudiyum; adhu dhan first fix.
+Task
+Owner
+Dev days
+Plivo account, number, env setup
+Backend
+0.5
+ivr.service.js + ivr.routes.js (answer,
+gather, status) + signature validation
+Backend
+2
+Guardian call sequence (next guardian, control
+room) + call attempts DB table
+Backend
+2
+Inbound helpline route
+Backend
+1
+sms.service.js + DLT templates
+Backend
+1
+sos.routes.js wiring + dashboard la call/SMS
+status
+Backend + Web
+2
+Guardian OTP consent + "save DEVI number"
+prompt + 112 button
+Flutter
+2
+Provider backup (interface + circuit breaker)
+Backend
+2
+Monitoring + alerts
+Backend
+1
+E2E testing + fixes
+Both
+2–3
+Total
+~15.5–16.5
+Risk
+Enna aagum
+Fix
+Webhook
+spoofing
+Fake POST /api/ivr/gather la
+SOS acknowledged aagidum
+Provider signature validation
+(Twilio X-Twilio-Signature ,
+Plivo/Telnyx signature headers) ella
+IVR route layum
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 29 of 34
+
+
+--- PAGE 30 ---
+14.1 DPDP Rules 2025 – DEVI ku enna venum
+DPDP Rules 13 Nov 2025 la notify aachu; main duties (notice, consent, security,
+retention, breach) 13 May 2027 la irundhu kattayam. Ippove build panna later rework illa.
+Risk
+Enna aagum
+Fix
+XML injection
+User name la & or < irundha
+TwiML break aagum
+SDK builder ( VoiceResponse ) use
+pannunga, illana escape
+Cost abuse / toll
+fraud
+Fake SOS spam panna call/SMS
+bill ezhum
+Existing sosTriggerLimiter +
+recipient limit (3/hour unverified)
+IVR + SMS kum apply. Geo
+permissions India (+ venum na)
+mattum on. Low-balance alert
+PII in logs
+URL query la name/number log
+aagum
+URL la sosId mattum. Logs la
+phone mask (already maskPhone
+iruku)
+Secrets leak
+Account hijack, bill
+Keys .env la mattum, rotate
+pannalam, repo la commit panna
+koodathu
+Privacy (DPDP
+Act 2023)
+Guardian number, location, call
+recording personal data
+Guardian consent record,
+recording venaamna off, retention
+period fix pannunga
+Voicemail false
+ack
+Guardian edukkalai aana
+"answered" nu theriyum
+AMD + DTMF "1" vandha mattum
+ack
+Rule
+Enna solludhu
+DEVI la
+Notice (Rule 3)
+Data collect pannumbodhu enna
+data, purpose, rights nu clear
+notice
+User location + guardian numbers
+ku notice screen
+Consent
+Clear, specific consent; withdraw
+panna easy ah irukanum
+User consent + guardian OTP
+consent; app la remove/withdraw
+option
+Consent
+Managers
+13 Nov 2026 la irundhu
+Ippo theva illa
+Breach (Rule 7)
+Board + affected users ku
+"without delay"; detailed report
+Board ku 72 hours la
+Incident runbook + contact list
+ready
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 30 of 34
+
+
+--- PAGE 31 ---
+Sources: DPDP Rules 2025 (Wikipedia), DPDP timeline (grc-flow), DPDP compliance
+timeline (ConsentOS), DSCI FAQ on retention & erasure, Mondaq on retention. Rule text
+MeitY gazette la verify pannunga.
+14.2 Call recording consent & disclaimer
+India la call recording ku clear statute illa; safe practice = record panradhu nu
+munnadiye solradhu, illana record pannama irukradhu. DEVI SOS call ku recording theva
+illa (DTMF "1" + status log podhum), so default recording OFF recommend.
+App disclaimer (privacy policy / T&C la): "DEVI emergency calls, SMS and WhatsApp
+alerts are sent to the contacts you add. DEVI does not replace 112 or police. Delivery
+depends on telecom and internet networks."
+Sources: Call recording compliance India (Exotel), Telephone call recording laws
+(Wikipedia). Final wording ku lawyer review.
+15. Testing & go-live checklist
+Verified test numbers la ellam pass aana apram dhan real guardians ku on pannanum.
+Rule
+Enna solludhu
+DEVI la
+Logs retention
+(Rule 8(3))
+Personal data, traffic data,
+processing logs minimum 1 year
+SOS, call, SMS, WhatsApp logs 1
+year keep; apram delete
+3-year erasure
+(Rule 8(1))
+2 crore+ users e-commerce/social
+media, 50 lakh+ gaming ku
+mattum
+DEVI ku apply aagathu (ippo)
+Security
+Reasonable safeguards
+(encryption, access control,
+logging)
+Already security audit la cover
+(see security doc)
+Option
+Eppo
+Enna pannanum
+Recording OFF
+(recommended)
+SOS outbound + inbound
+Call status, DTMF, timestamps
+mattum log
+Recording ON
+Control room ku connect
+aagura calls (dispute/audit ku)
+Start la "This call is recorded for
+safety and quality"
+announcement; purpose +
+retention (e.g. 90 days) privacy
+policy la; access control
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 31 of 34
+
+
+--- PAGE 32 ---
+Testing
+Go-live
+Monitoring & alerts
+Ovvoru SOS kum "guardian kitta alert reach aachaa" nu dashboard la theriyanum; fail
+aana udane control room ku alert pogaanum.
+Trial account la own verified number ku IVR call varudha
+"1" press panna dashboard la acknowledged aagudha
+Edukkama vittaa / busy / voicemail → adutha guardian ku pogudha
+Ellarum fail → control room ( ADMIN_WHATSAPP ) ku pogudha
+Fake webhook POST (signature illama) reject aagudha
+Name la special characters ( & , < ) irundhalum call work aagudha
+WhatsApp devi_safety + SMS same time la varudha
+Internet illatha phone la SMS varudha
+DLT PE + Header + SMS template + consent template approved
+India-region number (Plivo) KYC mudinjuthu
+Meta business verification + Utility template approved
+US guardians iruntha A2P 10DLC / Toll-Free Verification
+Dial pannura countries ku geo permission on
+Production HTTPS webhook URL provider console la set
+Auto-recharge + low-balance alert on
+Call/SMS/WhatsApp failure monitoring + delivery status logging
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 32 of 34
+
+
+--- PAGE 33 ---
+Alerts:
+Thresholds (2 min, 20%) starting values; real data paathu tune pannunga.
+16. Final comparison & recommendation
+DEVI ku: Plivo (India voice) + India DLT SMS + direct Meta WhatsApp. Global guardians
+adhigama aana Twilio voice add pannalam.
+Signal
+Source
+Store / show
+Call status
+Plivo status webhook ( completed , busy ,
+no-answer , failed , machine)
+Call attempts table,
+dashboard
+DTMF ack
+/api/ivr/gather
+SOS "acknowledged" +
+time
+SMS delivery
+(DLR)
+SMS provider DLR webhook ( delivered ,
+failed , DLT scrub error)
+SMS log
+WhatsApp
+status
+Meta webhook ( sent , delivered , read ,
+failed )
+WhatsApp log
+Provider balance
+Plivo / MSG91 balance API
+Daily check
+SOS 2 nimisham la yaarum acknowledge pannala → control room alert
+Call failure rate > 20% (last 15 min) → backup provider + dev alert
+SMS DLT scrub failures → template mismatch alert
+WhatsApp failed spike or quality rating drop → alert
+Provider balance < 2 days usage → recharge alert
+Criteria
+Twilio
+Plivo
+Telnyx
+Global coverage
+Best (100+)
+Good (65+, self-serve
+US/India mattum)
+Moderate (50+),
+US/UK/EU strong
+Pricing
+Premium (highest)
+Cheapest overall
+Low, transparent
+pay-as-you-go
+India voice
+Costly, Indian number
+illa, international CLI
+Cheapest, Indian
+number iruku
+India rate publish
+aagala, 4 cities
+numbers
+Free trial
+Decent bundle, card
+illa
+$10, card illa,
+SMS/WhatsApp locked
+$25 AI pretrial,
+business email + KYC
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 33 of 34
+
+
+--- PAGE 34 ---
+Moonum webhook + markup concept la same, so later provider maathuradhu easy.
+Adhanala IVRService ah provider-agnostic ah ezhudhunga.
+17. Sources & disclaimer
+Intha guide docs/Twilio_Plivo_Telnyx_Full_Guide.pdf (October 2026) + DEVI
+backend code ( whatsapp.service.js , sos.routes.js ) base pannitu ezhudhinadhu. PDF
+oda sources (accessed October 2026):
+Twilio pricing, Twilio India voice guidelines, Twilio docs
+Plivo pricing, Plivo India voice pricing, Plivo rent India numbers
+Telnyx pricing, Telnyx developers
+TRAI (TCCCPR regulation text)
+Third-party trackers: cloudtalk.io, dialsheet.io, krispcall.com, smscountry.com,
+frejun.com
+PDF la illatha sila points (Meta free tier SOS ku apply aagathu, India utility ~₹0.12, DLT fee
+~₹5,900, WhatsApp messaging limits, DPDP Act) approximate; official page la verify
+pannunga.
+Disclaimer: CPaaS pricing um India telecom rules um adikadi maarum. Number vaanga,
+campaign launch panna munnadi provider / TRAI / Meta official site la current rate &
+compliance check pannunga.
+Criteria
+Twilio
+Plivo
+Telnyx
+IVR tooling
+Best (Studio +
+TwiML)
+Good (PlivoXML +
+basic Flow)
+Good (TeXML + Call
+Control API + AI
+voice)
+SMS +
+WhatsApp self-
+serve la
+Yes
+No (Enterprise)
+Yes
+Best for
+Enterprise, widest
+reach, fast no-code
+Cost-conscious, India-
+heavy traffic
+Full API control,
+lowest latency
+DEVI – IVR, SMS & WhatsApp A to Z Guide
+Page 34 of 34
+
+
