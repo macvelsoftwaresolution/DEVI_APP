@@ -132,7 +132,9 @@ class EmergencyService : LifecycleService() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Devi Safety", NotificationManager.IMPORTANCE_LOW).apply {
+                // The channel name is seen only in system settings, so it can say what the service does
+                NotificationChannel(CHANNEL_ID, "Emergency evidence recording", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Shown while Devi Safety records camera and microphone evidence during an SOS"
                     setShowBadge(false)
                 }
             )

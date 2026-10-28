@@ -42,7 +42,8 @@ void main() {
 
     // Prominent disclosure appears before any system permission prompt
     expect(find.text('Location, camera & microphone'), findsOneWidget);
-    expect(find.textContaining('even when the app is closed'), findsOneWidget);
+    expect(find.textContaining('Only once, no tracking'), findsOneWidget);
+    expect(find.textContaining('even if the app is in the background'), findsOneWidget);
     expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();

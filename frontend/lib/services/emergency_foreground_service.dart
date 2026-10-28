@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 
 /// Bridge to the Android `EmergencyService` (native foreground service).
 ///
-/// While an SOS is active it records 2 minutes of video/audio evidence and keeps live
-/// location allowed even when the app is minimized or a phone call is in progress.
+/// While an SOS is active it records 2 minutes of video/audio evidence, also when the app
+/// is minimized or a phone call is in progress. It does not use location.
 /// Other platforms report [isSupported] = false and callers use their normal path.
 class EmergencyForegroundService {
   EmergencyForegroundService._();

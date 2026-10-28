@@ -20,23 +20,26 @@ Future<bool> showPermissionDisclosureDialog(BuildContext context) async {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text(
+              'When you press SOS:',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textDark, height: 1.4),
+            ),
+            SizedBox(height: 10),
             _Point(
               icon: Icons.my_location_rounded,
-              text: 'Devi Safety collects location data to share your location with your '
-                  'guardians and the DEVI control room during an SOS, even when the app is '
-                  'closed or the screen is off.',
+              text: 'Your location is sent to your guardians and the DEVI control room. Only once, no tracking.',
             ),
             _Point(
               icon: Icons.videocam_rounded,
-              text: 'When you press SOS, it records up to 2 minutes of video and audio as evidence.',
+              text: 'Video and audio are recorded for up to 2 minutes as evidence, even if the app is in the background.',
             ),
             _Point(
               icon: Icons.call_rounded,
-              text: 'It calls your first guardian directly from your phone.',
+              text: 'Your first guardian gets a call from your phone.',
             ),
             SizedBox(height: 6),
             Text(
-              'Nothing is collected or shared when no SOS is active.',
+              'Nothing is collected when SOS is not active.',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textDark, height: 1.4),
             ),
           ],
