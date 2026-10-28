@@ -9,7 +9,8 @@ export const notFoundHandler = (req, res, next) => {
 
 export const errorHandler = (err, req, res, next) => {
   console.error('Unhandled Error:', err);
-  const statusCode = err.status || err.statusCode || 500;
+  // Evidence file over the upload limit (multer): a client error, not a server error
+  const statusCode = err.code === 'LIMIT_FILE_SIZE' ? 413 : err.status || err.statusCode || 500;
   // Server errors can carry DB/internal details: keep them in the log, not in production responses
   const hideDetails = IS_PRODUCTION && statusCode >= 500;
   res.status(statusCode).json({

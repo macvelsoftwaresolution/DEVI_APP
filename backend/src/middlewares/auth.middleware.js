@@ -84,6 +84,23 @@ export const verifySosControlToken = (alertId, token) =>
   !!alertId && !!token && safeEqual(token, signSosControlToken(alertId));
 
 /**
+ * Middleware for uploads (R15): checks the alert's control token from the headers BEFORE the
+ * request body is read, so a request without it is refused before any file reaches memory.
+ * Needs X-Alert-Id + X-SOS-Token; sets req.sosAlertId for the route.
+ */
+export const requireSosControlHeaders = (req, res, next) => {
+  const alertId = String(req.get('x-alert-id') || '').trim();
+  if (!verifySosControlToken(alertId, req.get('x-sos-token'))) {
+    return res.status(403).json({
+      success: false,
+      message: 'This device is not allowed to update this SOS alert.',
+    });
+  }
+  req.sosAlertId = alertId;
+  next();
+};
+
+/**
  * Who may resolve (close) an SOS alert: the creating device (control token), a signed-in admin,
  * or the logged-in owner of the alert (the app loses its in-memory control token on restart).
  * Knowing the alert ID or the guardian view key is never enough.

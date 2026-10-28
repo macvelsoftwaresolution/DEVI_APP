@@ -351,6 +351,8 @@ class ApiService {
       if (_authToken != null && _authToken!.isNotEmpty) {
         request.headers['Authorization'] = 'Bearer $_authToken';
       }
+      // The server checks these headers before it reads the file, so the alert ID goes in a header too
+      request.headers['X-Alert-Id'] = alertId;
       final controlToken = _sosControlTokens[alertId];
       if (controlToken != null) {
         request.headers['X-SOS-Token'] = controlToken;

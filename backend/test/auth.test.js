@@ -10,6 +10,7 @@ import {
   signSosControlToken,
   verifySosControlToken,
   canResolveSos,
+  requireSosControlHeaders,
   sosResolver,
   isTrackingLinkExpired,
   TRACKING_LINK_GRACE_MS,
@@ -131,4 +132,24 @@ test('R8: admin and user tokens are signed with different secrets', () => {
   assert.equal(runMiddleware(verifyToken, mockReq({ authorization: `Bearer ${adminToken}` })).res.statusCode, 403);
   assert.equal(decodeAdminToken(userToken), null);
   assert.ok(decodeAdminToken(adminToken));
+});
+
+test('R15: upload is refused from the headers alone, before any file is read', () => {
+  const alertId = 'alert-15';
+  const ok = mockReq({ 'x-alert-id': alertId, 'x-sos-token': signSosControlToken(alertId) });
+  const passed = runMiddleware(requireSosControlHeaders, ok);
+  assert.equal(passed.nextCalled, true);
+  assert.equal(ok.sosAlertId, alertId);
+
+  // Missing alert ID, missing token, or a token for another alert: 403 and next() never runs
+  for (const headers of [
+    { 'x-sos-token': signSosControlToken(alertId) },
+    { 'x-alert-id': alertId },
+    { 'x-alert-id': alertId, 'x-sos-token': signSosControlToken('other') },
+    {},
+  ]) {
+    const r = runMiddleware(requireSosControlHeaders, mockReq(headers));
+    assert.equal(r.nextCalled, false);
+    assert.equal(r.res.statusCode, 403);
+  }
 });

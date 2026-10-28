@@ -59,6 +59,18 @@ export const guestSyncLimiter = rateLimit({
 });
 
 /**
+ * Evidence upload rate limiter (R15): each SOS uploads one video, retried at most 3 times
+ * 10 per 10 minutes per IP is plenty for real use and caps memory use per client
+ */
+export const evidenceUploadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler('Too many evidence uploads. Please wait a few minutes.'),
+});
+
+/**
  * SOS Trigger rate limiter: Prevents spamming emergency alerts
  * Max 10 trigger calls per minute per IP
  */

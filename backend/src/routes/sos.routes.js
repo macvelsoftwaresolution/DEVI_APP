@@ -5,7 +5,7 @@ import { SosService } from '../services/sos.service.js';
 import { UserService } from '../services/user.service.js';
 import { uploadMediaToCloudinary, evidenceDeliveryUrl } from '../config/cloudinary.js';
 import { toEvidenceRef, parseEvidenceRef, evidenceLink, withEvidenceLink } from '../utils/evidence.js';
-import { sosTriggerLimiter } from '../middlewares/rateLimiter.js';
+import { sosTriggerLimiter, evidenceUploadLimiter } from '../middlewares/rateLimiter.js';
 import { maskPhone } from '../utils/logMask.js';
 import { pickSosRecipients, sanitizeVictimName, recipientLimiter, RECIPIENT_LIMIT } from '../utils/sosRecipients.js';
 import {
@@ -13,6 +13,7 @@ import {
   optionalToken,
   signSosControlToken,
   verifySosControlToken,
+  requireSosControlHeaders,
   sosResolver,
   verifySosViewToken,
   decodeAdminToken,
@@ -23,7 +24,8 @@ import { socketService } from '../services/socket.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  // A 2-minute video is ~35 MB; 60 MB leaves room without letting one request fill memory
+  limits: { fileSize: 60 * 1024 * 1024 },
 });
 
 const router = Router();
@@ -284,17 +286,13 @@ router.get('/evidence/:alertId', async (req, res, next) => {
 });
 
 // POST /api/sos/upload-evidence - Uploads 2-minute emergency video/audio evidence to Cloudinary and saves URL
-router.post('/upload-evidence', upload.single('file'), async (req, res, next) => {
+// Order matters (R15): rate limit and control token are checked from the headers first; only then
+// does multer read the file into memory
+router.post('/upload-evidence', evidenceUploadLimiter, requireSosControlHeaders, upload.single('file'), async (req, res, next) => {
   try {
-    const { alertId } = req.body;
-    if (!alertId) {
-      return res.status(400).json({
-        success: false,
-        message: 'alertId is required in request body',
-      });
-    }
-
-    if (!hasSosControl(req, alertId, req.body)) {
+    const alertId = req.sosAlertId;
+    // The body copy, when sent, must be the same alert the token was checked for
+    if (req.body?.alertId && String(req.body.alertId) !== alertId) {
       return rejectSosControl(res);
     }
 
