@@ -36,3 +36,12 @@ test('secretProblems: every secret long and different', () => {
   assert.deepEqual(secretProblems({ ...good, SOS_LINK_SECRET: long('a') }), ['JWT_SECRET and SOS_LINK_SECRET have the same value']);
   assert.deepEqual(secretProblems({ ...good, ADMIN_JWT_SECRET: 'short' }), ['ADMIN_JWT_SECRET is shorter than 32 characters']);
 });
+
+test('R14: only random 128-bit guest IDs are accepted', async () => {
+  const { isValidGuestId } = await import('../src/routes/user.routes.js');
+  assert.equal(isValidGuestId('GUEST_3F9AB0C2D4E5F60718293A4B5C6D7E8F'), true);
+  assert.equal(isValidGuestId('GUEST_MVQCFVUF'), false); // old time-based ID
+  assert.equal(isValidGuestId('GUEST_3f9ab0c2d4e5f60718293a4b5c6d7e8f'), false);
+  assert.equal(isValidGuestId(''), false);
+  assert.equal(isValidGuestId(undefined), false);
+});

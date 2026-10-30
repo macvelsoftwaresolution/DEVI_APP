@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { UserService } from '../services/user.service.js';
 import { MAX_GUARDIANS } from '../utils/sosRecipients.js';
@@ -7,6 +8,8 @@ import { optionalToken, verifyToken, signUserToken } from '../middlewares/auth.m
 const router = Router();
 
 const isValidMobile = (phone) => /^[6-9]\d{9}$/.test(phone);
+// Random 128-bit guest ID (the app's UUID v4, hex). Old time-based IDs could be guessed (R14).
+export const isValidGuestId = (id) => typeof id === 'string' && /^GUEST_[0-9A-F]{32}$/.test(id);
 
 // GET /api/user/profile/:phone
 router.get('/profile/:phone', verifyToken, async (req, res, next) => {
@@ -148,18 +151,23 @@ router.put('/profile', optionalToken, async (req, res, next) => {
 router.post('/guest', guestSyncLimiter, async (req, res, next) => {
   try {
     const { guestId, guardians } = req.body;
-    const idToUse = (guestId && typeof guestId === 'string' && guestId.trim().length > 0)
-      ? guestId.trim()
-      : `GUEST_${Date.now().toString(36).toUpperCase()}`;
+    if (guestId !== undefined && !isValidGuestId(guestId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid guest ID. Please update the app.',
+      });
+    }
+    const idToUse = guestId || `GUEST_${randomUUID().replace(/-/g, '').toUpperCase()}`;
 
     // Guests are not verified: anything past the guardian limit is dropped
     const guestGuardians = Array.isArray(guardians) ? guardians.slice(0, MAX_GUARDIANS) : guardians;
     const guestUser = await UserService.createOrGetGuestUser(idToUse, guestGuardians);
 
+    // Guardians' names and numbers are never sent back (R14)
     res.status(200).json({
       success: true,
       message: 'Guest user tracked in database',
-      data: guestUser,
+      data: { guestId: idToUse, isGuest: true, guardianCount: guestUser?.guardians?.length ?? 0 },
     });
   } catch (err) {
     next(err);

@@ -36,8 +36,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Future<void> _fetchHistory({bool isSilent = false}) async {
     if (!isSilent) setState(() => _isLoading = true);
-    final userPhone = AppState.instance.phone;
-    final results = await ApiService.instance.getHistory(userPhone);
+    final state = AppState.instance;
+    final results = state.isGuest
+        ? await ApiService.instance.getGuestHistory(await state.guestAlertTokens())
+        : await ApiService.instance.getHistory(state.phone);
 
     if (mounted) {
       setState(() {

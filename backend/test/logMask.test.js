@@ -10,8 +10,10 @@ test('maskPhone keeps only the last 4 digits', () => {
   assert.equal(maskPhone('12'), '***');
 });
 
-test('maskPhone leaves guest IDs as they are', () => {
-  assert.equal(maskPhone('GUEST_MVQCFVUF'), 'GUEST_MVQCFVUF');
+test('maskPhone hides guest IDs (R14: the ID is the guest key)', () => {
+  assert.equal(maskPhone('GUEST_MVQCFVUF'), 'GUEST_****UF');
+  assert.equal(maskPhone('GUEST_3F9AB0C2D4E5F60718293A4B5C6D7E8F'), 'GUEST_****8F');
+  assert.equal(maskUrl('/api/sos/history/GUEST_3F9AB0C2D4E5F60718293A4B5C6D7E8F'), '/api/sos/history/GUEST_****8F');
 });
 
 test('maskUrl hides tracking and control keys', () => {

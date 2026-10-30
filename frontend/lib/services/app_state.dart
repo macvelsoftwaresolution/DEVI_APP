@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import 'api_service.dart';
 import 'emergency_media_service.dart';
 import 'onboarding_service.dart';
@@ -117,12 +118,7 @@ class AppState extends ChangeNotifier {
     isGuest = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      String? guestId = prefs.getString(_keyGuestId);
-      if (guestId == null || guestId.isEmpty) {
-        final rand = DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase();
-        guestId = 'GUEST_$rand';
-        await prefs.setString(_keyGuestId, guestId);
-      }
+      final guestId = await _ensureGuestId(prefs);
       phone = guestId;
       if (name.isEmpty) name = setupName;
 
@@ -149,6 +145,16 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error initializing guest session: $e');
     }
+  }
+
+  /// Random, not time-based: a guest ID must not be guessable. Older time-based IDs
+  /// (e.g. GUEST_MVQCFVUF) are replaced; alerts sent with them stay reachable by their tokens.
+  Future<String> _ensureGuestId(SharedPreferences prefs) async {
+    final saved = prefs.getString(_keyGuestId);
+    if (saved != null && RegExp(r'^GUEST_[0-9A-F]{32}$').hasMatch(saved)) return saved;
+    final guestId = 'GUEST_${const Uuid().v4().replaceAll('-', '').toUpperCase()}';
+    await prefs.setString(_keyGuestId, guestId);
+    return guestId;
   }
 
   Future<void> saveSession(String userPhone, [String? token]) async {
@@ -186,6 +192,16 @@ class AppState extends ChangeNotifier {
       await _secureStorage.write(key: _keyGuestAlerts, value: jsonEncode(alerts));
     } catch (e) {
       debugPrint('Error saving guest alert: $e');
+    }
+  }
+
+  /// Alerts sent as a guest on this device (alert ID → control token), for the guest's history
+  Future<Map<String, String>> guestAlertTokens() async {
+    try {
+      return await _readGuestAlerts();
+    } catch (e) {
+      debugPrint('Error reading guest alerts: $e');
+      return {};
     }
   }
 
@@ -260,9 +276,8 @@ class AppState extends ChangeNotifier {
         return true;
       } else {
         // Restore guest session and local guardians if app was used in guest mode
-        final guestId = prefs.getString(_keyGuestId);
-        if (guestId != null && guestId.isNotEmpty) {
-          phone = guestId;
+        if (prefs.getString(_keyGuestId)?.isNotEmpty ?? false) {
+          phone = await _ensureGuestId(prefs);
           isGuest = true;
           if (name.isEmpty) name = setupName;
           final localG = prefs.getString(_keyGuestGuardians);

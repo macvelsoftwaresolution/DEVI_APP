@@ -76,7 +76,10 @@ export const SosService = {
     if (userPhone) {
       let user = await UserService.findUserByPhone(userPhone);
       if (!user) {
-        user = await UserService.createOrGetUser(userPhone);
+        // A guest ID must stay a guest record, so the alert can move to the account on sign in
+        user = userPhone.startsWith('GUEST_')
+          ? await UserService.createOrGetGuestUser(userPhone)
+          : await UserService.createOrGetUser(userPhone);
       }
       if (user) userId = user.id;
     }
@@ -194,15 +197,19 @@ export const SosService = {
     }
   },
 
-  async getSosHistory(userPhone) {
+  // All alerts (admin), one user's alerts (userPhone), or only the given alert IDs (alertIds).
+  // An unknown user or an empty ID list returns nothing, never every alert.
+  async getSosHistory(userPhone, { alertIds } = {}) {
     try {
       let query = supabase.from('sos_history').select('*').order('created_at', { ascending: false });
 
-      if (userPhone) {
+      if (alertIds) {
+        if (!alertIds.length) return [];
+        query = query.in('id', alertIds);
+      } else if (userPhone) {
         const user = await UserService.findUserByPhone(userPhone);
-        if (user) {
-          query = query.eq('user_id', user.id);
-        }
+        if (!user) return [];
+        query = query.eq('user_id', user.id);
       }
 
       const { data, error } = await query;

@@ -326,6 +326,31 @@ class ApiService {
     }
   }
 
+  // --- SOS: Guest history (no login: each alert is proven with its control token) ---
+  Future<List<Map<String, dynamic>>> getGuestHistory(Map<String, String> alerts) async {
+    if (alerts.isEmpty) return [];
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/sos/history/guest'),
+            headers: _headers,
+            body: jsonEncode({
+              'alerts': alerts.entries
+                  .map((e) => {'alertId': e.key, 'controlToken': e.value})
+                  .toList(),
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final list = jsonDecode(res.body)['data'] as List<dynamic>?;
+        return (list ?? const []).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (e) {
+      debugPrint('API Guest History Error: $e');
+    }
+    return [];
+  }
+
   // --- SOS: Get Emergency History ---
   Future<List<Map<String, dynamic>>> getHistory([String? userPhone]) async {
     try {
@@ -338,10 +363,8 @@ class ApiService {
           .timeout(const Duration(seconds: 8));
 
       var res = await fetch();
-      // Token expired or invalid: refresh once and retry (registered users only)
-      if ((res.statusCode == 401 || res.statusCode == 403) &&
-          userPhone != null &&
-          !userPhone.startsWith('GUEST_')) {
+      // Token expired or invalid: refresh once and retry
+      if ((res.statusCode == 401 || res.statusCode == 403) && userPhone != null) {
         await _ensureToken(userPhone, force: true);
         res = await fetch();
       }

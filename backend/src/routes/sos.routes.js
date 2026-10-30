@@ -418,13 +418,29 @@ router.post('/claim', verifyToken, async (req, res, next) => {
   }
 });
 
-// GET /api/sos/history/:phone - Returns SOS emergency history for a user
+// POST /api/sos/history/guest - A guest's own SOS history. Guests have no login, so the device
+// proves each alert with its control token. Body: { alerts: [{ alertId, controlToken }] }
+router.post('/history/guest', async (req, res, next) => {
+  try {
+    const alertIds = provenSosAlertIds(req.body?.alerts);
+    const history = await SosService.getSosHistory(null, { alertIds });
+
+    res.status(200).json({
+      success: true,
+      data: history.map((h) => withEvidenceLink(h)),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/sos/history/:phone - Returns SOS emergency history for a signed-in user.
+// Guest IDs are refused here: knowing one must never reveal its alerts (guests use /history/guest).
 router.get('/history/:phone', optionalToken, async (req, res, next) => {
   try {
     const { phone } = req.params;
 
-    // Guest sessions (GUEST_xxx) have no login, so only registered numbers need a token
-    if (!phone.startsWith('GUEST_') && !req.user) {
+    if (!req.user) {
       return res.status(401).json({
         success: false,
         message: 'Access denied. Please log in to view your emergency history.',
@@ -432,7 +448,7 @@ router.get('/history/:phone', optionalToken, async (req, res, next) => {
     }
 
     // Privacy check: User can only view their own emergency history
-    if (req.user && req.user.phone !== phone) {
+    if (req.user.phone !== phone) {
       return res.status(403).json({
         success: false,
         message: 'Access forbidden: You cannot view another user emergency history',
