@@ -1,11 +1,14 @@
 // ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'package:flutter/foundation.dart';
+import '../config/features.dart';
 import 'permission_stub.dart';
 
 class WebPermissionHandler implements PlatformPermissionHandler {
   @override
   Future<bool> requestMediaPermissions() async {
+    // Camera & mic are only for evidence recording (off until Phase 2)
+    if (!kEvidenceRecordingEnabled) return true;
     try {
       final mediaDevices = html.window.navigator.mediaDevices;
       if (mediaDevices != null) {

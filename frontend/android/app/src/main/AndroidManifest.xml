@@ -3,16 +3,22 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- PHASE 2: evidence recording is off. Restore these two lines and remove the
+         tools:node="remove" lines below (they also drop what the camera plugin adds) -->
+    <!-- <uses-permission android:name="android.permission.CAMERA" /> -->
+    <!-- <uses-permission android:name="android.permission.RECORD_AUDIO" /> -->
+    <uses-permission android:name="android.permission.CAMERA" tools:node="remove" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- PHASE 2: background recording service permissions -->
+    <!-- <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" /> -->
+    <!-- <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" /> -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- PHASE 2: only the recording service shows a notification -->
+    <!-- <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -24,12 +30,14 @@
         <service
             android:name="com.baseflow.geolocator.GeolocatorLocationService"
             tools:node="remove" />
-        <!-- SOS foreground service: background evidence recording (camera + mic). No location: the SOS sends one location -->
+        <!-- PHASE 2: SOS foreground service for background evidence recording (camera + mic).
+             Off with recording; restore with the permissions above.
         <service
             android:name=".EmergencyService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

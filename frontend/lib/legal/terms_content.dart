@@ -6,7 +6,8 @@
 class TermsContent {
   TermsContent._();
 
-  static const String version = 'v2-draft';
+  // v3: evidence recording (camera + microphone) removed until Phase 2
+  static const String version = 'v3-draft';
   static const String lastUpdated = 'October 2026';
   static const String company = 'Macvel Software Solutions';
 
@@ -32,8 +33,7 @@ class TermsContent {
           '• Your guardians\' names and mobile numbers, to alert them.\n'
           '• Your location, read once when you press SOS, so your guardians know where you '
           'were. DEVI does not track your location after that.\n'
-          '• Camera video and microphone audio, recorded for up to 2 minutes when you press '
-          'SOS, as evidence for your guardians and the control room.',
+          '• DEVI does not use your camera or microphone and does not record video or audio.',
     ),
     TermsSection(
       'Who can see your SOS data',
@@ -55,7 +55,7 @@ class TermsContent {
       'Your choices',
       'You can change or remove your guardians at any time in Settings. You can ask us to '
           'delete your account and SOS history. You can withdraw consent by uninstalling '
-          'the app; SOS features need location, camera and microphone access to work.',
+          'the app; SOS features need location access to work.',
     ),
   ];
 }

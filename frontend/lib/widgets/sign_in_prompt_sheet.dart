@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/features.dart';
 import '../screens/login_screen.dart';
 import '../services/onboarding_service.dart';
 import '../theme/app_colors.dart';
@@ -29,8 +30,8 @@ Future<void> showSignInPromptSheet(BuildContext context, {bool isReminder = fals
             ),
             const SizedBox(height: 8),
             const Text(
-              'Sign in to keep this alert and its evidence in your history, and to keep your '
-              'guardians even if you change phones.',
+              'Sign in to keep this alert${kEvidenceRecordingEnabled ? ' and its evidence' : ''} '
+              'in your history, and to keep your guardians even if you change phones.',
               style: TextStyle(fontSize: 14, height: 1.45, color: AppColors.textMuted),
             ),
             const SizedBox(height: 20),

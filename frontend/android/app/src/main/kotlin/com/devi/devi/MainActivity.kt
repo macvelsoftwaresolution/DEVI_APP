@@ -103,15 +103,18 @@ class MainActivity : FlutterActivity() {
                 "requestAllSafetyPermissions" -> {
                     val permissionsList = mutableListOf(
                         Manifest.permission.CALL_PHONE,
-                        Manifest.permission.CAMERA,
-                        Manifest.permission.RECORD_AUDIO,
+                        // PHASE 2: evidence recording is off, so camera + mic are not asked for
+                        // Manifest.permission.CAMERA,
+                        // Manifest.permission.RECORD_AUDIO,
                         Manifest.permission.ACCESS_FINE_LOCATION,
                         // Guardian picker on the quick setup screen (asked here so it is one batch)
                         Manifest.permission.READ_CONTACTS
                     )
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        permissionsList.add(Manifest.permission.POST_NOTIFICATIONS)
-                    }
+                    // PHASE 2: the only notification is the evidence recording service's, so
+                    // notifications are not asked for while recording is off
+                    // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    //     permissionsList.add(Manifest.permission.POST_NOTIFICATIONS)
+                    // }
                     val required = permissionsList.toTypedArray()
                     val allGranted = required.all {
                         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED

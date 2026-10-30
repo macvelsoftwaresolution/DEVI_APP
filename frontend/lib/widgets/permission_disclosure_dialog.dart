@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/features.dart';
 import '../theme/app_colors.dart';
 
 /// Prominent disclosure shown right before the system permission prompts
@@ -11,7 +12,7 @@ Future<bool> showPermissionDisclosureDialog(BuildContext context) async {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       icon: const Icon(Icons.location_on_rounded, color: AppColors.emergencyRed, size: 32),
       title: const Text(
-        'Location, camera, microphone & contacts',
+        kEvidenceRecordingEnabled ? 'Location, camera, microphone & contacts' : 'Location, calls & contacts',
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
       ),
@@ -29,10 +30,11 @@ Future<bool> showPermissionDisclosureDialog(BuildContext context) async {
               icon: Icons.my_location_rounded,
               text: 'Your location is sent to your guardians and the DEVI control room. Only once, no tracking.',
             ),
-            _Point(
-              icon: Icons.videocam_rounded,
-              text: 'Video and audio are recorded for up to 2 minutes as evidence, even if the app is in the background.',
-            ),
+            if (kEvidenceRecordingEnabled)
+              _Point(
+                icon: Icons.videocam_rounded,
+                text: 'Video and audio are recorded for up to 2 minutes as evidence, even if the app is in the background.',
+              ),
             _Point(
               icon: Icons.call_rounded,
               text: 'Your first guardian gets a call from your phone.',

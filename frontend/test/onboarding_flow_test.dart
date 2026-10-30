@@ -41,10 +41,11 @@ void main() {
     await tester.pumpAndSettle();
 
     // Prominent disclosure appears before any system permission prompt
-    expect(find.text('Location, camera, microphone & contacts'), findsOneWidget);
+    expect(find.text('Location, calls & contacts'), findsOneWidget);
     expect(find.textContaining('never uploaded'), findsOneWidget);
     expect(find.textContaining('Only once, no tracking'), findsOneWidget);
-    expect(find.textContaining('even if the app is in the background'), findsOneWidget);
+    // Evidence recording is off until Phase 2: no camera / microphone line
+    expect(find.textContaining('Video and audio'), findsNothing);
     expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
     await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();

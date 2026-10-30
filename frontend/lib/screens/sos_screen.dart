@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
+import '../config/features.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../services/emergency_foreground_service.dart';
@@ -238,7 +239,9 @@ class _SosScreenState extends State<SosScreen>
             ],
           ),
           content: const Text(
-            'This will finish the emergency evidence and mark your alert as RESOLVED for the safety desk.',
+            kEvidenceRecordingEnabled
+                ? 'This will finish the emergency evidence and mark your alert as RESOLVED for the safety desk.'
+                : 'This will mark your alert as RESOLVED for the safety desk.',
             style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.4),
           ),
           actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -385,7 +388,10 @@ class _SosScreenState extends State<SosScreen>
       // 1. Auto-start 2-minute emergency video and audio recording
       // (runs in parallel with the location fetch; on Android it also starts the SOS foreground service)
       final initialId = 'SOS_${DateTime.now().millisecondsSinceEpoch}';
-      final recordingStarted = EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId);
+      // Off until Phase 2 (kEvidenceRecordingEnabled)
+      final recordingStarted = kEvidenceRecordingEnabled
+          ? EmergencyMediaService.instance.start2MinEmergencyRecording(alertId: initialId)
+          : Future.value(false);
 
       final isGuestMode = _appState.isGuest;
       final guardiansList = _appState.guardians;

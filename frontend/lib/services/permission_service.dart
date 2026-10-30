@@ -20,7 +20,8 @@ class PermissionService {
     return configured;
   }
 
-  /// Requests all upfront safety permissions: Camera, Mic, Call, Location, Contacts, Notifications
+  /// Requests all upfront safety permissions: Call, Location, Contacts
+  /// (+ Camera, Mic, Notifications once evidence recording is back in Phase 2)
   static Future<bool> requestAllSafetyPermissions() async {
     // Web: camera & mic via getUserMedia. Mobile: one native batch with every permission
     // (asking twice made a denied permission pop up again straight away).
