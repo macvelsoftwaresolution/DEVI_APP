@@ -93,6 +93,8 @@ class AppState extends ChangeNotifier {
   static const String _keyGuestGuardians = 'devi_guest_guardians';
   static const String _keyAuthToken = 'devi_auth_token';
   static const String _keySetupName = 'devi_setup_name';
+  // Control tokens of SOS alerts sent as a guest: proof for moving them to the account on sign in
+  static const String _keyGuestAlerts = 'devi_guest_alert_tokens';
 
   // Auth token lives in encrypted storage (Android Keystore / iOS Keychain), not SharedPreferences
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
@@ -165,8 +167,45 @@ class AppState extends ChangeNotifier {
       EmergencyMediaService.instance.reset();
       // Signed in / signed up: the first-run quick setup is no longer needed
       await OnboardingService.markSetupDone();
+      await OnboardingService.clearSignInReminder();
     } catch (e) {
       debugPrint('Error saving session: $e');
+    }
+    await claimGuestAlerts();
+  }
+
+  /// Keeps the control token of an SOS sent as a guest, so the alert and its evidence
+  /// can move to the account when the user signs in later.
+  Future<void> rememberGuestAlert(String alertId) async {
+    if (!isGuest) return;
+    final token = ApiService.instance.sosControlToken(alertId);
+    if (token == null) return;
+    try {
+      final alerts = await _readGuestAlerts();
+      alerts[alertId] = token;
+      await _secureStorage.write(key: _keyGuestAlerts, value: jsonEncode(alerts));
+    } catch (e) {
+      debugPrint('Error saving guest alert: $e');
+    }
+  }
+
+  Future<Map<String, String>> _readGuestAlerts() async {
+    final json = await _secureStorage.read(key: _keyGuestAlerts);
+    if (json == null || json.isEmpty) return {};
+    return Map<String, String>.from(jsonDecode(json) as Map);
+  }
+
+  /// After sign in: moves the alerts sent as a guest on this device to the account.
+  /// Kept on the device when the server cannot be reached, so the next sign in retries.
+  Future<void> claimGuestAlerts() async {
+    if (isGuest) return;
+    try {
+      final alerts = await _readGuestAlerts();
+      if (alerts.isEmpty) return;
+      final ok = await ApiService.instance.claimGuestAlerts(alerts);
+      if (ok) await _secureStorage.delete(key: _keyGuestAlerts);
+    } catch (e) {
+      debugPrint('Error claiming guest alerts: $e');
     }
   }
 
@@ -177,6 +216,8 @@ class AppState extends ChangeNotifier {
       await prefs.remove(_keyLoggedInPhone);
       await prefs.remove(_keyProfilePhoto);
       await prefs.remove(_keyAuthToken);
+      // Signed out: the next launch shows sign in, not the old guest session
+      await prefs.remove(_keyGuestId);
       await _secureStorage.delete(key: _keyAuthToken);
     } catch (e) {
       debugPrint('Error clearing session: $e');

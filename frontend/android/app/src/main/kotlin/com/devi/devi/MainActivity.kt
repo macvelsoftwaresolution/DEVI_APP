@@ -105,7 +105,9 @@ class MainActivity : FlutterActivity() {
                         Manifest.permission.CALL_PHONE,
                         Manifest.permission.CAMERA,
                         Manifest.permission.RECORD_AUDIO,
-                        Manifest.permission.ACCESS_FINE_LOCATION
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        // Guardian picker on the quick setup screen (asked here so it is one batch)
+                        Manifest.permission.READ_CONTACTS
                     )
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         permissionsList.add(Manifest.permission.POST_NOTIFICATIONS)

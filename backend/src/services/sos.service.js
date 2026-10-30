@@ -294,6 +294,51 @@ export const SosService = {
     }
   },
 
+  // Moves alerts owned by guest sessions to a registered account (guest signed in after an
+  // Instant SOS). Alerts of registered users are never moved. Returns the moved alert IDs.
+  async claimGuestAlerts(alertIds, accountId, accountPhone) {
+    if (!alertIds?.length || !accountId) return [];
+    try {
+      const { data: alerts, error } = await supabase
+        .from('sos_history')
+        .select('id, user_id')
+        .in('id', alertIds);
+      if (error || !alerts?.length) return [];
+
+      const ownerIds = [...new Set(alerts.map((a) => a.user_id).filter(Boolean))];
+      const { data: owners } = ownerIds.length
+        ? await supabase.from('users').select('id, is_guest').in('id', ownerIds)
+        : { data: [] };
+      const guestOwners = new Set((owners || []).filter((u) => u.is_guest).map((u) => u.id));
+
+      const claimable = alerts
+        .filter((a) => !a.user_id || guestOwners.has(a.user_id))
+        .map((a) => a.id);
+      if (!claimable.length) return [];
+
+      const { error: uError } = await supabase
+        .from('sos_history')
+        .update({ user_id: accountId })
+        .in('id', claimable);
+      if (uError) {
+        console.error('Error claiming guest alerts:', uError.message);
+        return [];
+      }
+
+      for (const id of claimable) {
+        const session = liveTrackSessions.get(String(id));
+        if (session) {
+          session.userId = accountId;
+          session.userPhone = accountPhone;
+        }
+      }
+      return claimable.map(String);
+    } catch (e) {
+      console.error('Error claiming guest alerts:', e);
+      return [];
+    }
+  },
+
   // Where the SOS was pressed, for the guardian link page (no live tracking: the saved location only)
   async getAlertLocation(alertId) {
     if (!alertId) return null;

@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/devi_button.dart';
 import '../../widgets/input_field.dart';
 import '../login_screen.dart';
+import '../sos_screen.dart';
 import 'onboarding_flow.dart';
 
 class _ContactSuggestion {
@@ -21,8 +22,9 @@ class _ContactSuggestion {
   });
 }
 
-/// Name + one guardian, asked once before the login screen, so every SOS
-/// (Instant SOS included) reaches a real person instead of only the control room.
+/// Name + one guardian, asked once on first run, so every SOS (Instant SOS included)
+/// reaches a real person instead of only the control room. Saving opens the SOS screen
+/// as a guest; sign in is offered later.
 class QuickSetupScreen extends StatefulWidget {
   const QuickSetupScreen({super.key});
 
@@ -43,7 +45,6 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
   List<_ContactSuggestion> _allContactSuggestions = [];
   List<_ContactSuggestion> _filteredSuggestions = [];
   bool _isLoadingContacts = false;
-  bool _hasRequestedContactsPermission = false;
 
   @override
   void initState() {
@@ -75,17 +76,21 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
     super.dispose();
   }
 
+  /// Contacts permission is asked with the other permissions after terms. When it was
+  /// denied there, it is asked again only when the user taps the contacts icon.
+  Future<bool> _ensureContactsPermission() async {
+    if (await FlutterContacts.permissions.has(PermissionType.read)) return true;
+    final status = await FlutterContacts.permissions.request(PermissionType.read);
+    return status == PermissionStatus.granted || status == PermissionStatus.limited;
+  }
+
   Future<void> _initContacts() async {
     if (_allContactSuggestions.isNotEmpty || _isLoadingContacts) return;
     _isLoadingContacts = true;
     try {
-      final hasPerm = await FlutterContacts.permissions.has(PermissionType.read);
-      if (!hasPerm) {
-        final status = await FlutterContacts.permissions.request(PermissionType.read);
-        if (status != PermissionStatus.granted && status != PermissionStatus.limited) {
-          _isLoadingContacts = false;
-          return;
-        }
+      if (!await FlutterContacts.permissions.has(PermissionType.read)) {
+        _isLoadingContacts = false;
+        return;
       }
       final contacts = await FlutterContacts.getAll(
         properties: {ContactProperty.phone, ContactProperty.name},
@@ -140,13 +145,8 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
       return;
     }
 
-    if (_allContactSuggestions.isEmpty && !_isLoadingContacts && !_hasRequestedContactsPermission) {
-      _hasRequestedContactsPermission = true;
-      _initContacts().then((_) {
-        if (mounted) _onPhoneChanged(value);
-      });
-      return;
-    }
+    // Suggestions only when contacts were already allowed; typing never pops a permission dialog
+    if (_allContactSuggestions.isEmpty) return;
 
     final prefixMatches = _allContactSuggestions
         .where((c) => c.phoneNumber.startsWith(query))
@@ -166,7 +166,8 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
     setState(() {
       _guardianPhoneController.text = suggestion.phoneNumber;
       _guardianPhoneController.selection = TextSelection.collapsed(offset: suggestion.phoneNumber.length);
-      if (_guardianNameController.text.trim().isEmpty && suggestion.name != 'Contact') {
+      // Picking a contact is deliberate, so its name replaces any earlier one
+      if (suggestion.name != 'Contact') {
         _guardianNameController.text = suggestion.name;
       }
       _guardianPhoneError = null;
@@ -177,25 +178,47 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
 
   Future<void> _pickContactFromBook() async {
     try {
+      // The picker returns the contact, but reading its name and number needs the permission
+      if (!await _ensureContactsPermission()) {
+        _showMessage('Allow Contacts in Settings to pick a guardian, or type the number.');
+        return;
+      }
+      _initContacts();
       final contact = await FlutterContacts.native.showPicker(
         properties: {ContactProperty.phone, ContactProperty.name},
       );
-      if (contact != null && contact.phones.isNotEmpty) {
-        final rawPhone = contact.phones.first.number;
-        final cleanPhone = _normalizePhone(rawPhone);
-        if (cleanPhone.length == 10) {
-          _selectSuggestion(
-            _ContactSuggestion(
-              name: (contact.displayName != null && contact.displayName!.trim().isNotEmpty)
-                  ? contact.displayName!.trim()
-                  : 'Contact',
-              phoneNumber: cleanPhone,
-              rawNumber: rawPhone,
-            ),
-          );
-        }
+      if (contact == null) return;
+      final phone = contact.phones
+          .map((p) => (raw: p.number, clean: _normalizePhone(p.number)))
+          .where((p) => p.clean.length == 10)
+          .firstOrNull;
+      if (phone == null) {
+        _showMessage('This contact has no 10-digit mobile number.');
+        return;
       }
-    } catch (_) {}
+      final name = contact.displayName?.trim() ?? '';
+      _selectSuggestion(
+        _ContactSuggestion(
+          name: name.isNotEmpty ? name : 'Contact',
+          phoneNumber: phone.clean,
+          rawNumber: phone.raw,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Contact picker error: $e');
+      _showMessage('Could not open contacts. Please type the number.');
+    }
+  }
+
+  void _showMessage(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(text),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
   }
 
   Future<void> _save() async {
@@ -220,8 +243,10 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
       guardian: GuardianModel(name: guardianName, phone: guardianPhone),
     );
     await OnboardingService.markSetupDone();
+    // Straight to the SOS screen as a guest: no sign in stands between the user and Instant SOS
+    AppState.instance.setGuestMode(true);
     if (!mounted) return;
-    OnboardingFlow.replaceWith(context, const LoginScreen());
+    OnboardingFlow.replaceWith(context, const SosScreen());
   }
 
   void _signInInstead() {
@@ -454,18 +479,6 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
           ),
           const SizedBox(height: 18),
           CustomTextField(
-            label: 'Guardian name',
-            hintText: 'e.g. Amma',
-            controller: _guardianNameController,
-            prefixIcon: Icons.shield_outlined,
-            textCapitalization: TextCapitalization.words,
-            errorText: _guardianNameError,
-            onChanged: (_) {
-              if (_guardianNameError != null) setState(() => _guardianNameError = null);
-            },
-          ),
-          const SizedBox(height: 18),
-          CustomTextField(
             label: 'Guardian mobile number',
             hintText: '98765 43210',
             controller: _guardianPhoneController,
@@ -493,6 +506,19 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
           ),
           _buildContactSuggestionsBox(
             currentQuery: _guardianPhoneController.text.trim(),
+          ),
+          const SizedBox(height: 18),
+          // Below the number: picking a contact suggestion fills it in
+          CustomTextField(
+            label: 'Guardian name',
+            hintText: 'Filled in from your contacts, or type it',
+            controller: _guardianNameController,
+            prefixIcon: Icons.shield_outlined,
+            textCapitalization: TextCapitalization.words,
+            errorText: _guardianNameError,
+            onChanged: (_) {
+              if (_guardianNameError != null) setState(() => _guardianNameError = null);
+            },
           ),
           const SizedBox(height: 14),
           const Text(

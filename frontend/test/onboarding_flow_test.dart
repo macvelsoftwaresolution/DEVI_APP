@@ -4,10 +4,12 @@ import 'package:devi/screens/login_screen.dart';
 import 'package:devi/screens/onboarding/onboarding_flow.dart';
 import 'package:devi/screens/onboarding/quick_setup_screen.dart';
 import 'package:devi/screens/onboarding/terms_screen.dart';
+import 'package:devi/screens/sos_screen.dart';
 import 'package:devi/services/app_state.dart';
 import 'package:devi/services/onboarding_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,12 +18,13 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
     // Native permission channel: answer "granted" so the terms step can continue
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('com.devi.app/sms'), (call) async => true);
   });
 
-  testWidgets('first run: terms → quick setup → login', (tester) async {
+  testWidgets('first run: terms → quick setup → SOS as a guest', (tester) async {
     tester.view.physicalSize = const Size(1440, 3200);
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
@@ -30,18 +33,16 @@ void main() {
     expect(first, isA<TermsScreen>());
     await tester.pumpWidget(MaterialApp(home: first));
 
-    // Step 1: terms — button disabled until the box is ticked
+    // Step 1: terms — one tap; the button itself is the agreement
     expect(find.byType(TermsScreen), findsOneWidget);
-    await tester.tap(find.text('Agree & Continue'));
-    await tester.pumpAndSettle();
-    expect(find.byType(TermsScreen), findsOneWidget, reason: 'must not continue without agreeing');
-    await tester.tap(find.byType(Checkbox));
-    await tester.pump();
+    expect(find.byType(Checkbox), findsNothing);
+    expect(find.textContaining('By tapping Agree & Continue'), findsOneWidget);
     await tester.tap(find.text('Agree & Continue'));
     await tester.pumpAndSettle();
 
     // Prominent disclosure appears before any system permission prompt
-    expect(find.text('Location, camera & microphone'), findsOneWidget);
+    expect(find.text('Location, camera, microphone & contacts'), findsOneWidget);
+    expect(find.textContaining('never uploaded'), findsOneWidget);
     expect(find.textContaining('Only once, no tracking'), findsOneWidget);
     expect(find.textContaining('even if the app is in the background'), findsOneWidget);
     expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
@@ -56,18 +57,22 @@ void main() {
     expect(find.text('Enter your name'), findsOneWidget);
     expect(find.text('Enter a 10-digit mobile number'), findsOneWidget);
 
+    // Order: your name → guardian mobile → guardian name (filled from contacts)
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), 'Priya');
-    await tester.enterText(fields.at(1), 'Amma');
-    await tester.enterText(fields.at(2), '5876543210');
+    await tester.enterText(fields.at(1), '5876543210');
+    await tester.enterText(fields.at(2), 'Amma');
     await tester.tap(find.text('Save & Continue'));
     await tester.pump();
     expect(find.text('Number must start with 6, 7, 8 or 9'), findsOneWidget);
 
-    await tester.enterText(fields.at(2), '9876543210');
+    await tester.enterText(fields.at(1), '9876543210');
     await tester.tap(find.text('Save & Continue'));
-    await tester.pumpAndSettle();
-    expect(find.byType(LoginScreen), findsOneWidget);
+    // The SOS screen animates forever, so pump frames instead of settling
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(SosScreen), findsOneWidget);
+    expect(AppState.instance.isGuest, isTrue);
 
     // Saved on the device
     expect(await OnboardingService.hasAcceptedCurrentTerms(), isTrue);
@@ -78,7 +83,12 @@ void main() {
     expect(guardians.single, {'name': 'Amma', 'phone': '9876543210'});
     expect(AppState.instance.setupGuardians.single.phone, '9876543210');
 
-    // Next launch goes straight to login
+    // Next launch goes straight to the SOS screen as a guest
+    expect(await OnboardingFlow.firstScreen(isLoggedIn: false), isA<SosScreen>());
+
+    // After sign out the guest session is gone: sign in is shown instead
+    await AppState.instance.clearSession();
+    await AppState.instance.checkAutoLogin();
     expect(await OnboardingFlow.firstScreen(isLoggedIn: false), isA<LoginScreen>());
   });
 
@@ -112,8 +122,6 @@ void main() {
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(const MaterialApp(home: TermsScreen(isLoggedIn: false)));
-    await tester.tap(find.byType(Checkbox));
-    await tester.pump();
     await tester.tap(find.text('Agree & Continue'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Not now'));
@@ -129,5 +137,12 @@ void main() {
 
     SharedPreferences.setMockInitialValues({'devi_terms_version': 'v0-old'});
     expect(await OnboardingFlow.firstScreen(isLoggedIn: true), isA<TermsScreen>());
+  });
+
+  test('sign in reminder after "Later" is asked only once', () async {
+    expect(await OnboardingService.takeSignInReminder(), isFalse);
+    await OnboardingService.setSignInReminder();
+    expect(await OnboardingService.takeSignInReminder(), isTrue);
+    expect(await OnboardingService.takeSignInReminder(), isFalse);
   });
 }

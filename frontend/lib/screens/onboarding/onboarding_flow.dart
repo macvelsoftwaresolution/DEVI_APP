@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/app_state.dart';
 import '../../services/onboarding_service.dart';
 import '../login_screen.dart';
 import '../sos_screen.dart';
@@ -6,7 +7,8 @@ import 'quick_setup_screen.dart';
 import 'terms_screen.dart';
 
 /// Decides which screen comes next on launch:
-/// terms → (logged in ? SOS : quick setup → login).
+/// terms → (logged in ? SOS : quick setup → SOS as a guest). Sign in is offered later,
+/// after the user is safe, so it never stands between them and Instant SOS.
 class OnboardingFlow {
   OnboardingFlow._();
 
@@ -20,6 +22,8 @@ class OnboardingFlow {
   static Future<Widget> afterTerms({required bool isLoggedIn}) async {
     if (isLoggedIn) return const SosScreen();
     if (!await OnboardingService.isSetupDone()) return const QuickSetupScreen();
+    // Guest session from an earlier launch (cleared on sign out, which shows sign in instead)
+    if (AppState.instance.isGuest) return const SosScreen();
     return const LoginScreen();
   }
 

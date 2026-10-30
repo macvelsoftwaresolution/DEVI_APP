@@ -8,11 +8,13 @@ import '../services/app_state.dart';
 import '../services/emergency_foreground_service.dart';
 import '../services/emergency_media_service.dart';
 import '../services/location_service.dart';
+import '../services/onboarding_service.dart';
 import '../services/sms_service.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/emergency_sound_card.dart';
 import '../widgets/location_prompt_dialog.dart';
+import '../widgets/sign_in_prompt_sheet.dart';
 import '../widgets/sos_action_card.dart';
 import '../widgets/sos_guide_card.dart';
 import '../widgets/sos_top_bar.dart';
@@ -70,7 +72,14 @@ class _SosScreenState extends State<SosScreen>
       _isEmergencyActive = true;
       _activeAlertId = _appState.activeAlertId;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureLocationOn());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _ensureLocationOn();
+      // A guest who tapped "Later" after their last SOS is asked once more, never during an SOS
+      if (mounted && _appState.isGuest && !_isEmergencyActive &&
+          await OnboardingService.takeSignInReminder() && mounted) {
+        await showSignInPromptSheet(context, isReminder: true);
+      }
+    });
   }
 
   @override
@@ -304,6 +313,14 @@ class _SosScreenState extends State<SosScreen>
         ),
       );
     }
+
+    // Guests: offer sign in only now that they are safe, after a short pause
+    if (_appState.isGuest) {
+      await Future.delayed(const Duration(milliseconds: 2500));
+      if (mounted && _appState.isGuest && !_isEmergencyActive) {
+        await showSignInPromptSheet(context);
+      }
+    }
   }
 
   // --- Complete Press-and-Hold: Smooth 1.5s Hold with Circular Progress Feedback ---
@@ -462,6 +479,8 @@ class _SosScreenState extends State<SosScreen>
       });
     }
     _appState.setActiveEmergency(alertId);
+    // Guests: keep proof of this alert so it moves to their account when they sign in
+    _appState.rememberGuestAlert(alertId);
   }
 
   // --- Read the server's WhatsApp result and remember who was NOT reached ---

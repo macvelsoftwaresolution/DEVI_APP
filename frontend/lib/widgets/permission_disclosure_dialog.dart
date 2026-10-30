@@ -11,7 +11,7 @@ Future<bool> showPermissionDisclosureDialog(BuildContext context) async {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       icon: const Icon(Icons.location_on_rounded, color: AppColors.emergencyRed, size: 32),
       title: const Text(
-        'Location, camera & microphone',
+        'Location, camera, microphone & contacts',
         textAlign: TextAlign.center,
         style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
       ),
@@ -36,6 +36,10 @@ Future<bool> showPermissionDisclosureDialog(BuildContext context) async {
             _Point(
               icon: Icons.call_rounded,
               text: 'Your first guardian gets a call from your phone.',
+            ),
+            _Point(
+              icon: Icons.contacts_rounded,
+              text: 'Contacts are read only to help you pick a guardian. They stay on your phone and are never uploaded.',
             ),
             SizedBox(height: 6),
             Text(

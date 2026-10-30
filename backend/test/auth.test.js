@@ -14,6 +14,8 @@ import {
   sosResolver,
   isTrackingLinkExpired,
   TRACKING_LINK_GRACE_MS,
+  provenSosAlertIds,
+  MAX_CLAIM_ALERTS,
 } from '../src/middlewares/auth.middleware.js';
 import { ADMIN_SECRET_KEY } from '../src/config/security.js';
 
@@ -152,4 +154,23 @@ test('R15: upload is refused from the headers alone, before any file is read', (
     assert.equal(r.nextCalled, false);
     assert.equal(r.res.statusCode, 403);
   }
+});
+
+test('Guest alert claim: only alerts with their own control token are accepted', () => {
+  const alerts = [
+    { alertId: '101', controlToken: signSosControlToken('101') },
+    { alertId: '102', controlToken: signSosControlToken('999') }, // token for another alert
+    { alertId: '103' }, // no token
+    { alertId: 104, controlToken: signSosControlToken('104') }, // numeric ID
+    { alertId: '101', controlToken: signSosControlToken('101') }, // duplicate
+  ];
+  assert.deepEqual(provenSosAlertIds(alerts), ['101', '104']);
+  assert.deepEqual(provenSosAlertIds(undefined), []);
+  assert.deepEqual(provenSosAlertIds('101'), []);
+
+  const many = Array.from({ length: MAX_CLAIM_ALERTS + 10 }, (_, i) => ({
+    alertId: String(i),
+    controlToken: signSosControlToken(String(i)),
+  }));
+  assert.equal(provenSosAlertIds(many).length, MAX_CLAIM_ALERTS);
 });

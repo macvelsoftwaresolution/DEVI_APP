@@ -83,6 +83,23 @@ export const signSosControlToken = (alertId) =>
 export const verifySosControlToken = (alertId, token) =>
   !!alertId && !!token && safeEqual(token, signSosControlToken(alertId));
 
+// Most alerts one sign in may move from the guest session to the account
+export const MAX_CLAIM_ALERTS = 50;
+
+/**
+ * Alert IDs the caller proves it created: each needs its control token, which only the creating
+ * device has. Used when a guest signs in to move their Instant SOS alerts to the account.
+ */
+export const provenSosAlertIds = (alerts) => {
+  if (!Array.isArray(alerts)) return [];
+  const ids = new Set();
+  for (const a of alerts.slice(0, MAX_CLAIM_ALERTS)) {
+    const alertId = String(a?.alertId ?? '').trim();
+    if (verifySosControlToken(alertId, a?.controlToken)) ids.add(alertId);
+  }
+  return [...ids];
+};
+
 /**
  * Middleware for uploads (R15): checks the alert's control token from the headers BEFORE the
  * request body is read, so a request without it is refused before any file reaches memory.

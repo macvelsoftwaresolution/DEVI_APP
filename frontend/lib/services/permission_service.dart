@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'sms_service.dart';
 import 'permission_stub.dart';
 import 'permission_stub.dart'
     if (dart.library.html) 'permission_web.dart'
@@ -22,19 +20,11 @@ class PermissionService {
     return configured;
   }
 
-  /// Requests all upfront safety permissions: Camera, Mic, SMS, Call, Location
+  /// Requests all upfront safety permissions: Camera, Mic, Call, Location, Contacts, Notifications
   static Future<bool> requestAllSafetyPermissions() async {
-    // 1. Request Camera & Mic via platform handler (Web getUserMedia or Android native)
+    // Web: camera & mic via getUserMedia. Mobile: one native batch with every permission
+    // (asking twice made a denied permission pop up again straight away).
     await _getHandler().requestMediaPermissions();
-
-    // 2. Request SMS, Call, Location & Notification permissions on mobile
-    if (!kIsWeb) {
-      try {
-        await SmsService.requestAllSafetyPermissions();
-      } catch (e) {
-        debugPrint('Safety permissions request error: $e');
-      }
-    }
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefKey, true);

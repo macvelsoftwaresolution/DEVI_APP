@@ -303,6 +303,29 @@ class ApiService {
     }
   }
 
+  // --- SOS: Move alerts sent as a guest to the signed-in account ---
+  // [alerts] maps alert ID → control token. True when the server answered (claimed or not).
+  Future<bool> claimGuestAlerts(Map<String, String> alerts) async {
+    if (_authToken == null || alerts.isEmpty) return false;
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/sos/claim'),
+            headers: _headers,
+            body: jsonEncode({
+              'alerts': alerts.entries
+                  .map((e) => {'alertId': e.key, 'controlToken': e.value})
+                  .toList(),
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('API Claim Guest Alerts Error: $e');
+      return false;
+    }
+  }
+
   // --- SOS: Get Emergency History ---
   Future<List<Map<String, dynamic>>> getHistory([String? userPhone]) async {
     try {

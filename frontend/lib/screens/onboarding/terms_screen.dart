@@ -16,7 +16,6 @@ class TermsScreen extends StatefulWidget {
 }
 
 class _TermsScreenState extends State<TermsScreen> {
-  bool _agreed = false;
   bool _saving = false;
 
   Future<void> _accept() async {
@@ -49,32 +48,19 @@ class _TermsScreenState extends State<TermsScreen> {
       subtitle: 'Please read how DEVI keeps you safe and what it shares in an emergency.',
       bottom: Column(
         children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: () => setState(() => _agreed = !_agreed),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                children: [
-                  Checkbox(
-                    value: _agreed,
-                    activeColor: AppColors.primaryNavy,
-                    onChanged: (v) => setState(() => _agreed = v ?? false),
-                  ),
-                  const Expanded(
-                    child: Text(
-                      'I have read and agree to the Terms of Use and Privacy notice',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textDark),
-                    ),
-                  ),
-                ],
-              ),
+          // Tapping the button is the agreement (one tap instead of a checkbox + button)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 6),
+            child: Text(
+              'By tapping Agree & Continue, you accept the Terms of Use and Privacy notice above.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, height: 1.4, color: AppColors.textMuted),
             ),
           ),
           const SizedBox(height: 8),
           DeviPrimaryButton(
             text: 'Agree & Continue',
-            onPressed: _agreed && !_saving ? _accept : null,
+            onPressed: _saving ? null : _accept,
           ),
         ],
       ),

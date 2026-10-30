@@ -11,6 +11,8 @@ import { pickSosRecipients, sanitizeVictimName, recipientLimiter, RECIPIENT_LIMI
 import {
   verifyAdmin,
   optionalToken,
+  verifyToken,
+  provenSosAlertIds,
   signSosControlToken,
   verifySosControlToken,
   requireSosControlHeaders,
@@ -386,6 +388,30 @@ router.post('/resolve/:alertId', optionalToken, async (req, res, next) => {
       success: true,
       message: 'SOS Alert resolved successfully',
       data: publicSession(session),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/sos/claim - After a guest signs in, moves their Instant SOS alerts to the account.
+// Body: { alerts: [{ alertId, controlToken }] }. Only alerts this device created (control token)
+// and still owned by a guest session are moved.
+router.post('/claim', verifyToken, async (req, res, next) => {
+  try {
+    if (req.user.isGuest || !req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Sign in to a registered account to save these alerts.',
+      });
+    }
+    const alertIds = provenSosAlertIds(req.body?.alerts);
+    const claimed = await SosService.claimGuestAlerts(alertIds, req.user.id, req.user.phone);
+    console.log(`🔗 [GUEST ALERTS CLAIMED] ${claimed.length} alert(s) moved to ${maskPhone(req.user.phone)}`);
+
+    res.status(200).json({
+      success: true,
+      data: { claimed },
     });
   } catch (err) {
     next(err);
