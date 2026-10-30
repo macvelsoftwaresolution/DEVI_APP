@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../config/features.dart';
 import '../../legal/terms_content.dart';
 import '../../services/onboarding_service.dart';
 import '../../services/permission_service.dart';
@@ -22,17 +23,15 @@ class _TermsScreenState extends State<TermsScreen> {
     setState(() => _saving = true);
     await OnboardingService.acceptTerms();
 
-    // Prominent disclosure (Google Play User Data policy): a separate dialog immediately
-    // before the system prompts. "Not now" skips them; the SOS screen asks for location later.
-    if (!mounted) return;
-    final allowed = await showPermissionDisclosureDialog(context);
-    if (allowed) {
-      await OnboardingService.acceptPermissionDisclosure();
-      try {
-        await PermissionService.requestAllSafetyPermissions();
-      } catch (e) {
-        debugPrint('Error requesting safety permissions after terms: $e');
-      }
+    // Prominent disclosure (Google Play User Data policy): shown as its own card on this page,
+    // so the system prompts follow this tap directly. A denied permission is asked again
+    // where it is needed (the SOS screen asks for location).
+    // showPermissionDisclosureDialog is kept for when a separate dialog is wanted again.
+    await OnboardingService.acceptPermissionDisclosure();
+    try {
+      await PermissionService.requestAllSafetyPermissions();
+    } catch (e) {
+      debugPrint('Error requesting safety permissions after terms: $e');
     }
 
     final next = await OnboardingFlow.afterTerms(isLoggedIn: widget.isLoggedIn);
@@ -48,11 +47,40 @@ class _TermsScreenState extends State<TermsScreen> {
       subtitle: 'Please read how DEVI keeps you safe and what it shares in an emergency.',
       bottom: Column(
         children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.borderCard),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  kEvidenceRecordingEnabled
+                      ? 'Location, camera, microphone & contacts'
+                      : 'Location, calls & contacts',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.primaryNavy),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Used only when you press SOS. Nothing is collected otherwise.',
+                  style: TextStyle(fontSize: 12, height: 1.4, color: AppColors.textMuted),
+                ),
+                SizedBox(height: 10),
+                PermissionDisclosurePoints(),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
           // Tapping the button is the agreement (one tap instead of a checkbox + button)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 6),
             child: Text(
-              'By tapping Agree & Continue, you accept the Terms of Use and Privacy notice above.',
+              'By tapping Agree & Continue, you accept the Terms of Use and Privacy notice above '
+              'and allow these permissions.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, height: 1.4, color: AppColors.textMuted),
             ),

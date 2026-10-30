@@ -26,23 +26,7 @@ Future<bool> showPermissionDisclosureDialog(BuildContext context) async {
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textDark, height: 1.4),
             ),
             SizedBox(height: 10),
-            _Point(
-              icon: Icons.my_location_rounded,
-              text: 'Your location is sent to your guardians and the DEVI control room. Only once, no tracking.',
-            ),
-            if (kEvidenceRecordingEnabled)
-              _Point(
-                icon: Icons.videocam_rounded,
-                text: 'Video and audio are recorded for up to 2 minutes as evidence, even if the app is in the background.',
-              ),
-            _Point(
-              icon: Icons.call_rounded,
-              text: 'Your first guardian gets a call from your phone.',
-            ),
-            _Point(
-              icon: Icons.contacts_rounded,
-              text: 'Contacts are read only to help you pick a guardian. They stay on your phone and are never uploaded.',
-            ),
+            PermissionDisclosurePoints(),
             SizedBox(height: 6),
             Text(
               'Nothing is collected when SOS is not active.',
@@ -71,6 +55,37 @@ Future<bool> showPermissionDisclosureDialog(BuildContext context) async {
     ),
   );
   return accepted ?? false;
+}
+
+/// What each permission is used for. Shared by the dialog and the inline card on the terms screen.
+class PermissionDisclosurePoints extends StatelessWidget {
+  const PermissionDisclosurePoints({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Point(
+          icon: Icons.my_location_rounded,
+          text: 'Your location is sent to your guardians and the DEVI control room. Only once, no tracking.',
+        ),
+        if (kEvidenceRecordingEnabled)
+          _Point(
+            icon: Icons.videocam_rounded,
+            text: 'Video and audio are recorded for up to 2 minutes as evidence, even if the app is in the background.',
+          ),
+        _Point(
+          icon: Icons.call_rounded,
+          text: 'Your first guardian gets a call from your phone.',
+        ),
+        _Point(
+          icon: Icons.contacts_rounded,
+          text: 'Contacts are read only to help you pick a guardian. They stay on your phone and are never uploaded.',
+        ),
+      ],
+    );
+  }
 }
 
 class _Point extends StatelessWidget {
