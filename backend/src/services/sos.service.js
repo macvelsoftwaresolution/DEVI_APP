@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
 import { encryptField as enc, decryptField as dec } from '../utils/encryption.js';
 import { liveTrackSessions } from './live-sessions.js';
@@ -52,7 +53,7 @@ export const SosService = {
             idempotencyKey,
             timestamp: existingAlert.created_at,
             displayTime: `Today, ${formattedHour}:${minutes} ${ampm}`,
-            location: dec(existingAlert.location_address) || NO_LOCATION_TEXT,
+            location: dec(existingAlert.location_address, 'sos_history.location_address', existingAlert.id) || NO_LOCATION_TEXT,
             latitude: coords.latitude,
             longitude: coords.longitude,
             accuracy: existingAlert.accuracy || null,
@@ -114,10 +115,13 @@ export const SosService = {
     }
 
     try {
+      // Id made here, not by the database, so the location can be encrypted bound to this alert (E6)
+      const alertId = crypto.randomUUID();
       const alertPayload = {
+        id: alertId,
         latitude,
         longitude,
-        location_address: enc(resolvedAddress),
+        location_address: enc(resolvedAddress, 'sos_history.location_address', alertId),
         status: 'ACTIVE',
       };
       if (userId) {
@@ -179,7 +183,7 @@ export const SosService = {
         idempotencyKey: idempotencyKey || null,
         timestamp: alert.created_at,
         displayTime: `Today, ${formattedHour}:${minutes} ${ampm}`,
-        location: dec(alert.location_address) || NO_LOCATION_TEXT,
+        location: dec(alert.location_address, 'sos_history.location_address', alert.id) || NO_LOCATION_TEXT,
         latitude,
         longitude,
         accuracy: latitude !== null && accuracy != null ? parseFloat(accuracy) : null,
@@ -265,7 +269,7 @@ export const SosService = {
           userId: alert.user_id,
           timestamp: alert.created_at,
           displayTime: displayTime,
-          location: dec(alert.location_address) || NO_LOCATION_TEXT,
+          location: dec(alert.location_address, 'sos_history.location_address', alert.id) || NO_LOCATION_TEXT,
           latitude: coords.latitude,
           longitude: coords.longitude,
           status: currentStatus,
@@ -364,7 +368,7 @@ export const SosService = {
         id: data.id,
         latitude: coords.latitude,
         longitude: coords.longitude,
-        location: dec(data.location_address) || NO_LOCATION_TEXT,
+        location: dec(data.location_address, 'sos_history.location_address', data.id) || NO_LOCATION_TEXT,
         status,
         timestamp: data.created_at,
         // Without a stored resolve time created_at is used, so links expire sooner, not later

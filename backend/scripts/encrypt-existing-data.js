@@ -8,7 +8,7 @@
  * Run it with the SAME ENCRYPTION_KEY the live server uses, or the server will not be able to read the data.
  */
 import { supabase } from '../src/config/supabase.js';
-import { Encryption } from '../src/utils/encryption.js';
+import { Encryption, rowKeyFor } from '../src/utils/encryption.js';
 
 const APPLY = process.argv.includes('--apply');
 
@@ -34,7 +34,7 @@ async function migrateTable({ table, columns }) {
   for (const row of rows || []) {
     const patch = {};
     for (const col of columns) {
-      if (needsEncryption(row[col])) patch[col] = Encryption.encrypt(row[col]);
+      if (needsEncryption(row[col])) patch[col] = Encryption.encrypt(row[col], `${table}.${col}`, rowKeyFor(table, row));
     }
     if (Object.keys(patch).length === 0) continue;
 

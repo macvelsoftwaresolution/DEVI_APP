@@ -11,7 +11,7 @@
  */
 import crypto from 'crypto';
 import { supabase } from '../src/config/supabase.js';
-import { Encryption } from '../src/utils/encryption.js';
+import { Encryption, rowKeyFor } from '../src/utils/encryption.js';
 import { WEAK_ENCRYPTION_KEYS } from '../src/config/security.js';
 
 const APPLY = process.argv.includes('--apply');
@@ -39,11 +39,11 @@ const decryptWith = (key, value) => {
   }
 };
 
-const readsWithCurrentKey = (value) => {
+const readsWithCurrentKey = (value, field, rowKey) => {
   const warn = console.warn;
   console.warn = () => {};
   try {
-    return Encryption.decrypt(value) !== '';
+    return Encryption.decrypt(value, field, rowKey) !== '';
   } finally {
     console.warn = warn;
   }
@@ -66,7 +66,7 @@ for (const { table, columns } of TABLES) {
     const patch = {};
     for (const col of columns) {
       const value = row[col];
-      if (!Encryption.isEncrypted(value) || readsWithCurrentKey(value)) continue;
+      if (!Encryption.isEncrypted(value) || readsWithCurrentKey(value, `${table}.${col}`, rowKeyFor(table, row))) continue;
 
       const plain = OLD_KEYS.map((k) => decryptWith(k, value)).find((p) => p !== null);
       if (plain === undefined) {
@@ -74,7 +74,7 @@ for (const { table, columns } of TABLES) {
         console.warn(`  ⚠️ ${table} #${row.id}.${col}: no known key can read it (left unchanged)`);
         continue;
       }
-      patch[col] = Encryption.encrypt(plain);
+      patch[col] = Encryption.encrypt(plain, `${table}.${col}`, rowKeyFor(table, row));
     }
     if (Object.keys(patch).length === 0) continue;
 

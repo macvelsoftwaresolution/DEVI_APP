@@ -62,6 +62,9 @@ export const SOS_LINK_SECRET = process.env.SOS_LINK_SECRET || 'devi_dev_sos_link
 export const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || 'devi_admin_secret_2026';
 // Server-only key for database field encryption (AES-256-GCM)
 export const ENCRYPTION_KEY = encryptionKey || 'devi_local_dev_field_encryption_key_not_for_production';
+// Older enc:v1 values (no column / row binding) are read until `npm run migrate:aad -- --apply` has run.
+// Then set ENCRYPTION_ALLOW_V1=false so a v1 value copied from another row is refused (E6).
+export const ENCRYPTION_ALLOW_V1 = (process.env.ENCRYPTION_ALLOW_V1 || 'true').trim().toLowerCase() !== 'false';
 
 // Meta webhook handshake token. Production has no default: if unset, webhook verification is refused
 // (the server still starts, so SOS keeps working)

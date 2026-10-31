@@ -75,13 +75,16 @@ void main() {
     expect(find.byType(SosScreen), findsOneWidget);
     expect(AppState.instance.isGuest, isTrue);
 
-    // Saved on the device
+    // Saved on the device; name and guardians only in encrypted storage, never plain SharedPreferences
     expect(await OnboardingService.hasAcceptedCurrentTerms(), isTrue);
     expect(await OnboardingService.isSetupDone(), isTrue);
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('devi_setup_name'), 'Priya');
-    final guardians = jsonDecode(prefs.getString('devi_guest_guardians')!) as List;
+    const secure = FlutterSecureStorage();
+    expect(await secure.read(key: 'devi_setup_name'), 'Priya');
+    final guardians = jsonDecode((await secure.read(key: 'devi_guest_guardians'))!) as List;
     expect(guardians.single, {'name': 'Amma', 'phone': '9876543210'});
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('devi_setup_name'), isNull);
+    expect(prefs.getString('devi_guest_guardians'), isNull);
     expect(AppState.instance.setupGuardians.single.phone, '9876543210');
 
     // Next launch goes straight to the SOS screen as a guest
@@ -138,6 +141,26 @@ void main() {
 
     SharedPreferences.setMockInitialValues({'devi_terms_version': 'v0-old'});
     expect(await OnboardingFlow.firstScreen(isLoggedIn: true), isA<TermsScreen>());
+  });
+
+  test('guest name and guardians saved by an older app move to encrypted storage', () async {
+    final oldGuardians = jsonEncode([{'name': 'Amma', 'phone': '9876543210'}]);
+    SharedPreferences.setMockInitialValues({
+      'devi_guest_id': 'GUEST_0123456789ABCDEF0123456789ABCDEF',
+      'devi_setup_name': 'Priya',
+      'devi_guest_guardians': oldGuardians,
+    });
+
+    await AppState.instance.checkAutoLogin();
+
+    expect(AppState.instance.setupName, 'Priya');
+    expect(AppState.instance.guardians.single.phone, '9876543210');
+    const secure = FlutterSecureStorage();
+    expect(await secure.read(key: 'devi_setup_name'), 'Priya');
+    expect(await secure.read(key: 'devi_guest_guardians'), oldGuardians);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('devi_setup_name'), isNull, reason: 'plain copy removed');
+    expect(prefs.getString('devi_guest_guardians'), isNull, reason: 'plain copy removed');
   });
 
   test('sign in reminder after "Later" is asked only once', () async {

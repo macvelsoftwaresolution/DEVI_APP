@@ -113,6 +113,24 @@ class AppState extends ChangeNotifier {
     return legacyToken;
   }
 
+  // Guest guardians and the quick-setup name are personal data, so they also live in encrypted
+  // storage. Values saved by older app versions in SharedPreferences move over on first read.
+  Future<String?> _readPrivate(SharedPreferences prefs, String key) async {
+    final value = await _secureStorage.read(key: key);
+    if (value != null) return value;
+    final legacy = prefs.getString(key);
+    if (legacy != null) {
+      await _secureStorage.write(key: key, value: legacy);
+      await prefs.remove(key);
+    }
+    return legacy;
+  }
+
+  Future<void> _writePrivate(SharedPreferences prefs, String key, String value) async {
+    await _secureStorage.write(key: key, value: value);
+    await prefs.remove(key);
+  }
+
   /// Initializes anonymous guest session with unique ID and syncs to Supabase
   Future<void> initGuestSession() async {
     isGuest = true;
@@ -123,7 +141,7 @@ class AppState extends ChangeNotifier {
       if (name.isEmpty) name = setupName;
 
       // Restore locally saved guest guardians if any
-      final localGuardiansJson = prefs.getString(_keyGuestGuardians);
+      final localGuardiansJson = await _readPrivate(prefs, _keyGuestGuardians);
       if (localGuardiansJson != null && localGuardiansJson.isNotEmpty) {
         final list = jsonDecode(localGuardiansJson) as List<dynamic>?;
         if (list != null && list.isNotEmpty) {
@@ -280,7 +298,7 @@ class AppState extends ChangeNotifier {
           phone = await _ensureGuestId(prefs);
           isGuest = true;
           if (name.isEmpty) name = setupName;
-          final localG = prefs.getString(_keyGuestGuardians);
+          final localG = await _readPrivate(prefs, _keyGuestGuardians);
           if (localG != null && localG.isNotEmpty) {
             final list = jsonDecode(localG) as List<dynamic>?;
             if (list != null && list.isNotEmpty) {
@@ -382,9 +400,9 @@ class AppState extends ChangeNotifier {
   Future<void> _loadQuickSetup() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      setupName = prefs.getString(_keySetupName) ?? '';
+      setupName = await _readPrivate(prefs, _keySetupName) ?? '';
       _setupGuardians.clear();
-      final json = prefs.getString(_keyGuestGuardians);
+      final json = await _readPrivate(prefs, _keyGuestGuardians);
       if (json != null && json.isNotEmpty) {
         final list = jsonDecode(json) as List<dynamic>?;
         for (final item in list ?? const []) {
@@ -409,8 +427,8 @@ class AppState extends ChangeNotifier {
       ..addAll(merged);
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_keySetupName, name);
-      await prefs.setString(_keyGuestGuardians, jsonEncode(merged.map((g) => g.toMap()).toList()));
+      await _writePrivate(prefs, _keySetupName, name);
+      await _writePrivate(prefs, _keyGuestGuardians, jsonEncode(merged.map((g) => g.toMap()).toList()));
     } catch (e) {
       debugPrint('Error saving quick setup: $e');
     }
@@ -458,11 +476,11 @@ class AppState extends ChangeNotifier {
 
   void _autoSyncGuardians() async {
     if (isGuest && phone.isNotEmpty) {
-      // 1. Save guest guardians locally in SharedPreferences so they never vanish on app restart
+      // 1. Save guest guardians on the device (encrypted storage) so they never vanish on app restart
       try {
         final prefs = await SharedPreferences.getInstance();
         final list = _guardians.map((g) => g.toMap()).toList();
-        await prefs.setString(_keyGuestGuardians, jsonEncode(list));
+        await _writePrivate(prefs, _keyGuestGuardians, jsonEncode(list));
       } catch (e) {
         debugPrint('Error saving guest guardians locally: $e');
       }

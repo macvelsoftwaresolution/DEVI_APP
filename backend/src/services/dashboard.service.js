@@ -65,10 +65,10 @@ async function loadData() {
   users.forEach((u) => {
     usersMap.set(u.id, {
       id: u.id,
-      name: dec(u.full_name) || (u.is_guest ? 'Guest User' : 'DEVI User'),
-      phone: u.is_guest ? null : dec(u.mobile_number) || null,
-      guestId: u.is_guest ? dec(u.mobile_number) || null : null,
-      address: [dec(u.address_1), dec(u.address_2)].filter(Boolean).join(', '),
+      name: dec(u.full_name, 'users.full_name', u.id) || (u.is_guest ? 'Guest User' : 'DEVI User'),
+      phone: u.is_guest ? null : dec(u.mobile_number, 'users.mobile_number', u.id) || null,
+      guestId: u.is_guest ? dec(u.mobile_number, 'users.mobile_number', u.id) || null : null,
+      address: [dec(u.address_1, 'users.address_1', u.id), dec(u.address_2, 'users.address_2', u.id)].filter(Boolean).join(', '),
       isGuest: !!u.is_guest,
       createdAt: u.created_at,
       joinedOn: formatIst(u.created_at),
@@ -78,7 +78,7 @@ async function loadData() {
   const guardiansMap = new Map();
   guardians.forEach((g) => {
     if (!guardiansMap.has(g.user_id)) guardiansMap.set(g.user_id, []);
-    guardiansMap.get(g.user_id).push({ id: g.id, name: dec(g.name), phone: dec(g.mobile_number) });
+    guardiansMap.get(g.user_id).push({ id: g.id, name: dec(g.name, 'guardians.name', g.user_id), phone: dec(g.mobile_number, 'guardians.mobile_number', g.user_id) });
   });
 
   const incidents = alerts.map((alert) => {
@@ -100,13 +100,13 @@ async function loadData() {
       latitude: coords.latitude,
       longitude: coords.longitude,
       accuracy: coords.latitude !== null ? (alert.accuracy ?? null) : null,
-      location: dec(alert.location_address) || 'Location not available',
+      location: dec(alert.location_address, 'sos_history.location_address', alert.id) || 'Location not available',
       resolvedAt: status === 'RESOLVED' ? resolvedAt : null,
       resolvedTime: status === 'RESOLVED' ? formatIst(resolvedAt) : null,
       resolvedBy: status === 'RESOLVED' ? (alert.resolved_by || liveSession?.resolvedBy || null) : null,
       whatsapp: liveSession?.whatsapp || null,
       evidenceUrl: evidenceLink(alert.id, alert.evidence_url || alert.audio_url || liveSession?.evidenceUrl || null),
-      operatorNotes: dec(alert.operator_notes) || liveSession?.operatorNotes || '',
+      operatorNotes: dec(alert.operator_notes, 'sos_history.operator_notes', alert.id) || liveSession?.operatorNotes || '',
       user: user
         ? { id: user.id, name: user.name, phone: user.phone || user.guestId, isGuest: user.isGuest, address: user.address }
         : { id: null, name: 'Unknown User', phone: null, isGuest: false, address: '' },
@@ -248,9 +248,9 @@ export const DashboardService = {
 
     try {
       const { data } = await supabase.from('sos_history').select('operator_notes').eq('id', alertId).maybeSingle();
-      const existing = dec(data?.operator_notes) || '';
+      const existing = dec(data?.operator_notes, 'sos_history.operator_notes', alertId) || '';
       const updatedNotes = existing ? `${existing}\n${formattedNote}` : formattedNote;
-      await supabase.from('sos_history').update({ operator_notes: enc(updatedNotes) }).eq('id', alertId);
+      await supabase.from('sos_history').update({ operator_notes: enc(updatedNotes, 'sos_history.operator_notes', alertId) }).eq('id', alertId);
     } catch (e) {
       console.warn('Note updating operator_notes in Supabase:', e.message);
     }

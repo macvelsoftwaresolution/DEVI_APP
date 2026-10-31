@@ -1,5 +1,14 @@
+import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
 import { encryptField as enc, decryptField as dec, blindIndex } from '../utils/encryption.js';
+
+// Decrypted profile fields of a users row (each value is bound to its column and this row, E6)
+const decryptUser = (row) => ({
+  phone: dec(row.mobile_number, 'users.mobile_number', row.id),
+  name: dec(row.full_name, 'users.full_name', row.id) || '',
+  address1: dec(row.address_1, 'users.address_1', row.id) || '',
+  address2: dec(row.address_2, 'users.address_2', row.id) || '',
+});
 
 // Users & guardians. Sensitive columns are stored AES-256-GCM encrypted, users.mobile_number too;
 // users.mobile_hash (keyed HMAC of the number or guest ID) is what lookups search on.
@@ -35,15 +44,12 @@ export const UserService = {
 
       return {
         id: user.id,
-        phone: dec(user.mobile_number),
-        name: dec(user.full_name) || '',
-        address1: dec(user.address_1) || '',
-        address2: dec(user.address_2) || '',
+        ...decryptUser(user),
         isGuest: user.is_guest || false,
         guardians: (guardians || []).map((g) => ({
           id: g.id,
-          name: dec(g.name),
-          phone: dec(g.mobile_number),
+          name: dec(g.name, 'guardians.name', g.user_id),
+          phone: dec(g.mobile_number, 'guardians.mobile_number', g.user_id),
         })),
         createdAt: user.created_at,
       };
@@ -62,12 +68,14 @@ export const UserService = {
     if (existing) return existing;
 
     try {
-      // Create new user in Supabase
+      // Create new user in Supabase (id made here so the number is encrypted bound to this row, E6)
+      const id = crypto.randomUUID();
       const { data: newUser, error } = await supabase
         .from('users')
         .insert([
           {
-            mobile_number: enc(cleanPhone),
+            id,
+            mobile_number: enc(cleanPhone, 'users.mobile_number', id),
             mobile_hash: blindIndex(cleanPhone),
             full_name: '',
             address_1: '',
@@ -85,10 +93,7 @@ export const UserService = {
 
       return {
         id: newUser.id,
-        phone: dec(newUser.mobile_number),
-        name: dec(newUser.full_name) || '',
-        address1: dec(newUser.address_1) || '',
-        address2: dec(newUser.address_2) || '',
+        ...decryptUser(newUser),
         isGuest: newUser.is_guest || false,
         guardians: [],
         createdAt: newUser.created_at,
@@ -109,15 +114,17 @@ export const UserService = {
 
       if (!user) {
         // Insert new anonymous guest user into users table with is_guest = true
+        const id = crypto.randomUUID();
         const { data: newUser, error } = await supabase
           .from('users')
           .insert([
             {
-              mobile_number: enc(cleanId),
+              id,
+              mobile_number: enc(cleanId, 'users.mobile_number', id),
               mobile_hash: blindIndex(cleanId),
-              full_name: enc('Guest User'),
-              address_1: enc('Guest Session'),
-              address_2: enc('Unregistered'),
+              full_name: enc('Guest User', 'users.full_name', id),
+              address_1: enc('Guest Session', 'users.address_1', id),
+              address_2: enc('Unregistered', 'users.address_2', id),
               is_guest: true,
             },
           ])
@@ -131,10 +138,7 @@ export const UserService = {
 
         user = {
           id: newUser.id,
-          phone: dec(newUser.mobile_number),
-          name: dec(newUser.full_name),
-          address1: dec(newUser.address_1),
-          address2: dec(newUser.address_2),
+          ...decryptUser(newUser),
           isGuest: true,
           guardians: [],
           createdAt: newUser.created_at,
@@ -148,8 +152,8 @@ export const UserService = {
           .filter((g) => g.phone && g.phone.trim() !== '')
           .map((g) => ({
             user_id: user.id,
-            name: enc(g.name || 'Guardian'),
-            mobile_number: enc(g.phone.trim()),
+            name: enc(g.name || 'Guardian', 'guardians.name', user.id),
+            mobile_number: enc(g.phone.trim(), 'guardians.mobile_number', user.id),
           }));
         if (rows.length > 0) {
           await supabase.from('guardians').insert(rows);
@@ -179,9 +183,9 @@ export const UserService = {
       const updatePayload = {
         is_guest: false,
       };
-      if (name !== undefined) updatePayload.full_name = enc(name);
-      if (address1 !== undefined) updatePayload.address_1 = enc(address1);
-      if (address2 !== undefined) updatePayload.address_2 = enc(address2);
+      if (name !== undefined) updatePayload.full_name = enc(name, 'users.full_name', user.id);
+      if (address1 !== undefined) updatePayload.address_1 = enc(address1, 'users.address_1', user.id);
+      if (address2 !== undefined) updatePayload.address_2 = enc(address2, 'users.address_2', user.id);
 
       const { data: updatedUser, error: uError } = await supabase
         .from('users')
@@ -213,8 +217,8 @@ export const UserService = {
             .filter((g) => g.phone && g.phone.trim() !== '')
             .map((g) => ({
               user_id: user.id,
-              name: enc(g.name || 'Guardian'),
-              mobile_number: enc(g.phone.trim()),
+              name: enc(g.name || 'Guardian', 'guardians.name', user.id),
+              mobile_number: enc(g.phone.trim(), 'guardians.mobile_number', user.id),
             }));
 
           if (rows.length > 0) {
