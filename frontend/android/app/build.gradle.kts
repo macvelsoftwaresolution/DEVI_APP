@@ -62,6 +62,11 @@ android {
                 logger.warn("⚠️ android/key.properties not found: release build is signed with the DEBUG key (not uploadable to Play Store).")
                 signingConfig = signingConfigs.getByName("debug")
             }
+            // R8: removes unused code and renames classes so the APK is harder to reverse engineer.
+            // Dart code is obfuscated separately: build with --obfuscate --split-debug-info (see README).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }

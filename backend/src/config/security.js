@@ -1,4 +1,6 @@
+import crypto from 'crypto';
 import dotenv from 'dotenv';
+import { isPasswordHash } from '../utils/password.js';
 
 dotenv.config();
 
@@ -10,7 +12,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 //   ADMIN_JWT_SECRET dashboard login tokens
 //   SOS_LINK_SECRET  per-alert control tokens and guardian link keys (?k=)
 //   ENCRYPTION_KEY   database field encryption and the phone-number lookup index
-const REQUIRED_SECRETS = ['JWT_SECRET', 'ADMIN_JWT_SECRET', 'SOS_LINK_SECRET', 'ADMIN_SECRET_KEY', 'ENCRYPTION_KEY', 'ADMIN_PASSWORD'];
+const REQUIRED_SECRETS = ['JWT_SECRET', 'ADMIN_JWT_SECRET', 'SOS_LINK_SECRET', 'ADMIN_SECRET_KEY', 'ENCRYPTION_KEY', 'ADMIN_PASSWORD_HASH'];
 
 const missing = REQUIRED_SECRETS.filter((key) => !process.env[key] || !process.env[key].trim());
 if (isProduction && missing.length > 0) {
@@ -88,9 +90,31 @@ export const supabaseKeyKind = (key) => {
   return 'unknown';
 };
 
-// Admin dashboard login credentials
+// Admin dashboard login: username + scrypt hash of the password (R4 / E10).
+// Create the hash with `npm run admin:hash`; the plain password is never stored on the server.
 export const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'admin').trim();
-export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'devi_admin_dev_password';
+const adminPasswordHash = (process.env.ADMIN_PASSWORD_HASH || '').trim();
+if (adminPasswordHash && !isPasswordHash(adminPasswordHash)) {
+  console.error('❌ [SECURITY] ADMIN_PASSWORD_HASH is not a valid hash. Create one with: npm run admin:hash. Refusing to start.');
+  process.exit(1);
+}
+if (isProduction && (process.env.ADMIN_PASSWORD || '').trim()) {
+  console.warn('⚠️ [SECURITY] ADMIN_PASSWORD (plain text) is ignored in production. Remove it from .env; only ADMIN_PASSWORD_HASH is used.');
+}
+if (isProduction && ADMIN_USERNAME.toLowerCase() === 'admin') {
+  console.warn('⚠️ [SECURITY] ADMIN_USERNAME is "admin": pick a less guessable username.');
+}
+export const ADMIN_PASSWORD_HASH = adminPasswordHash || null;
+// Development only, when no hash is set: plain ADMIN_PASSWORD or a local default
+export const ADMIN_DEV_PASSWORD = !isProduction && !adminPasswordHash
+  ? process.env.ADMIN_PASSWORD || 'devi_admin_dev_password'
+  : null;
+// Changes whenever the password changes: admin tokens carry it, so a new password logs every old session out
+export const ADMIN_PASSWORD_VERSION = crypto
+  .createHmac('sha256', process.env.ADMIN_JWT_SECRET || 'devi_dev_admin_jwt_secret_not_for_production')
+  .update(`admin-pw:${ADMIN_USERNAME}:${adminPasswordHash || ADMIN_DEV_PASSWORD}`)
+  .digest('base64url')
+  .slice(0, 16);
 export const ADMIN_TOKEN_EXPIRY = '12h';
 
 // A weak field-encryption key must never write to a real database, in any mode.

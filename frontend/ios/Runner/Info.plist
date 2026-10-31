@@ -27,7 +27,14 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSContactsUsageDescription</key>
-	<string>We need access to contacts to suggest phone numbers and add emergency contacts easily.</string>
+	<string>DEVI reads your contacts only on your phone, to help you pick a guardian. Your contact list is never uploaded.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>DEVI uses the camera only when you choose to take a profile photo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>DEVI opens your photos only when you choose a profile photo.</string>
+	<!-- PHASE 2: SOS evidence recording is off; this text is shown only if the microphone is ever requested -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>DEVI uses the microphone only during an SOS, to record evidence.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -70,7 +77,5 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>DEVI uses your location only when you send an SOS, to share where you are with your emergency guardians.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>DEVI app requires location access to send your location to emergency contacts when SOS is triggered.</string>
 </dict>
 </plist>

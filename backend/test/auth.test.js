@@ -17,7 +17,8 @@ import {
   provenSosAlertIds,
   MAX_CLAIM_ALERTS,
 } from '../src/middlewares/auth.middleware.js';
-import { ADMIN_SECRET_KEY } from '../src/config/security.js';
+import jwt from 'jsonwebtoken';
+import { ADMIN_SECRET_KEY, ADMIN_JWT_SECRET } from '../src/config/security.js';
 
 // Minimal Express req/res doubles
 const mockReq = (headers = {}) => ({ headers, get: (name) => headers[name.toLowerCase()] });
@@ -54,6 +55,14 @@ test('admin token decodes as admin, user token does not', () => {
   assert.equal(decodeAdminToken(signUserToken({ id: 1, name: 'A' }, '9876543210')), null);
   assert.equal(decodeAdminToken('not-a-token'), null);
   assert.equal(decodeAdminToken(undefined), null);
+});
+
+test('admin token from before a password change is refused', () => {
+  // Same secret, but signed without (or with an old) password version
+  const oldToken = jwt.sign({ role: 'admin', username: 'admin' }, ADMIN_JWT_SECRET, { expiresIn: '1h' });
+  const otherVersion = jwt.sign({ role: 'admin', username: 'admin', pv: 'old-version' }, ADMIN_JWT_SECRET, { expiresIn: '1h' });
+  assert.equal(decodeAdminToken(oldToken), null);
+  assert.equal(decodeAdminToken(otherVersion), null);
 });
 
 test('verifyAdmin accepts admin token or x-admin-key, rejects others', () => {

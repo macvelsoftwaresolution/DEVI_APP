@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { JWT_SECRET, ADMIN_JWT_SECRET, SOS_LINK_SECRET, ADMIN_SECRET_KEY, ADMIN_TOKEN_EXPIRY } from '../config/security.js';
+import { JWT_SECRET, ADMIN_JWT_SECRET, SOS_LINK_SECRET, ADMIN_SECRET_KEY, ADMIN_TOKEN_EXPIRY, ADMIN_PASSWORD_VERSION } from '../config/security.js';
 
 /**
  * Signs a 30-day JWT for an app user (used by login & first-time sign up)
@@ -163,10 +163,11 @@ export const isTrackingLinkExpired = (session, now = Date.now()) => {
 };
 
 /**
- * Signs a short-lived JWT for the admin dashboard
+ * Signs a short-lived JWT for the admin dashboard.
+ * `pv` ties it to the current admin password: after a password change every old token is refused.
  */
 export const signAdminToken = (username) =>
-  jwt.sign({ role: 'admin', username }, ADMIN_JWT_SECRET, { expiresIn: ADMIN_TOKEN_EXPIRY });
+  jwt.sign({ role: 'admin', username, pv: ADMIN_PASSWORD_VERSION }, ADMIN_JWT_SECRET, { expiresIn: ADMIN_TOKEN_EXPIRY });
 
 /**
  * Returns the decoded admin payload if the token is a valid admin JWT, otherwise null
@@ -175,7 +176,7 @@ export const decodeAdminToken = (token) => {
   if (!token) return null;
   try {
     const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
-    return decoded.role === 'admin' ? decoded : null;
+    return decoded.role === 'admin' && decoded.pv === ADMIN_PASSWORD_VERSION ? decoded : null;
   } catch {
     return null;
   }

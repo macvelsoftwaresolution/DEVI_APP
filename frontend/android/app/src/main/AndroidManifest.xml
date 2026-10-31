@@ -25,7 +25,10 @@
     <application
         android:label="Devi Safety"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <!-- No background location: the geolocator plugin's location foreground service is not used -->
         <service
             android:name="com.baseflow.geolocator.GeolocatorLocationService"

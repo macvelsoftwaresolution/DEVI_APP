@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SmsService {
   static const MethodChannel _channel = MethodChannel('com.devi.app/sms');
@@ -70,6 +71,16 @@ class SmsService {
     if (kIsWeb) {
       debugPrint('🌐 [WEB PHONE CALL SIMULATED] Calling: $clean');
       return true;
+    }
+
+    // iOS never lets an app dial on its own: the system shows a "Call" confirmation first
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      try {
+        return await launchUrl(Uri(scheme: 'tel', path: clean));
+      } catch (e) {
+        debugPrint('Error making phone call to $clean: $e');
+        return false;
+      }
     }
 
     try {
