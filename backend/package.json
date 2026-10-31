@@ -12,7 +12,8 @@
     "migrate:evidence": "node scripts/make-evidence-private.js",
     "migrate:rekey": "node scripts/reencrypt-legacy-keys.js",
     "admin:hash": "node scripts/admin-hash.js",
-    "migrate:aad": "node scripts/migrate-aad.js"
+    "migrate:aad": "node scripts/reencrypt.js",
+    "rotate:key": "node scripts/reencrypt.js"
   },
   "keywords": [
     "safety",

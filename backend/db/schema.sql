@@ -28,8 +28,9 @@ create table if not exists public.sos_history (
   id                uuid primary key default gen_random_uuid(),
   user_id           uuid not null references public.users (id) on delete cascade,
   location_address  text not null,
-  latitude          double precision,
+  latitude          double precision,     -- older rows only; new alerts keep GPS in coords (E5)
   longitude         double precision,
+  coords            text,                 -- encrypted "lat,lng" (db/sos-coords.sql)
   audio_url         text,
   is_test_mode      boolean default false,
   status            text default 'active'::text,

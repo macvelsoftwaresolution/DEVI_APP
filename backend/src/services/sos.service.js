@@ -4,7 +4,7 @@ import { encryptField as enc, decryptField as dec } from '../utils/encryption.js
 import { liveTrackSessions } from './live-sessions.js';
 import { UserService } from './user.service.js';
 import { GeocodeService } from './geocode.service.js';
-import { toLatLng, hasFix, NO_FIX_PLACEHOLDER } from '../utils/coords.js';
+import { toLatLng, hasFix, NO_FIX_PLACEHOLDER, encryptCoords, readCoords } from '../utils/coords.js';
 
 const NO_LOCATION_TEXT = 'Location not yet available';
 
@@ -45,7 +45,7 @@ export const SosService = {
           const ampm = hours >= 12 ? 'PM' : 'AM';
           const formattedHour = hours % 12 || 12;
 
-          const coords = toLatLng(existingAlert.latitude, existingAlert.longitude);
+          const coords = readCoords(existingAlert);
           const sessionData = {
             id: existingAlert.id.toString(),
             userId: existingAlert.user_id,
@@ -119,8 +119,10 @@ export const SosService = {
       const alertId = crypto.randomUUID();
       const alertPayload = {
         id: alertId,
-        latitude,
-        longitude,
+        // GPS fix only encrypted in coords (E5); plain columns stay empty
+        latitude: null,
+        longitude: null,
+        coords: encryptCoords(latitude, longitude, alertId),
         location_address: enc(resolvedAddress, 'sos_history.location_address', alertId),
         status: 'ACTIVE',
       };
@@ -144,7 +146,7 @@ export const SosService = {
       // If latitude/longitude columns are NOT NULL, store the 0,0 "no fix" placeholder.
       // An SOS must never be lost because GPS was unavailable; readers turn 0,0 back into null.
       if (error && error.code === '23502' && alertPayload.latitude === null) {
-        console.warn('⚠️ sos_history latitude/longitude are NOT NULL; saving 0,0 placeholder for an SOS without GPS.');
+        console.warn('⚠️ sos_history latitude/longitude are NOT NULL (run db/sos-coords.sql); saving the 0,0 placeholder.');
         alertPayload.latitude = NO_FIX_PLACEHOLDER;
         alertPayload.longitude = NO_FIX_PLACEHOLDER;
         ({ data, error } = await supabase.from('sos_history').insert([alertPayload]).select().single());
@@ -152,10 +154,17 @@ export const SosService = {
 
       if (error) {
         // Resilient fallback if idempotency_key/accuracy columns are not yet created in Supabase
-        if (error.message && (error.message.includes('idempotency_key') || error.message.includes('accuracy') || error.code === 'PGRST204')) {
-          console.warn('⚠️ Supabase schema note: idempotency_key/accuracy column missing, inserting base fields.');
+        if (error.message && (error.message.includes('idempotency_key') || error.message.includes('accuracy') || error.message.includes('coords') || error.code === 'PGRST204')) {
+          console.warn('⚠️ Supabase schema note: idempotency_key/accuracy/coords column missing, inserting base fields.');
           delete alertPayload.idempotency_key;
           delete alertPayload.accuracy;
+          // coords column not created yet (db/sos-coords.sql): an SOS must never be lost, so keep plain GPS
+          if (error.message.includes('coords')) {
+            console.error('❌ [E5] sos_history.coords missing: SOS location saved UNENCRYPTED. Run db/sos-coords.sql.');
+            delete alertPayload.coords;
+            alertPayload.latitude = latitude ?? NO_FIX_PLACEHOLDER;
+            alertPayload.longitude = longitude ?? NO_FIX_PLACEHOLDER;
+          }
           const retryRes = await supabase.from('sos_history').insert([alertPayload]).select().single();
           if (retryRes.error) {
             console.error('Supabase retry error:', retryRes.error.message);
@@ -262,7 +271,7 @@ export const SosService = {
 
         const coords = hasFix(liveSession?.latitude, liveSession?.longitude)
           ? toLatLng(liveSession.latitude, liveSession.longitude)
-          : toLatLng(alert.latitude, alert.longitude);
+          : readCoords(alert);
 
         return {
           id: alert.id,
@@ -363,7 +372,7 @@ export const SosService = {
       if (error || !data) return null;
 
       const status = String(session?.status || data.status || 'ACTIVE').toUpperCase();
-      const coords = toLatLng(data.latitude, data.longitude);
+      const coords = readCoords(data);
       return {
         id: data.id,
         latitude: coords.latitude,

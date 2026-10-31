@@ -1,3 +1,5 @@
+import { encryptField, decryptField } from './encryption.js';
+
 // Coordinates are either a real GPS reading or null. Never substitute a default city.
 // 0,0 is treated as "no fix": it is the placeholder written when the DB column is NOT NULL,
 // and no DEVI user is ever at that point in the Atlantic.
@@ -21,3 +23,19 @@ export const toLatLng = (latitude, longitude) => {
 };
 
 export const hasFix = (latitude, longitude) => toLatLng(latitude, longitude).latitude !== null;
+
+// --- Stored SOS location (E5) ---
+// New alerts keep their GPS fix only in sos_history.coords, encrypted and bound to the alert
+// ("lat,lng"); the plain latitude / longitude columns stay empty. Older rows still have plain columns.
+export const encryptCoords = (latitude, longitude, alertId) =>
+  hasFix(latitude, longitude) ? encryptField(`${latitude},${longitude}`, 'sos_history.coords', alertId) : null;
+
+// { latitude, longitude } of a sos_history row (null, null when there was no fix)
+export const readCoords = (row) => {
+  if (!row) return { latitude: null, longitude: null };
+  if (row.coords) {
+    const [lat, lng] = String(decryptField(row.coords, 'sos_history.coords', row.id) || '').split(',');
+    return toLatLng(lat, lng);
+  }
+  return toLatLng(row.latitude, row.longitude);
+};

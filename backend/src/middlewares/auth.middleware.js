@@ -74,6 +74,16 @@ export const safeEqual = (a, b) => {
 };
 
 /**
+ * Meta webhook signature (R9): header `X-Hub-Signature-256: sha256=<hex HMAC of the raw body>`
+ * made with the App Secret. True only for an exact match.
+ */
+export const verifyMetaSignature = (rawBody, header, appSecret) => {
+  if (!rawBody || !appSecret || typeof header !== 'string' || !header.startsWith('sha256=')) return false;
+  const expected = crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
+  return safeEqual(header.slice('sha256='.length).toLowerCase(), expected);
+};
+
+/**
  * Per-alert control token: only the device that created the SOS receives it.
  * Stateless HMAC of the alert ID, so it survives server restarts without DB storage.
  */

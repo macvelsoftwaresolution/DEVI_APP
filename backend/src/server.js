@@ -4,8 +4,8 @@ import cors from 'cors';
 import morgan from 'morgan';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
-import { isAllowedOrigin, WHATSAPP_VERIFY_TOKEN } from './config/security.js';
-import { safeEqual } from './middlewares/auth.middleware.js';
+import { isAllowedOrigin, IS_PRODUCTION, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET } from './config/security.js';
+import { safeEqual, verifyMetaSignature } from './middlewares/auth.middleware.js';
 import { maskUrl } from './utils/logMask.js';
 import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
@@ -40,7 +40,16 @@ app.use(
 );
 
 // Request parsing
-app.use(express.json({ limit: '10mb' }));
+const WEBHOOK_PATHS = ['/webhook', '/api/webhook'];
+app.use(
+  express.json({
+    limit: '10mb',
+    // The webhook signature is over the exact bytes Meta sent, so keep them for that route
+    verify: (req, res, buf) => {
+      if (WEBHOOK_PATHS.includes(req.url.split('?')[0])) req.rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Logging: same columns as morgan 'dev', but tracking/control keys and phone numbers in URLs are masked
@@ -54,7 +63,7 @@ app.use('/api', globalLimiter);
 app.use('/api', apiRoutes);
 
 // WhatsApp Business Cloud API Webhook Handshake & Event Receiver
-app.get(['/webhook', '/api/webhook'], (req, res) => {
+app.get(WEBHOOK_PATHS, (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
@@ -68,7 +77,18 @@ app.get(['/webhook', '/api/webhook'], (req, res) => {
   }
 });
 
-app.post(['/webhook', '/api/webhook'], (req, res) => {
+app.post(WEBHOOK_PATHS, (req, res) => {
+  // Only events signed by Meta with our App Secret (R9). Without a secret: refused in production,
+  // accepted in development so local tests still work.
+  if (WHATSAPP_APP_SECRET) {
+    if (!verifyMetaSignature(req.rawBody, req.get('x-hub-signature-256'), WHATSAPP_APP_SECRET)) {
+      console.warn(`❌ [WHATSAPP WEBHOOK] Bad or missing signature from IP: ${req.ip}`);
+      return res.sendStatus(403);
+    }
+  } else if (IS_PRODUCTION) {
+    return res.sendStatus(403);
+  }
+
   // Events carry recipients' phone numbers: log only what kind of event arrived
   const change = req.body?.entry?.[0]?.changes?.[0];
   const statuses = (change?.value?.statuses || []).map((s) => s.status).join(',') || '-';

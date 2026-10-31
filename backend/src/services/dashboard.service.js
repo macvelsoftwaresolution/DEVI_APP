@@ -1,7 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import { encryptField as enc, decryptField as dec } from '../utils/encryption.js';
 import { liveTrackSessions } from './live-sessions.js';
-import { toLatLng } from '../utils/coords.js';
+import { readCoords } from '../utils/coords.js';
 import { evidenceLink } from '../utils/evidence.js';
 
 // Supabase returns at most 1000 rows per request, so read big tables page by page
@@ -86,7 +86,7 @@ async function loadData() {
     const liveSession = liveTrackSessions.get(id);
     const user = usersMap.get(alert.user_id) || null;
     // The location sent with the SOS (no live tracking); null when the phone had no GPS fix
-    const coords = toLatLng(alert.latitude, alert.longitude);
+    const coords = readCoords(alert);
     const status = normalizeStatus(liveSession?.status || alert.status);
     const resolvedAt = alert.resolved_at || liveSession?.resolvedTime || null;
 

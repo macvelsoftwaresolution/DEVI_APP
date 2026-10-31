@@ -62,9 +62,46 @@ export const SOS_LINK_SECRET = process.env.SOS_LINK_SECRET || 'devi_dev_sos_link
 export const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || 'devi_admin_secret_2026';
 // Server-only key for database field encryption (AES-256-GCM)
 export const ENCRYPTION_KEY = encryptionKey || 'devi_local_dev_field_encryption_key_not_for_production';
-// Older enc:v1 values (no column / row binding) are read until `npm run migrate:aad -- --apply` has run.
+// Older enc:v1 values (no column / row binding) are read until `npm run rotate:key -- --apply` has run.
 // Then set ENCRYPTION_ALLOW_V1=false so a v1 value copied from another row is refused (E6).
 export const ENCRYPTION_ALLOW_V1 = (process.env.ENCRYPTION_ALLOW_V1 || 'true').trim().toLowerCase() !== 'false';
+
+// Key rotation (E3). New values are written with ENCRYPTION_KEY under ENCRYPTION_KEY_ID; keys that are
+// being retired go in ENCRYPTION_OLD_KEYS ("<id>:<secret>,<id>:<secret>") and are only used to read
+// until `npm run rotate:key -- --apply` has re-encrypted everything with the current key.
+export const ENCRYPTION_KEY_ID = (process.env.ENCRYPTION_KEY_ID || '1').trim();
+export const parseOldKeys = (raw) =>
+  String(raw || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const at = entry.indexOf(':');
+      return at > 0 ? { id: entry.slice(0, at).trim(), secret: entry.slice(at + 1).trim() } : { id: '', secret: entry };
+    });
+export const ENCRYPTION_OLD_KEYS = parseOldKeys(process.env.ENCRYPTION_OLD_KEYS);
+
+// Problems with the key setup (empty list = OK)
+export const encryptionKeyProblems = (currentId, currentSecret, oldKeys) => {
+  const problems = [];
+  if (!/^[A-Za-z0-9_-]{1,16}$/.test(currentId)) problems.push('ENCRYPTION_KEY_ID must be 1-16 letters, digits, - or _');
+  const seen = new Set([currentId]);
+  oldKeys.forEach(({ id, secret }) => {
+    if (!/^[A-Za-z0-9_-]{1,16}$/.test(id)) problems.push(`ENCRYPTION_OLD_KEYS entry "${id || '?'}" needs an id: <id>:<secret>`);
+    else if (seen.has(id)) problems.push(`ENCRYPTION_OLD_KEYS id "${id}" is used twice (or equals ENCRYPTION_KEY_ID)`);
+    seen.add(id);
+    if (secret.length < 32) problems.push(`ENCRYPTION_OLD_KEYS key "${id}" is shorter than 32 characters`);
+    if (secret === currentSecret) problems.push(`ENCRYPTION_OLD_KEYS key "${id}" is the same as ENCRYPTION_KEY`);
+  });
+  return problems;
+};
+{
+  const problems = encryptionKeyProblems(ENCRYPTION_KEY_ID, encryptionKey, ENCRYPTION_OLD_KEYS);
+  if (problems.length > 0) {
+    console.error(`❌ [SECURITY] ${problems.join('; ')}. Refusing to start.`);
+    process.exit(1);
+  }
+}
 
 // Meta webhook handshake token. Production has no default: if unset, webhook verification is refused
 // (the server still starts, so SOS keeps working)
@@ -73,6 +110,14 @@ if (isProduction && !whatsappVerifyToken) {
   console.warn('⚠️ [SECURITY] WHATSAPP_VERIFY_TOKEN not set: WhatsApp webhook verification is disabled.');
 }
 export const WHATSAPP_VERIFY_TOKEN = whatsappVerifyToken || (isProduction ? null : 'devi_whatsapp_dev_verify_token');
+
+// Meta App Secret: Meta signs every webhook POST with it (X-Hub-Signature-256), so the server can
+// refuse events that did not come from Meta (R9). Production without it refuses webhook events.
+const whatsappAppSecret = (process.env.WHATSAPP_APP_SECRET || '').trim();
+if (isProduction && !whatsappAppSecret) {
+  console.warn('⚠️ [SECURITY] WHATSAPP_APP_SECRET not set: WhatsApp webhook events are refused.');
+}
+export const WHATSAPP_APP_SECRET = whatsappAppSecret || null;
 
 /**
  * Tells a Supabase server key from a public one: 'secret' (sb_secret_… or legacy service_role JWT),

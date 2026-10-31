@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import { execFileSync } from 'child_process';
-import { Encryption, encryptField, decryptField, rowKeyFor } from '../src/utils/encryption.js';
-import { ENCRYPTION_KEY } from '../src/config/security.js';
+import { Encryption, encryptField, decryptField, rowKeyFor, CURRENT_KEY_ID } from '../src/utils/encryption.js';
+import { ENCRYPTION_KEY, encryptionKeyProblems, parseOldKeys } from '../src/config/security.js';
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const USER_B = '22222222-2222-4222-8222-222222222222';
@@ -32,7 +32,8 @@ const encryptV1 = (text) => {
 
 test('encrypt -> decrypt returns the original value', () => {
   const cipher = Encryption.encrypt('9876543210', 'users.mobile_number', USER_A);
-  assert.ok(cipher.startsWith('enc:v2:'));
+  assert.ok(cipher.startsWith(`enc:v3:${CURRENT_KEY_ID}:`));
+  assert.equal(Encryption.isCurrent(cipher), true);
   assert.equal(Encryption.decrypt(cipher, 'users.mobile_number', USER_A), '9876543210');
 });
 
@@ -49,7 +50,7 @@ test('legacy plain text is returned unchanged', () => {
 
 test('tampered ciphertext is rejected', () => {
   const parts = Encryption.encrypt('secret', 'users.full_name', USER_A).split(':');
-  parts[4] = parts[4].startsWith('A') ? `B${parts[4].slice(1)}` : `A${parts[4].slice(1)}`;
+  parts[5] = parts[5].startsWith('A') ? `B${parts[5].slice(1)}` : `A${parts[5].slice(1)}`;
   assert.equal(quiet(() => Encryption.decrypt(parts.join(':'), 'users.full_name', USER_A)), '');
 });
 
@@ -87,6 +88,70 @@ test('ENCRYPTION_ALLOW_V1=false refuses enc:v1 values', () => {
     stdio: ['ignore', 'pipe', 'ignore'],
   }).toString();
   assert.equal(out.trim().split('\n').pop(), '""');
+});
+
+// Runs code in a fresh node process with its own key settings
+const KEY_A = 'a'.repeat(40);
+const KEY_B = 'b'.repeat(40);
+const runWith = (env, body) => {
+  const script = `
+    const { Encryption, blindIndex, blindIndexes } = await import('./src/utils/encryption.js');
+    console.warn = () => {};
+    const input = JSON.parse(process.env.TEST_INPUT || 'null');
+    const out = await (async () => { ${body} })();
+    process.stdout.write(String.fromCharCode(10) + JSON.stringify(out));
+  `;
+  const out = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    env: { ...process.env, ENCRYPTION_OLD_KEYS: '', ENCRYPTION_KEY_ID: '1', ...env },
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).toString();
+  return JSON.parse(out.trim().split('\n').pop());
+};
+
+test('E3: after rotation, values written with the old key still read via ENCRYPTION_OLD_KEYS', () => {
+  const old = runWith({ ENCRYPTION_KEY: KEY_A, ENCRYPTION_KEY_ID: '1' },
+    "return { v: Encryption.encrypt('Amma', 'guardians.name', 'u1'), h: blindIndex('9876543210') };");
+  assert.ok(old.v.startsWith('enc:v3:1:'));
+
+  const rotated = { ENCRYPTION_KEY: KEY_B, ENCRYPTION_KEY_ID: '2', ENCRYPTION_OLD_KEYS: `1:${KEY_A}`, TEST_INPUT: JSON.stringify(old) };
+  const after = runWith(rotated, `return {
+    read: Encryption.decrypt(input.v, 'guardians.name', 'u1'),
+    current: Encryption.isCurrent(input.v),
+    fresh: Encryption.encrypt('Amma', 'guardians.name', 'u1').slice(0, 9),
+    oldHashFound: blindIndexes('9876543210').includes(input.h),
+    newHash: blindIndex('9876543210') !== input.h,
+  };`);
+  assert.deepEqual(after, { read: 'Amma', current: false, fresh: 'enc:v3:2:', oldHashFound: true, newHash: true });
+});
+
+test('E3: once the old key is removed, its values no longer decrypt', () => {
+  const old = runWith({ ENCRYPTION_KEY: KEY_A, ENCRYPTION_KEY_ID: '1' }, "return Encryption.encrypt('Amma', 'guardians.name', 'u1');");
+  const read = runWith({ ENCRYPTION_KEY: KEY_B, ENCRYPTION_KEY_ID: '2', TEST_INPUT: JSON.stringify(old) },
+    "return Encryption.decrypt(input, 'guardians.name', 'u1');");
+  assert.equal(read, '');
+});
+
+test('E3: enc:v2 values (no key id) read with the current or an old key', () => {
+  // A v2 value is a v3 value without the key id part
+  const v3 = runWith({ ENCRYPTION_KEY: KEY_A }, "return Encryption.encrypt('Chennai', 'users.address_1', 'u1');");
+  const v2 = v3.replace(/^enc:v3:[^:]+:/, 'enc:v2:');
+  const input = JSON.stringify(v2);
+  assert.equal(runWith({ ENCRYPTION_KEY: KEY_A, TEST_INPUT: input }, "return Encryption.decrypt(input, 'users.address_1', 'u1');"), 'Chennai');
+  assert.equal(
+    runWith({ ENCRYPTION_KEY: KEY_B, ENCRYPTION_KEY_ID: '2', ENCRYPTION_OLD_KEYS: `1:${KEY_A}`, TEST_INPUT: input },
+      "return Encryption.decrypt(input, 'users.address_1', 'u1');"),
+    'Chennai'
+  );
+});
+
+test('E3: key settings are checked', () => {
+  assert.deepEqual(parseOldKeys(` 1:${KEY_A} , 2:${KEY_B}`), [{ id: '1', secret: KEY_A }, { id: '2', secret: KEY_B }]);
+  assert.deepEqual(encryptionKeyProblems('2', KEY_B, parseOldKeys(`1:${KEY_A}`)), []);
+  assert.ok(encryptionKeyProblems('2', KEY_B, parseOldKeys(`2:${KEY_A}`)).some((p) => p.includes('used twice')));
+  assert.ok(encryptionKeyProblems('2', KEY_B, parseOldKeys(`1:${KEY_B}`)).some((p) => p.includes('same as ENCRYPTION_KEY')));
+  assert.ok(encryptionKeyProblems('2', KEY_B, parseOldKeys('1:short')).some((p) => p.includes('shorter')));
+  assert.ok(encryptionKeyProblems('2', KEY_B, parseOldKeys(KEY_A)).some((p) => p.includes('needs an id')));
+  assert.ok(encryptionKeyProblems('bad id!', KEY_B, []).length > 0);
 });
 
 test('rowKeyFor: guardians bind to their user, other tables to their own id', () => {

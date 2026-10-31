@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
-import { encryptField as enc, decryptField as dec, blindIndex } from '../utils/encryption.js';
+import { encryptField as enc, decryptField as dec, blindIndex, blindIndexes } from '../utils/encryption.js';
 
 // Decrypted profile fields of a users row (each value is bound to its column and this row, E6)
 const decryptUser = (row) => ({
@@ -21,7 +21,8 @@ export const UserService = {
       const { data: user, error } = await supabase
         .from('users')
         .select('*')
-        .eq('mobile_hash', blindIndex(cleanPhone))
+        // Every key's hash: rows not yet moved to a new key by rotate:key are still found (E3)
+        .in('mobile_hash', blindIndexes(cleanPhone))
         .maybeSingle();
 
       if (error) {
