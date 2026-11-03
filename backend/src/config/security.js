@@ -1,8 +1,6 @@
 import crypto from 'crypto';
-import dotenv from 'dotenv';
+import './env.js';
 import { isPasswordHash } from '../utils/password.js';
-
-dotenv.config();
 
 const isProduction = process.env.NODE_ENV === 'production';
 

@@ -5,6 +5,7 @@ import userRoutes from './user.routes.js';
 import sosRoutes from './sos.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import adminRoutes from './admin.routes.js';
+import ivrRoutes from './ivr.routes.js';
 import { authLimiter } from '../middlewares/rateLimiter.js';
 import { verifyAdmin } from '../middlewares/auth.middleware.js';
 
@@ -16,5 +17,6 @@ router.use('/admin', adminRoutes);
 router.use('/user', userRoutes);
 router.use('/sos', sosRoutes);
 router.use('/dashboard', verifyAdmin, dashboardRoutes);
+router.use('/ivr', ivrRoutes);
 
 export default router;

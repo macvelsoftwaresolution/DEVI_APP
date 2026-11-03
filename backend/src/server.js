@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
+import './config/env.js';
 import { isAllowedOrigin, IS_PRODUCTION, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET } from './config/security.js';
 import { safeEqual, verifyMetaSignature } from './middlewares/auth.middleware.js';
 import { maskUrl } from './utils/logMask.js';
@@ -11,8 +11,6 @@ import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
 import { socketService } from './services/socket.service.js';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5005;

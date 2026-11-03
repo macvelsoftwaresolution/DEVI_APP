@@ -35,6 +35,8 @@
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
     "multer": "^2.4.0",
+    "plivo": "^4.79.0",
+    "twilio": "^6.2.0",
     "ws": "^8.21.3"
   },
   "devDependencies": {

@@ -23,6 +23,7 @@ import {
 } from '../middlewares/auth.middleware.js';
 import { WhatsAppService } from '../services/whatsapp.service.js';
 import { socketService } from '../services/socket.service.js';
+import { ivrService } from '../services/ivr.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -164,6 +165,16 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
           console.warn(`⚠️ [SOS RECIPIENT LIMIT] Alert ${alert.id}: +${maskPhone(r.phone)} already got ${RECIPIENT_LIMIT} alerts this hour`);
           return { phone: r.phone, role: r.role, sent: false, reason: 'RECIPIENT_LIMIT' };
         }
+        // Trigger automated emergency voice call (IVR) in parallel
+        ivrService.triggerEmergencyCall({
+          recipientPhone: r.phone,
+          victimName: isControlRoomOnly ? `${victimName} (Instant SOS)` : victimName,
+          locationText: alert.location,
+          sosId: alert.id,
+        }).catch((e) => {
+          console.warn(`⚠️ [SOS IVR Error] Failed to call ${r.phone}:`, e.message);
+        });
+
         const out = await WhatsAppService.sendEmergencyAlert(
           r.phone,
           isControlRoomOnly ? `${victimName} (Instant SOS)` : victimName,
