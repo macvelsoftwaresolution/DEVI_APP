@@ -6,20 +6,22 @@ import 'package:phone_numbers_parser/phone_numbers_parser.dart';
 class PhoneUtils {
   static const String defaultIso = 'IN';
 
-  /// Countries offered in number fields. Replaced by the server's list (ALLOWED_COUNTRIES) at startup.
+  /// Countries that can be used. Replaced by the server's list (ALLOWED_COUNTRIES) at startup.
   static List<String> allowedCountries = const [defaultIso];
 
   static Country get defaultCountry => Country.parse(defaultIso);
 
+  static bool isOpen(String iso) => allowedCountries.contains('ALL') || allowedCountries.contains(iso);
+
   static int maxDigits(Country country) => country.countryCode == defaultIso ? 10 : 15;
 
-  /// Reads any stored or contact number. Without a country code it is taken as Indian.
-  static PhoneNumber? _parse(String raw) {
+  /// Reads any stored or contact number. Without a country code it belongs to [iso].
+  static PhoneNumber? _parse(String raw, [String iso = defaultIso]) {
     var text = raw.trim();
     if (RegExp(r'^91\d{10}$').hasMatch(text)) text = '+$text';
     if (!RegExp(r'\d').hasMatch(text) || text.startsWith('GUEST_')) return null;
     try {
-      final number = PhoneNumber.parse(text, callerCountry: IsoCode.IN);
+      final number = PhoneNumber.parse(text, callerCountry: IsoCode.values.byName(iso));
       return number.isValid(type: PhoneNumberType.mobile) ? number : null;
     } catch (_) {
       return null;
@@ -43,16 +45,18 @@ class PhoneUtils {
   static String normalize(String raw) => _parse(raw)?.international ?? raw;
 
   /// E.164 number of a phone book contact, or null if it cannot be a guardian.
-  static String? fromContact(String raw) {
-    final number = _parse(raw);
-    if (number == null || !allowedCountries.contains(number.isoCode.name)) return null;
+  /// Contacts are often saved without a country code: those are read as [country].
+  static String? fromContact(String raw, Country country) {
+    final number = _parse(raw, country.countryCode);
+    if (number == null || !isOpen(number.isoCode.name)) return null;
     return number.international;
   }
 
   /// The country a saved number belongs to, to fill a number field.
   static Country countryOf(String phone) {
     final number = _parse(phone);
-    return number == null ? defaultCountry : Country.parse(number.isoCode.name);
+    if (number == null) return defaultCountry;
+    return Country.tryParse(number.isoCode.name) ?? defaultCountry;
   }
 
   /// The digits after the country code, to fill a number field.

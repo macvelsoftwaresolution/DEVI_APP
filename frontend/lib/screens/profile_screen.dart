@@ -139,7 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _guardianNameControllers.add(TextEditingController());
         _guardianPhoneControllers.add(TextEditingController());
-        _guardianCountries.add(PhoneUtils.defaultCountry);
+        _guardianCountries.add(_phoneCountry);
         _guardianNameErrors.add(null);
         _guardianPhoneErrors.add(null);
       });
@@ -637,7 +637,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       for (final c in contacts) {
         final name = (c.displayName ?? '').trim();
         for (final p in c.phones) {
-          final e164 = PhoneUtils.fromContact(p.number);
+          final e164 = PhoneUtils.fromContact(p.number, _phoneCountry);
           if (e164 != null && !seen.contains(e164)) {
             seen.add(e164);
             list.add(_ContactSuggestion(
@@ -721,7 +721,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
       if (contact != null && contact.phones.isNotEmpty) {
         final rawPhone = contact.phones.first.number;
-        final e164 = PhoneUtils.fromContact(rawPhone);
+        final e164 = PhoneUtils.fromContact(rawPhone, _guardianCountries[guardianIndex]);
         if (e164 != null) {
           _selectSuggestion(
             _ContactSuggestion(
@@ -1101,6 +1101,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onChanged: (c) => setState(() {
                         _phoneCountry = c;
                         _phoneError = null;
+                        // Guardians usually share the user's country: empty slots follow it
+                        for (var i = 0; i < _guardianCountries.length; i++) {
+                          if (_guardianPhoneControllers[i].text.trim().isEmpty) {
+                            _guardianCountries[i] = c;
+                          }
+                        }
                       }),
                     ),
                     keyboardType: TextInputType.phone,

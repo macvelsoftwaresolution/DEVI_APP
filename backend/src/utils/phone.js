@@ -7,13 +7,18 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js/max';
 const DEFAULT_COUNTRY = 'IN';
 const MOBILE_TYPES = new Set(['MOBILE', 'FIXED_LINE_OR_MOBILE']);
 
-// Countries open for sign up and guardians. Every number here can be sent a paid SOS call by
-// anyone who can trigger an SOS, so a country is opened on purpose, never all of them at once.
+// Countries open for sign up and guardians, or "ALL". Every number here can be sent a paid SOS
+// call by anyone who can trigger an SOS, so a country is opened on purpose.
 export const allowedCountries = () =>
   (process.env.ALLOWED_COUNTRIES || DEFAULT_COUNTRY)
     .split(',')
     .map((code) => code.trim().toUpperCase())
     .filter(Boolean);
+
+const isCountryOpen = (country) => {
+  const open = allowedCountries();
+  return open.includes('ALL') || open.includes(country);
+};
 
 const parseMobile = (raw) => {
   const text = String(raw ?? '').trim();
@@ -29,7 +34,7 @@ const parseMobile = (raw) => {
 // E.164 number from user input, or null: not a mobile number, or its country is not open
 export const normalizePhone = (raw) => {
   const parsed = parseMobile(raw);
-  return parsed && allowedCountries().includes(parsed.country) ? parsed.number : null;
+  return parsed && isCountryOpen(parsed.country) ? parsed.number : null;
 };
 
 // The form stored in the database and in tokens. Guest IDs and other identifiers stay as they are,

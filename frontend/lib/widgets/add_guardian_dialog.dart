@@ -44,7 +44,8 @@ class _AddGuardianDialogState extends State<AddGuardianDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
-  Country _country = PhoneUtils.defaultCountry;
+  // The user's own country first: guardians usually share it
+  late Country _country = PhoneUtils.countryOf(widget.currentUserPhone ?? '');
 
   @override
   void dispose() {

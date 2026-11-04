@@ -31,11 +31,23 @@ void main() {
   });
 
   test('contacts in any format, only from open countries', () {
-    expect(PhoneUtils.fromContact('098765 43210'), '+919876543210');
-    expect(PhoneUtils.fromContact('+91 98765-43210'), '+919876543210');
-    expect(PhoneUtils.fromContact('+971 50 123 4567'), isNull);
+    final india = Country.parse('IN');
+    expect(PhoneUtils.fromContact('098765 43210', india), '+919876543210');
+    expect(PhoneUtils.fromContact('+91 98765-43210', india), '+919876543210');
+    expect(PhoneUtils.fromContact('+971 50 123 4567', india), isNull);
     PhoneUtils.allowedCountries = const ['IN', 'AE'];
-    expect(PhoneUtils.fromContact('+971 50 123 4567'), '+971501234567');
+    expect(PhoneUtils.fromContact('+971 50 123 4567', india), '+971501234567');
+  });
+
+  test('a contact without a country code belongs to the chosen country', () {
+    PhoneUtils.allowedCountries = const ['ALL'];
+    expect(PhoneUtils.fromContact('050 123 4567', Country.parse('AE')), '+971501234567');
+    expect(PhoneUtils.isOpen('SG'), isTrue);
+  });
+
+  test('India is the only open country by default', () {
+    expect(PhoneUtils.isOpen('IN'), isTrue);
+    expect(PhoneUtils.isOpen('AE'), isFalse);
   });
 
   test('a saved number fills its field and reads well', () {

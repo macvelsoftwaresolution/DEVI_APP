@@ -31,6 +31,12 @@ test('a country opens only through ALLOWED_COUNTRIES', () => {
   assert.equal(normalizePhone('+6581234567'), null);
 });
 
+test('ALL opens every country', () => {
+  process.env.ALLOWED_COUNTRIES = 'ALL';
+  assert.equal(normalizePhone('+6581234567'), '+6581234567');
+  assert.equal(normalizePhone('112'), null);
+});
+
 test('canonicalPhone keeps guest IDs and finds numbers of closed countries', () => {
   assert.equal(canonicalPhone('9876543210'), '+919876543210');
   assert.equal(canonicalPhone('+971501234567'), '+971501234567');

@@ -108,7 +108,7 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
       for (final c in contacts) {
         final name = (c.displayName ?? '').trim();
         for (final p in c.phones) {
-          final e164 = PhoneUtils.fromContact(p.number);
+          final e164 = PhoneUtils.fromContact(p.number, _guardianCountry);
           if (e164 != null && !seen.contains(e164)) {
             seen.add(e164);
             list.add(_ContactSuggestion(
@@ -184,7 +184,7 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
       );
       if (contact == null) return;
       final phone = contact.phones
-          .map((p) => (raw: p.number, e164: PhoneUtils.fromContact(p.number)))
+          .map((p) => (raw: p.number, e164: PhoneUtils.fromContact(p.number, _guardianCountry)))
           .where((p) => p.e164 != null)
           .firstOrNull;
       if (phone == null) {
