@@ -11,6 +11,7 @@ import apiRoutes from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
 import { socketService } from './services/socket.service.js';
+import { sosNotify } from './services/sosNotify.service.js';
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -135,6 +136,7 @@ server.listen(PORT, () => {
   console.log(`⚡ WebSocket Server listening on ws://localhost:${PORT}/ws`);
   console.log(`🛡️ Security enabled: Helmet, Rate Limiter, and JWT Auth active`);
   console.log(`📡 Health check available at: http://localhost:${PORT}/api/health`);
+  sosNotify.startWorker();
 });
 
 export default app;

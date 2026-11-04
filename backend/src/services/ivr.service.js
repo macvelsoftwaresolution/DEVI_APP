@@ -1,5 +1,9 @@
 import twilio from 'twilio';
 import plivo from 'plivo';
+import { maskPhone } from '../utils/logMask.js';
+
+export const publicBaseUrl = () =>
+  process.env.PUBLIC_API_URL || process.env.PUBLIC_BASE_URL || 'https://devi-api.macvelsoftware.com';
 
 class IvrService {
   constructor() {
@@ -44,8 +48,49 @@ class IvrService {
     return clean;
   }
 
+  // Indian numbers go through Plivo (cheaper in India), every other country through Twilio.
+  // If the preferred provider is not configured or the call fails, the other one is tried:
+  // an SOS call costing more is better than no call.
+  providerOrder(to) {
+    return to.startsWith('+91') ? ['plivo', 'twilio'] : ['twilio', 'plivo'];
+  }
+
+  answerQuery({ victimName, locationText, sosId }) {
+    return `victim=${encodeURIComponent(victimName)}&loc=${encodeURIComponent(locationText)}&sosId=${encodeURIComponent(sosId)}`;
+  }
+
+  async callViaTwilio(to, details) {
+    let fromNumber = process.env.TWILIO_CALLER_ID;
+    if (!fromNumber) {
+      const numbers = await this.twilioClient.incomingPhoneNumbers.list({ limit: 1 });
+      if (numbers.length > 0) fromNumber = numbers[0].phoneNumber;
+    }
+    if (!fromNumber) throw new Error('No Twilio caller ID available');
+
+    const call = await this.twilioClient.calls.create({
+      url: `${publicBaseUrl()}/api/ivr/twilio/answer?${this.answerQuery(details)}`,
+      to,
+      from: fromNumber,
+    });
+    return call.sid;
+  }
+
+  async callViaPlivo(to, details) {
+    const fromNumber = process.env.PLIVO_CALLER_ID;
+    if (!fromNumber) throw new Error('PLIVO_CALLER_ID not set');
+
+    const baseUrl = publicBaseUrl();
+    const call = await this.plivoClient.calls.create(
+      fromNumber,
+      to,
+      `${baseUrl}/api/ivr/plivo/answer?${this.answerQuery(details)}`,
+      { answerMethod: 'GET', hangupUrl: `${baseUrl}/api/ivr/plivo/status`, hangupMethod: 'POST' }
+    );
+    return call.requestUuid;
+  }
+
   /**
-   * Dispatches emergency IVR call using Twilio (or Plivo)
+   * Dispatches emergency IVR call: Plivo for +91 numbers, Twilio for the rest (with fallback)
    */
   async triggerEmergencyCall({ recipientPhone, victimName = 'A user', locationText = '', sosId = '' }) {
     if (!this.twilioClient && !this.plivoClient) {
@@ -55,37 +100,23 @@ class IvrService {
     const to = this.formatPhoneNumber(recipientPhone);
     if (!to) return { success: false, error: 'Invalid phone number' };
 
-    // --- Prefer Twilio if configured ---
-    if (this.twilioClient) {
+    const details = { victimName, locationText, sosId };
+    let lastError = 'No telephony provider configured in .env';
+
+    for (const provider of this.providerOrder(to)) {
+      const client = provider === 'plivo' ? this.plivoClient : this.twilioClient;
+      if (!client) continue;
       try {
-        let fromNumber = process.env.TWILIO_CALLER_ID;
-        if (!fromNumber) {
-          const numbers = await this.twilioClient.incomingPhoneNumbers.list({ limit: 1 });
-          if (numbers.length > 0) fromNumber = numbers[0].phoneNumber;
-        }
-
-        if (!fromNumber) {
-          return { success: false, error: 'No Twilio caller ID available' };
-        }
-
-        const baseUrl = process.env.PUBLIC_API_URL || process.env.PUBLIC_BASE_URL || 'https://devi-api.macvelsoftware.com';
-        const answerUrl = `${baseUrl}/api/ivr/twilio/answer?victim=${encodeURIComponent(victimName)}&loc=${encodeURIComponent(locationText)}&sosId=${encodeURIComponent(sosId)}`;
-
-        const call = await this.twilioClient.calls.create({
-          url: answerUrl,
-          to,
-          from: fromNumber,
-        });
-
-        console.log(`✅ [IVR Twilio] Call dispatched: ${call.sid} to ${to}`);
-        return { success: true, provider: 'twilio', callSid: call.sid };
+        const callId = provider === 'plivo' ? await this.callViaPlivo(to, details) : await this.callViaTwilio(to, details);
+        console.log(`✅ [IVR ${provider}] Call dispatched: ${callId} to ${maskPhone(to)}`);
+        return { success: true, provider, callId };
       } catch (err) {
-        console.error('❌ [IVR Twilio] Error:', err.message);
-        return { success: false, error: err.message };
+        console.error(`❌ [IVR ${provider}] Call to ${maskPhone(to)} failed:`, err.message);
+        lastError = err.message;
       }
     }
 
-    return { success: false, error: 'No telephony provider configured in .env' };
+    return { success: false, error: lastError };
   }
 }
 

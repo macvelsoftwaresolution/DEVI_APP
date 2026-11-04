@@ -21,9 +21,8 @@ import {
   decodeAdminToken,
   isTrackingLinkExpired,
 } from '../middlewares/auth.middleware.js';
-import { WhatsAppService } from '../services/whatsapp.service.js';
 import { socketService } from '../services/socket.service.js';
-import { ivrService } from '../services/ivr.service.js';
+import { sosNotify } from '../services/sosNotify.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -165,21 +164,17 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
           console.warn(`⚠️ [SOS RECIPIENT LIMIT] Alert ${alert.id}: +${maskPhone(r.phone)} already got ${RECIPIENT_LIMIT} alerts this hour`);
           return { phone: r.phone, role: r.role, sent: false, reason: 'RECIPIENT_LIMIT' };
         }
-        // Trigger automated emergency voice call (IVR) in parallel
-        ivrService.triggerEmergencyCall({
-          recipientPhone: r.phone,
+        // Sent now; a failed WhatsApp or IVR call is retried by the queue worker (sosNotify.service.js)
+        const job = {
+          alertId: alert.id,
+          phone: r.phone,
           victimName: isControlRoomOnly ? `${victimName} (Instant SOS)` : victimName,
-          locationText: alert.location,
-          sosId: alert.id,
-        }).catch((e) => {
-          console.warn(`⚠️ [SOS IVR Error] Failed to call ${r.phone}:`, e.message);
-        });
+          location: { latitude: alert.latitude, longitude: alert.longitude, location: alert.location },
+        };
+        // IVR call in parallel, not awaited: the phone only waits for WhatsApp's answer
+        sosNotify.dispatch('ivr', job);
 
-        const out = await WhatsAppService.sendEmergencyAlert(
-          r.phone,
-          isControlRoomOnly ? `${victimName} (Instant SOS)` : victimName,
-          { latitude: alert.latitude, longitude: alert.longitude, location: alert.location }
-        ).catch((e) => ({ success: false, reason: 'NETWORK', error: e.message }));
+        const out = await sosNotify.dispatch('whatsapp', job);
         return { phone: r.phone, role: r.role, sent: !!out?.success, reason: out?.success ? null : (out?.reason || 'UNKNOWN') };
       })
     );

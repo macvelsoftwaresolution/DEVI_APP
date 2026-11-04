@@ -1,6 +1,12 @@
 import { Router } from 'express';
+import { maskPhone } from '../utils/logMask.js';
+import { publicBaseUrl } from '../services/ivr.service.js';
 
 const router = Router();
+
+// Name and address go inside the XML we return: a "&" or "<" in them would break the call
+const escapeXml = (value) =>
+  String(value ?? '').replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
 
 /**
  * Plivo Answer Webhook
@@ -10,11 +16,11 @@ const router = Router();
  * 2. Asks the guardian to press '1' to acknowledge
  */
 router.all('/plivo/answer', (req, res) => {
-  const victimName = req.query.victim || 'a user';
-  const locationText = req.query.loc ? `near ${req.query.loc}` : '';
+  const victimName = escapeXml(req.query.victim || 'a user');
+  const locationText = req.query.loc ? `near ${escapeXml(req.query.loc)}` : '';
   const sosId = req.query.sosId || '';
-  
-  const gatherAction = `/api/ivr/plivo/gather?sosId=${encodeURIComponent(sosId)}`;
+
+  const gatherAction = escapeXml(`${publicBaseUrl()}/api/ivr/plivo/gather?sosId=${encodeURIComponent(sosId)}`);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -38,11 +44,11 @@ router.all('/plivo/gather', (req, res) => {
   const sosId = req.query.sosId || req.body?.sosId || '';
   const fromNumber = req.body?.From || req.query?.From || '';
 
-  console.log(`📞 [Plivo IVR] DTMF key received: "${digits}" for SOS: ${sosId} from: ${fromNumber}`);
+  console.log(`📞 [Plivo IVR] DTMF key received: "${digits}" for SOS: ${sosId} from: ${maskPhone(fromNumber)}`);
 
   let responseXml = '';
   if (digits === '1') {
-    console.log(`✅ [Plivo IVR] SOS ${sosId} acknowledged by guardian (${fromNumber})`);
+    console.log(`✅ [Plivo IVR] SOS ${sosId} acknowledged by guardian (${maskPhone(fromNumber)})`);
     responseXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Speak voice="WOMAN" language="en-IN">Thank you! Your acknowledgement has been recorded in the DEVI emergency safety system. Connecting assistance now.</Speak>
@@ -66,7 +72,7 @@ router.all('/plivo/status', (req, res) => {
   const callDuration = req.body?.CallDuration || req.query?.CallDuration || '0';
   const to = req.body?.To || req.query?.To;
 
-  console.log(`📋 [Plivo IVR Status] Call to ${to} ended. Status: ${callStatus}, Duration: ${callDuration}s`);
+  console.log(`📋 [Plivo IVR Status] Call to ${maskPhone(to)} ended. Status: ${callStatus}, Duration: ${callDuration}s`);
   res.status(200).send('OK');
 });
 
@@ -74,15 +80,15 @@ router.all('/plivo/status', (req, res) => {
  * Twilio Answer Webhook
  */
 router.all('/twilio/answer', (req, res) => {
-  const victimName = req.query.victim || 'A user';
-  const locationText = req.query.loc ? ` near ${req.query.loc}` : '';
+  const victimName = escapeXml(req.query.victim || 'A user');
+  const locationText = req.query.loc ? ` near ${escapeXml(req.query.loc)}` : '';
   const sosId = req.query.sosId || '';
-  const baseUrl = process.env.PUBLIC_API_URL || process.env.PUBLIC_BASE_URL || 'https://devi-api.macvelsoftware.com';
+  const gatherAction = escapeXml(`${publicBaseUrl()}/api/ivr/twilio/gather?sosId=${encodeURIComponent(sosId)}`);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Aditi" language="en-IN">Emergency SOS alert! ${victimName} has triggered an emergency alert in DEVI Safety${locationText}. Please check your WhatsApp and help immediately.</Say>
-    <Gather numDigits="1" timeout="10" action="${baseUrl}/api/ivr/twilio/gather?sosId=${encodeURIComponent(sosId)}" method="POST">
+    <Gather numDigits="1" timeout="10" action="${gatherAction}" method="POST">
         <Say voice="Polly.Aditi" language="en-IN">Press 1 on your phone dial pad to confirm you received this alert.</Say>
     </Gather>
     <Say voice="Polly.Aditi" language="en-IN">No input received. Stay safe.</Say>

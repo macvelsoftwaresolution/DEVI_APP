@@ -1,9 +1,10 @@
 // Log masking: server logs must never carry what opens a victim's data.
 // - View / control keys in URLs open live location and evidence → value replaced with ***
+// - IVR answer URLs carry the victim's name and address (victim=, loc=) → value replaced with ***
 // - Phone numbers → only the last 4 digits kept, enough to tell alerts apart while debugging
 // - Guest IDs → only the last 2 characters kept: a guest ID is the guest's only key (R14)
 
-const SECRET_QUERY_PARAMS = /([?&](?:k|controlToken|token|hub\.verify_token)=)[^&#]*/gi;
+const SECRET_QUERY_PARAMS = /([?&](?:k|controlToken|token|hub\.verify_token|victim|loc)=)[^&#]*/gi;
 const PHONE_LIKE = /\+?\d{10,15}/g;
 const GUEST_ID = /GUEST_[A-Za-z0-9]+/g;
 
