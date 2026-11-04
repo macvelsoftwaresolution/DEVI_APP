@@ -96,9 +96,14 @@ class ApiService {
           .get(Uri.parse('$baseUrl/user/countries'))
           .timeout(const Duration(seconds: 8));
       if (res.statusCode != 200) return;
-      final countries = jsonDecode(res.body)['data']?['countries'];
+      final data = jsonDecode(res.body)['data'];
+      final countries = data?['countries'];
       if (countries is List && countries.isNotEmpty) {
         PhoneUtils.allowedCountries = countries.map((c) => c.toString()).toList();
+      }
+      final guest = data?['guestCountries'];
+      if (guest is List && guest.isNotEmpty) {
+        PhoneUtils.guestCountries = guest.map((c) => c.toString()).toList();
       }
     } catch (e) {
       debugPrint('Could not load allowed countries: $e');

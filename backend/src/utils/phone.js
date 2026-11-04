@@ -9,16 +9,22 @@ const MOBILE_TYPES = new Set(['MOBILE', 'FIXED_LINE_OR_MOBILE']);
 
 // Countries open for sign up and guardians, or "ALL". Every number here can be sent a paid SOS
 // call by anyone who can trigger an SOS, so a country is opened on purpose.
-export const allowedCountries = () =>
-  (process.env.ALLOWED_COUNTRIES || DEFAULT_COUNTRY)
+const countryList = (value) =>
+  (value || DEFAULT_COUNTRY)
     .split(',')
     .map((code) => code.trim().toUpperCase())
     .filter(Boolean);
 
-const isCountryOpen = (country) => {
-  const open = allowedCountries();
-  return open.includes('ALL') || open.includes(country);
-};
+const includesCountry = (list, country) => list.includes('ALL') || list.includes(country);
+
+export const allowedCountries = () => countryList(process.env.ALLOWED_COUNTRIES);
+
+// Countries an Instant SOS (no login, no OTP) may send to. Anyone can trigger one, and foreign calls
+// and messages cost far more, so other countries need a logged-in user's saved guardians.
+export const guestCountries = () => countryList(process.env.GUEST_SOS_COUNTRIES);
+
+// Random 128-bit guest ID (the app's UUID v4, hex). Old time-based IDs could be guessed (R14).
+export const isValidGuestId = (id) => typeof id === 'string' && /^GUEST_[0-9A-F]{32}$/.test(id);
 
 const parseMobile = (raw) => {
   const text = String(raw ?? '').trim();
@@ -34,7 +40,13 @@ const parseMobile = (raw) => {
 // E.164 number from user input, or null: not a mobile number, or its country is not open
 export const normalizePhone = (raw) => {
   const parsed = parseMobile(raw);
-  return parsed && isCountryOpen(parsed.country) ? parsed.number : null;
+  return parsed && includesCountry(allowedCountries(), parsed.country) ? parsed.number : null;
+};
+
+// True when no login is needed to send to this number
+export const isGuestCountryNumber = (raw) => {
+  const parsed = parseMobile(raw);
+  return !!parsed && includesCountry(guestCountries(), parsed.country);
 };
 
 // The form stored in the database and in tokens. Guest IDs and other identifiers stay as they are,

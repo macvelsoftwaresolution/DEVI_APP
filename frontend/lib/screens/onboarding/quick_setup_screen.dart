@@ -224,7 +224,12 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
     setState(() {
       _nameError = name.length < 2 ? 'Enter your name' : null;
       _guardianNameError = guardianName.length < 2 ? 'Enter your guardian\'s name' : null;
-      _guardianPhoneError = guardianPhone == null ? 'Enter a valid mobile number' : null;
+      // Said here, not during an emergency: the server sends nothing to these numbers without a login
+      _guardianPhoneError = guardianPhone == null
+          ? 'Enter a valid mobile number'
+          : !PhoneUtils.isOpenForGuests(_guardianCountry.countryCode)
+              ? 'Sign up to add a guardian from this country'
+              : null;
     });
     if (_nameError != null || _guardianNameError != null || _guardianPhoneError != null) return;
 

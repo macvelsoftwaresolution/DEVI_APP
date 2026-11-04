@@ -11,7 +11,12 @@ class PhoneUtils {
 
   static Country get defaultCountry => Country.parse(defaultIso);
 
+  /// Countries an Instant SOS can alert. Other countries need a signed-in user's saved guardians.
+  static List<String> guestCountries = const [defaultIso];
+
   static bool isOpen(String iso) => allowedCountries.contains('ALL') || allowedCountries.contains(iso);
+
+  static bool isOpenForGuests(String iso) => guestCountries.contains('ALL') || guestCountries.contains(iso);
 
   static int maxDigits(Country country) => country.countryCode == defaultIso ? 10 : 15;
 

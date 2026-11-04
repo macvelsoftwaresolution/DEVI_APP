@@ -107,6 +107,22 @@ test('a failed send saves nothing and passes the reason on', async () => {
   assert.equal(rows.size, 0);
 });
 
+test('sign up codes abroad stop at the daily total; home, login and the next day do not', async () => {
+  process.env.FOREIGN_OTP_DAILY_LIMIT = '2';
+  try {
+    const { otp, clock } = setup();
+    assert.equal((await otp.sendCode('+971501234561', { newNumber: true })).success, true);
+    assert.equal((await otp.sendCode('+971501234562', { newNumber: true })).success, true);
+    assert.equal((await otp.sendCode('+971501234563', { newNumber: true })).reason, 'LIMIT_FOREIGN');
+    assert.equal((await otp.sendCode('+971501234563')).success, true);
+    assert.equal((await otp.sendCode(PHONE, { newNumber: true })).success, true);
+    clock.time += 24 * 60 * 60 * 1000;
+    assert.equal((await otp.sendCode('+971501234564', { newNumber: true })).success, true);
+  } finally {
+    delete process.env.FOREIGN_OTP_DAILY_LIMIT;
+  }
+});
+
 test('WhatsApp gets the template with the code in the body and the copy button', async (t) => {
   process.env.WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || 'test-id';
   process.env.WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || 'test-token';

@@ -5,16 +5,15 @@ import { OtpService } from '../services/otp.service.js';
 import { MAX_GUARDIANS } from '../utils/sosRecipients.js';
 import { guestSyncLimiter } from '../middlewares/rateLimiter.js';
 import { optionalToken, verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
-import { normalizePhone, allowedCountries } from '../utils/phone.js';
+import { normalizePhone, allowedCountries, guestCountries, isValidGuestId } from '../utils/phone.js';
 
 const router = Router();
 
-// Random 128-bit guest ID (the app's UUID v4, hex). Old time-based IDs could be guessed (R14).
-export const isValidGuestId = (id) => typeof id === 'string' && /^GUEST_[0-9A-F]{32}$/.test(id);
+export { isValidGuestId };
 
 // GET /api/user/countries - Countries the app offers in its number fields
 router.get('/countries', (req, res) => {
-  res.status(200).json({ success: true, data: { countries: allowedCountries() } });
+  res.status(200).json({ success: true, data: { countries: allowedCountries(), guestCountries: guestCountries() } });
 });
 
 // GET /api/user/profile/:phone

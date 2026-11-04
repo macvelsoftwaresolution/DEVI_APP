@@ -3,7 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:devi/utils/phone_utils.dart';
 
 void main() {
-  tearDown(() => PhoneUtils.allowedCountries = const ['IN']);
+  tearDown(() {
+    PhoneUtils.allowedCountries = const ['IN'];
+    PhoneUtils.guestCountries = const ['IN'];
+  });
 
   test('field digits become E.164 for the chosen country', () {
     expect(PhoneUtils.fromField('9876543210', Country.parse('IN')), '+919876543210');
@@ -48,6 +51,13 @@ void main() {
   test('India is the only open country by default', () {
     expect(PhoneUtils.isOpen('IN'), isTrue);
     expect(PhoneUtils.isOpen('AE'), isFalse);
+  });
+
+  test('all countries open still keeps Instant SOS to its own list', () {
+    PhoneUtils.allowedCountries = const ['ALL'];
+    expect(PhoneUtils.isOpen('AE'), isTrue);
+    expect(PhoneUtils.isOpenForGuests('AE'), isFalse);
+    expect(PhoneUtils.isOpenForGuests('IN'), isTrue);
   });
 
   test('a saved number fills its field and reads well', () {

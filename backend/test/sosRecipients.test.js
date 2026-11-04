@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pickSosRecipients,
+  sendBlockReason,
+  sosUserId,
   sanitizeVictimName,
   RecipientLimiter,
   MAX_GUARDIANS,
@@ -58,6 +60,35 @@ test('sanitizeVictimName removes links and limits length', () => {
   assert.equal(sanitizeVictimName('A'.repeat(200)).length, 40);
   assert.equal(sanitizeVictimName(''), 'DEVI User');
   assert.equal(sanitizeVictimName('www.x.com'), 'DEVI User');
+});
+
+test('Instant SOS reaches home numbers only; saved guardians abroad are reached', () => {
+  const limiter = new RecipientLimiter();
+  assert.equal(sendBlockReason({ phone: '+919000000001', verified: false }, limiter), null);
+  assert.equal(sendBlockReason({ phone: '+971501234567', verified: false }, limiter), 'FOREIGN_NEEDS_LOGIN');
+  assert.equal(sendBlockReason({ phone: '+971501234567', verified: true }, limiter), null);
+});
+
+test('hourly limit: unverified and foreign numbers yes, saved home guardians never', () => {
+  const limiter = new RecipientLimiter({ limit: 1 });
+  assert.equal(sendBlockReason({ phone: '+919000000001', verified: false }, limiter), null);
+  assert.equal(sendBlockReason({ phone: '+919000000001', verified: false }, limiter), 'RECIPIENT_LIMIT');
+  assert.equal(sendBlockReason({ phone: '+971501234567', verified: true }, limiter), null);
+  assert.equal(sendBlockReason({ phone: '+971501234567', verified: true }, limiter), 'RECIPIENT_LIMIT');
+  assert.equal(sendBlockReason({ phone: '+919000000002', verified: true }, limiter), null);
+  assert.equal(sendBlockReason({ phone: '+919000000002', verified: true }, limiter), null);
+});
+
+test('without a token a phone number in the request is never trusted', () => {
+  const guest = 'GUEST_0123456789ABCDEF0123456789ABCDEF';
+  assert.equal(sosUserId('+919000000001', '+919000000002'), '+919000000001');
+  assert.equal(sosUserId(undefined, guest), guest);
+
+  for (const body of ['+919000000002', '9000000002', 'INSTANT_SOS', undefined]) {
+    const id = sosUserId(undefined, body);
+    assert.match(id, /^GUEST_[0-9A-F]{32}$/);
+    assert.notEqual(id, sosUserId(undefined, body));
+  }
 });
 
 test('RecipientLimiter allows 3 alerts per number per hour', () => {

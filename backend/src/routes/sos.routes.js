@@ -7,7 +7,7 @@ import { uploadMediaToCloudinary, evidenceDeliveryUrl } from '../config/cloudina
 import { toEvidenceRef, parseEvidenceRef, evidenceLink, withEvidenceLink } from '../utils/evidence.js';
 import { sosTriggerLimiter, evidenceUploadLimiter } from '../middlewares/rateLimiter.js';
 import { maskPhone } from '../utils/logMask.js';
-import { pickSosRecipients, sanitizeVictimName, recipientLimiter, RECIPIENT_LIMIT } from '../utils/sosRecipients.js';
+import { pickSosRecipients, sanitizeVictimName, sendBlockReason, sosUserId } from '../utils/sosRecipients.js';
 import { canonicalPhone } from '../utils/phone.js';
 import {
   verifyAdmin,
@@ -73,7 +73,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
 
     // A logged-in user is identified by the token, never by the request body (R6)
     const account = req.user?.phone && !req.user.isGuest ? await UserService.findUserByPhone(req.user.phone) : null;
-    const userPhone = req.user?.phone || reqData.userPhone;
+    const userPhone = sosUserId(req.user?.phone, reqData.userPhone);
 
     // STEP 1: Idempotency & Active Session Check (Prevents duplicate DB alerts & duplicate SMS)
     const existingSession = await SosService.findExistingSos({
@@ -160,10 +160,11 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
         if (!r.phone) {
           return { phone: '', role: r.role, sent: false, reason: 'CONTROL_ROOM_NOT_CONFIGURED' };
         }
-        // Unverified numbers: at most 3 alerts an hour each (the alert still reaches the dashboard)
-        if (r.role === 'guardian' && !r.verified && !recipientLimiter.tryConsume(r.phone)) {
-          console.warn(`⚠️ [SOS RECIPIENT LIMIT] Alert ${alert.id}: +${maskPhone(r.phone)} already got ${RECIPIENT_LIMIT} alerts this hour`);
-          return { phone: r.phone, role: r.role, sent: false, reason: 'RECIPIENT_LIMIT' };
+        // The limits on paid sends (the alert still reaches the dashboard)
+        const blocked = r.role === 'guardian' ? sendBlockReason(r) : null;
+        if (blocked) {
+          console.warn(`⚠️ [SOS ${blocked}] Alert ${alert.id}: not sent to ${maskPhone(r.phone)}`);
+          return { phone: r.phone, role: r.role, sent: false, reason: blocked };
         }
         // Sent now; a failed WhatsApp or IVR call is retried by the queue worker (sosNotify.service.js)
         const job = {

@@ -1,9 +1,10 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePhone, canonicalPhone, allowedCountries } from '../src/utils/phone.js';
+import { normalizePhone, canonicalPhone, allowedCountries, guestCountries, isGuestCountryNumber } from '../src/utils/phone.js';
 
 afterEach(() => {
   delete process.env.ALLOWED_COUNTRIES;
+  delete process.env.GUEST_SOS_COUNTRIES;
 });
 
 test('every Indian format becomes E.164', () => {
@@ -35,6 +36,15 @@ test('ALL opens every country', () => {
   process.env.ALLOWED_COUNTRIES = 'ALL';
   assert.equal(normalizePhone('+6581234567'), '+6581234567');
   assert.equal(normalizePhone('112'), null);
+});
+
+test('ALL countries open does not open Instant SOS abroad', () => {
+  process.env.ALLOWED_COUNTRIES = 'ALL';
+  assert.deepEqual(guestCountries(), ['IN']);
+  assert.equal(isGuestCountryNumber('+919876543210'), true);
+  assert.equal(isGuestCountryNumber('9876543210'), true);
+  assert.equal(isGuestCountryNumber('+971501234567'), false);
+  assert.equal(isGuestCountryNumber('GUEST_0123456789ABCDEF0123456789ABCDEF'), false);
 });
 
 test('canonicalPhone keeps guest IDs and finds numbers of closed countries', () => {

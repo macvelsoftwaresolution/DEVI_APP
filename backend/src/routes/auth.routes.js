@@ -10,6 +10,7 @@ const router = Router();
 const OTP_SEND_ERRORS = {
   WAIT: [429, 'Please wait a minute before asking for another code.'],
   LIMIT: [429, 'Too many codes for this number. Please try again in an hour.'],
+  LIMIT_FOREIGN: [429, 'Sign up from this country is busy today. Please try again tomorrow.'],
   NOT_ON_WHATSAPP: [400, 'This number is not on WhatsApp. The code is sent on WhatsApp.'],
 };
 
@@ -41,7 +42,7 @@ router.post('/otp/send', otpLimiter, async (req, res, next) => {
       });
     }
 
-    const out = await OtpService.sendCode(cleanPhone);
+    const out = await OtpService.sendCode(cleanPhone, { newNumber: purpose === 'signup' });
     if (!out.success) {
       const [status, message] = OTP_SEND_ERRORS[out.reason] || [503, 'Could not send the code. Please try again.'];
       return res.status(status).json({ success: false, message, reason: out.reason, retryAfter: out.retryAfter });

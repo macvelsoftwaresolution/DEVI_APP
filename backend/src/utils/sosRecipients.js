@@ -1,5 +1,6 @@
 // Who receives an SOS WhatsApp, and what name it shows.
-import { normalizePhone } from './phone.js';
+import crypto from 'crypto';
+import { normalizePhone, isGuestCountryNumber, isValidGuestId } from './phone.js';
 
 // The WhatsApp goes out from DEVI's business number, so a request must not be able to send it to
 // any numbers it likes: a flood of fake alerts gets the number reported and banned by Meta, and then
@@ -12,7 +13,8 @@ import { normalizePhone } from './phone.js';
 //   (e.g. a guardian added while offline) are unverified. An empty app list falls back to the account.
 // - Guest or expired login: every number is unverified. Guest records are not trusted either, because
 //   anyone can create one through /user/guest.
-// Unverified numbers: at most MAX_GUARDIANS, each receiving at most RECIPIENT_LIMIT alerts an hour.
+// Unverified numbers: at most MAX_GUARDIANS, each receiving at most RECIPIENT_LIMIT alerts an hour,
+// and only in the Instant SOS countries (GUEST_SOS_COUNTRIES). Saved guardians abroad get the hourly limit too.
 
 // A user can have at most this many guardians (the app enforces the same limit)
 export const MAX_GUARDIANS = 3;
@@ -96,3 +98,25 @@ export class RecipientLimiter {
 }
 
 export const recipientLimiter = new RecipientLimiter();
+
+/**
+ * Why this guardian must not be sent to, or null. The caller reports the reason back, so the phone
+ * warns the user and shows a Call button instead of implying the guardian was reached.
+ */
+export const sendBlockReason = ({ phone, verified }, limiter = recipientLimiter) => {
+  const guestCountry = isGuestCountryNumber(phone);
+  if (!verified && !guestCountry) return 'FOREIGN_NEEDS_LOGIN';
+  if ((!verified || !guestCountry) && !limiter.tryConsume(phone)) return 'RECIPIENT_LIMIT';
+  return null;
+};
+
+/**
+ * Who an SOS belongs to. The token decides for a logged-in user. Without one only a guest ID is
+ * taken from the request: a phone number there could file an alert under someone else's account.
+ * Anything else still gets through, as a new guest: an SOS is never refused for its ID.
+ */
+export const sosUserId = (tokenPhone, requestId) => {
+  if (tokenPhone) return tokenPhone;
+  if (isValidGuestId(requestId)) return requestId;
+  return `GUEST_${crypto.randomUUID().replace(/-/g, '').toUpperCase()}`;
+};
