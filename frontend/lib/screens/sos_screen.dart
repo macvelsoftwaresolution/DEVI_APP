@@ -432,7 +432,6 @@ class _SosScreenState extends State<SosScreen>
 
       final alertData = await sendSos(locResult);
       final delivered = alertData != null && alertData['id'] != null;
-      final isDuplicate = delivered && alertData['duplicate'] == true;
 
       // 4. Only a real server alert ID is used for evidence. If the server could
       // not be reached, nothing is bound yet: a background retry binds it once delivered.
@@ -447,17 +446,16 @@ class _SosScreenState extends State<SosScreen>
         _appState.setActiveEmergency(alertId);
       }
 
-      // 5. Emergency Auto-Call: 112 is on HOLD per test request; routes directly to Web & WhatsApp!
-      // The call goes out whether or not the server was reached (it uses the SIM, not internet).
-      if (!isDuplicate) {
-        if (primaryPhone.isEmpty) {
-          // Direct 112 police call is put on HOLD for testing per user request!
-          debugPrint('⏸️ [112 POLICE CALL ON HOLD] Real 112 call paused. Dispatched to Web Dashboard & WhatsApp.');
-        } else {
-          await SmsService.makePhoneCall(primaryPhone);
-        }
+      // 5. Emergency Auto-Call: only when the server was not reached (it uses the SIM, not internet).
+      // A delivered alert gets the server's IVR call; a call from this phone too would show as busy.
+      // 112 is on HOLD per test request; routes directly to Web & WhatsApp!
+      if (delivered) {
+        debugPrint('📞 [SOS CALL] Alert delivered: guardians are called by the server. Skipping phone call.');
+      } else if (primaryPhone.isEmpty) {
+        // Direct 112 police call is put on HOLD for testing per user request!
+        debugPrint('⏸️ [112 POLICE CALL ON HOLD] Real 112 call paused. Dispatched to Web Dashboard & WhatsApp.');
       } else {
-        debugPrint('🔁 [SOS RETRY/DUPLICATE] Active session reused. Skipping duplicate call.');
+        await SmsService.makePhoneCall(primaryPhone);
       }
 
       // 6. Hide the app (go to home screen) so the SOS is not visible on screen.

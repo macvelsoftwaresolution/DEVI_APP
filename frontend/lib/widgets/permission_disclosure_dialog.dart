@@ -77,7 +77,7 @@ class PermissionDisclosurePoints extends StatelessWidget {
           ),
         _Point(
           icon: Icons.call_rounded,
-          text: 'Your first guardian gets a call from your phone.',
+          text: 'If there is no internet, your first guardian gets a call from your phone.',
         ),
         _Point(
           icon: Icons.contacts_rounded,

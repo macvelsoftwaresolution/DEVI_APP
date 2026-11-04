@@ -19,6 +19,17 @@ export const readAckToken = (token, sosId) => {
   return Encryption.decrypt(token, ACK_FIELD, sosId) || null;
 };
 
+// The stored address made easy to hear: "8G7P+2F, 12/3, 2nd Street, Anna Nagar, Chennai, Tamil Nadu 600040, India"
+// becomes "Anna Nagar, Chennai". Coordinates, plus codes and door numbers are dropped, and with
+// no real place name left it is empty: the exact spot is in the WhatsApp alert.
+export const spokenPlace = (location) => {
+  const parts = String(location ?? '')
+    .split(',')
+    .map((part) => part.replace(/\S*\+\S*/g, '').replace(/\b\d{6}\b/g, '').trim())
+    .filter((part) => part && !/\d|location|https?:|^india$/i.test(part));
+  return (parts.length > 2 ? parts.slice(-3, -1) : parts).join(', ');
+};
+
 class IvrService {
   constructor() {
     this.twilioClient = null;
@@ -114,7 +125,7 @@ class IvrService {
     const to = this.formatPhoneNumber(recipientPhone);
     if (!to) return { success: false, error: 'Invalid phone number' };
 
-    const details = { victimName, locationText, sosId, ack: sosId ? ackToken(to, sosId) : '' };
+    const details = { victimName, locationText: spokenPlace(locationText), sosId, ack: sosId ? ackToken(to, sosId) : '' };
     let lastError = 'No telephony provider configured in .env';
 
     for (const provider of this.providerOrder(to)) {
