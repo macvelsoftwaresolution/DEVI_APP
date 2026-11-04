@@ -134,11 +134,26 @@ export default function SosDetailPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="adm-cell-main">{g.name}</div>
                   <div className="adm-cell-sub mono">{g.phone}</div>
+                  {g.ackTime && <div className="adm-cell-sub">Acknowledged on call, {g.ackTime}</div>}
                 </div>
                 <a href={`tel:${g.phone}`} className="adm-btn icon sm ghost" aria-label={`Call ${g.name}`}><Phone size={15} /></a>
               </div>
             ))}
           </div>
+
+          {inc.otherAcks?.length > 0 && (
+            <div className="adm-card">
+              <div className="adm-card-head"><h2>Also acknowledged on call</h2><span className="muted">{inc.otherAcks.length}</span></div>
+              {inc.otherAcks.map((a) => (
+                <div key={a.phone} className="adm-list-row">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="adm-cell-main mono">{a.phone}</div>
+                    <div className="adm-cell-sub">{a.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {wa && (
             <div className="adm-card">

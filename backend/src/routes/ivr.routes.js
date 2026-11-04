@@ -1,12 +1,34 @@
 import { Router } from 'express';
 import { maskPhone } from '../utils/logMask.js';
-import { publicBaseUrl } from '../services/ivr.service.js';
+import { publicBaseUrl, readAckToken } from '../services/ivr.service.js';
+import { SosService } from '../services/sos.service.js';
 
 const router = Router();
+
+const ACK_SAVED = 'Thank you. Your acknowledgement has been recorded. Please check your WhatsApp and help immediately.';
+const ACK_NOT_SAVED = 'Thank you. Please check your WhatsApp and help immediately.';
+const NO_RESPONSE = 'No response received. Alert remains active. Please check your WhatsApp.';
 
 // Name and address go inside the XML we return: a "&" or "<" in them would break the call
 const escapeXml = (value) =>
   String(value ?? '').replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
+
+const gatherUrl = (provider, req) =>
+  escapeXml(`${publicBaseUrl()}/api/ivr/${provider}/gather?sosId=${encodeURIComponent(req.query.sosId || '')}&ack=${encodeURIComponent(req.query.ack || '')}`);
+
+// Saved only with the call's ack token (ivr.service.js). False means nothing was saved,
+// so the call must not say "recorded".
+const saveAck = async (req, provider) => {
+  const sosId = req.query.sosId;
+  const phone = readAckToken(req.query.ack, sosId);
+  if (!phone) {
+    console.warn(`⚠️ [IVR ${provider}] Press 1 for SOS ${sosId} ignored: invalid ack token`);
+    return false;
+  }
+  const saved = await SosService.recordGuardianAck({ alertId: sosId, phone, provider });
+  if (saved) console.log(`✅ [IVR ${provider}] SOS ${sosId} acknowledged by guardian (${maskPhone(phone)})`);
+  return saved;
+};
 
 /**
  * Plivo Answer Webhook
@@ -18,9 +40,7 @@ const escapeXml = (value) =>
 router.all('/plivo/answer', (req, res) => {
   const victimName = escapeXml(req.query.victim || 'a user');
   const locationText = req.query.loc ? `near ${escapeXml(req.query.loc)}` : '';
-  const sosId = req.query.sosId || '';
-
-  const gatherAction = escapeXml(`${publicBaseUrl()}/api/ivr/plivo/gather?sosId=${encodeURIComponent(sosId)}`);
+  const gatherAction = gatherUrl('plivo', req);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -28,7 +48,7 @@ router.all('/plivo/answer', (req, res) => {
     <GetDigits action="${gatherAction}" method="POST" numDigits="1" timeout="10" retries="1">
         <Speak voice="WOMAN" language="en-IN">Press 1 on your dial pad to acknowledge and confirm you received this alert.</Speak>
     </GetDigits>
-    <Speak voice="WOMAN" language="en-IN">No response received. Alert remains active. Thank you.</Speak>
+    <Speak voice="WOMAN" language="en-IN">${NO_RESPONSE}</Speak>
 </Response>`;
 
   res.set('Content-Type', 'text/xml');
@@ -39,19 +59,18 @@ router.all('/plivo/answer', (req, res) => {
  * Plivo Gather Webhook
  * Called when the guardian presses a key on their phone keypad (DTMF).
  */
-router.all('/plivo/gather', (req, res) => {
+router.all('/plivo/gather', async (req, res) => {
   const digits = req.body?.Digits || req.query?.Digits;
-  const sosId = req.query.sosId || req.body?.sosId || '';
-  const fromNumber = req.body?.From || req.query?.From || '';
+  const sosId = req.query.sosId || '';
 
-  console.log(`📞 [Plivo IVR] DTMF key received: "${digits}" for SOS: ${sosId} from: ${maskPhone(fromNumber)}`);
+  console.log(`📞 [Plivo IVR] DTMF key received: "${digits}" for SOS: ${sosId}`);
 
   let responseXml = '';
   if (digits === '1') {
-    console.log(`✅ [Plivo IVR] SOS ${sosId} acknowledged by guardian (${maskPhone(fromNumber)})`);
+    const saved = await saveAck(req, 'plivo');
     responseXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Speak voice="WOMAN" language="en-IN">Thank you! Your acknowledgement has been recorded in the DEVI emergency safety system. Connecting assistance now.</Speak>
+    <Speak voice="WOMAN" language="en-IN">${saved ? ACK_SAVED : ACK_NOT_SAVED}</Speak>
 </Response>`;
   } else {
     responseXml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -82,8 +101,7 @@ router.all('/plivo/status', (req, res) => {
 router.all('/twilio/answer', (req, res) => {
   const victimName = escapeXml(req.query.victim || 'A user');
   const locationText = req.query.loc ? ` near ${escapeXml(req.query.loc)}` : '';
-  const sosId = req.query.sosId || '';
-  const gatherAction = escapeXml(`${publicBaseUrl()}/api/ivr/twilio/gather?sosId=${encodeURIComponent(sosId)}`);
+  const gatherAction = gatherUrl('twilio', req);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -91,7 +109,7 @@ router.all('/twilio/answer', (req, res) => {
     <Gather numDigits="1" timeout="10" action="${gatherAction}" method="POST">
         <Say voice="Polly.Aditi" language="en-IN">Press 1 on your phone dial pad to confirm you received this alert.</Say>
     </Gather>
-    <Say voice="Polly.Aditi" language="en-IN">No input received. Stay safe.</Say>
+    <Say voice="Polly.Aditi" language="en-IN">${NO_RESPONSE}</Say>
 </Response>`;
 
   res.set('Content-Type', 'text/xml');
@@ -101,16 +119,17 @@ router.all('/twilio/answer', (req, res) => {
 /**
  * Twilio Gather Webhook (DTMF Press 1)
  */
-router.all('/twilio/gather', (req, res) => {
+router.all('/twilio/gather', async (req, res) => {
   const digits = req.body?.Digits || req.query?.Digits;
-  const sosId = req.query?.sosId || req.body?.sosId || '';
+  const sosId = req.query?.sosId || '';
   console.log(`📞 [Twilio IVR] Guardian pressed digit: "${digits}" for SOS: ${sosId}`);
 
   let xml = '';
   if (digits === '1') {
+    const saved = await saveAck(req, 'twilio');
     xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Aditi" language="en-IN">Thank you! Your acknowledgement has been recorded in the DEVI emergency safety system.</Say>
+    <Say voice="Polly.Aditi" language="en-IN">${saved ? ACK_SAVED : ACK_NOT_SAVED}</Say>
 </Response>`;
   } else {
     xml = `<?xml version="1.0" encoding="UTF-8"?>

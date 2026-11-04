@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
-import { encryptField as enc, decryptField as dec } from '../utils/encryption.js';
+import { encryptField as enc, decryptField as dec, blindIndex } from '../utils/encryption.js';
 import { liveTrackSessions } from './live-sessions.js';
 import { UserService } from './user.service.js';
 import { GeocodeService } from './geocode.service.js';
@@ -388,6 +388,28 @@ export const SosService = {
     } catch (e) {
       console.error('Error reading alert location:', e);
       return null;
+    }
+  },
+
+  // Guardian pressed 1 on the SOS call (db/guardian-acks.sql). A repeat keeps the first time.
+  // Returns false if it could not be saved.
+  async recordGuardianAck({ alertId, phone, provider }) {
+    try {
+      const id = crypto.randomUUID();
+      const { error } = await supabase
+        .from('sos_guardian_acks')
+        .upsert(
+          { id, alert_id: alertId, phone: enc(phone, 'sos_guardian_acks.phone', id), phone_hash: blindIndex(phone), provider },
+          { onConflict: 'alert_id,phone_hash', ignoreDuplicates: true }
+        );
+      if (error) {
+        console.error('Supabase recordGuardianAck error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('Error saving guardian acknowledgement:', e);
+      return false;
     }
   },
 

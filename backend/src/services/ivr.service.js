@@ -1,9 +1,23 @@
 import twilio from 'twilio';
 import plivo from 'plivo';
 import { maskPhone } from '../utils/logMask.js';
+import { Encryption } from '../utils/encryption.js';
+
+const ACK_FIELD = 'ivr.ack';
 
 export const publicBaseUrl = () =>
   process.env.PUBLIC_API_URL || process.env.PUBLIC_BASE_URL || 'https://devi-api.macvelsoftware.com';
+
+// The gather URL is public: this token proves "pressed 1" came from a call we placed, and to whom.
+// Only this server can make one, and it is bound to one alert (encrypted with the alert id as AAD).
+export const ackToken = (phone, sosId) => Encryption.encrypt(phone, ACK_FIELD, sosId);
+
+// Guardian's phone, or null if the token is not ours. isCurrent comes first: decrypt() returns
+// unencrypted text unchanged, so a plain number in the URL would otherwise pass.
+export const readAckToken = (token, sosId) => {
+  if (!sosId || !Encryption.isCurrent(token)) return null;
+  return Encryption.decrypt(token, ACK_FIELD, sosId) || null;
+};
 
 class IvrService {
   constructor() {
@@ -55,8 +69,8 @@ class IvrService {
     return to.startsWith('+91') ? ['plivo', 'twilio'] : ['twilio', 'plivo'];
   }
 
-  answerQuery({ victimName, locationText, sosId }) {
-    return `victim=${encodeURIComponent(victimName)}&loc=${encodeURIComponent(locationText)}&sosId=${encodeURIComponent(sosId)}`;
+  answerQuery({ victimName, locationText, sosId, ack }) {
+    return `victim=${encodeURIComponent(victimName)}&loc=${encodeURIComponent(locationText)}&sosId=${encodeURIComponent(sosId)}&ack=${encodeURIComponent(ack)}`;
   }
 
   async callViaTwilio(to, details) {
@@ -100,7 +114,7 @@ class IvrService {
     const to = this.formatPhoneNumber(recipientPhone);
     if (!to) return { success: false, error: 'Invalid phone number' };
 
-    const details = { victimName, locationText, sosId };
+    const details = { victimName, locationText, sosId, ack: sosId ? ackToken(to, sosId) : '' };
     let lastError = 'No telephony provider configured in .env';
 
     for (const provider of this.providerOrder(to)) {

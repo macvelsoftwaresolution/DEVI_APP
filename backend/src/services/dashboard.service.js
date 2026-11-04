@@ -55,10 +55,15 @@ const paginate = (list, page, limit) => {
 
 // Loads users, guardians and SOS rows once per request and decrypts them
 async function loadData() {
-  const [alerts, users, guardians] = await Promise.all([
+  const [alerts, users, guardians, acks] = await Promise.all([
     fetchAll('sos_history', '*'),
     fetchAll('users', 'id, full_name, mobile_number, address_1, address_2, is_guest, created_at'),
     fetchAll('guardians', 'id, user_id, name, mobile_number, created_at'),
+    // db/guardian-acks.sql not run yet must not take the whole dashboard down
+    fetchAll('sos_guardian_acks', 'id, alert_id, phone, acknowledged_at', 'acknowledged_at').catch((e) => {
+      console.warn('⚠️ Guardian acknowledgements not loaded:', e.message);
+      return [];
+    }),
   ]);
 
   const usersMap = new Map();
@@ -79,6 +84,12 @@ async function loadData() {
   guardians.forEach((g) => {
     if (!guardiansMap.has(g.user_id)) guardiansMap.set(g.user_id, []);
     guardiansMap.get(g.user_id).push({ id: g.id, name: dec(g.name, 'guardians.name', g.user_id), phone: dec(g.mobile_number, 'guardians.mobile_number', g.user_id) });
+  });
+
+  const acksMap = new Map();
+  acks.forEach((a) => {
+    if (!acksMap.has(a.alert_id)) acksMap.set(a.alert_id, []);
+    acksMap.get(a.alert_id).push({ phone: dec(a.phone, 'sos_guardian_acks.phone', a.id), time: formatIst(a.acknowledged_at) });
   });
 
   const incidents = alerts.map((alert) => {
@@ -113,8 +124,11 @@ async function loadData() {
     };
   });
 
-  return { incidents, usersMap, guardiansMap };
+  return { incidents, usersMap, guardiansMap, acksMap };
 }
+
+// Guardians and call acknowledgements store a number in different formats: compare the last 10 digits
+const samePhone = (a, b) => String(a || '').replace(/\D/g, '').slice(-10) === String(b || '').replace(/\D/g, '').slice(-10);
 
 // Admin dashboard (view only): stats, SOS records and users
 export const DashboardService = {
@@ -181,10 +195,17 @@ export const DashboardService = {
   },
 
   async getIncident(alertId) {
-    const { incidents, guardiansMap } = await loadData();
+    const { incidents, guardiansMap, acksMap } = await loadData();
     const incident = incidents.find((i) => i.id === String(alertId));
     if (!incident) return null;
-    return { ...incident, guardians: guardiansMap.get(incident.userId) || [] };
+    const saved = guardiansMap.get(incident.userId) || [];
+    const acks = acksMap.get(incident.id) || [];
+    return {
+      ...incident,
+      guardians: saved.map((g) => ({ ...g, ackTime: acks.find((a) => samePhone(a.phone, g.phone))?.time || null })),
+      // Numbers not on the saved list: guest SOS, control room, or a guardian removed since
+      otherAcks: acks.filter((a) => !saved.some((g) => samePhone(a.phone, g.phone))),
+    };
   },
 
   // Filters: type (ALL | REGISTERED | GUEST), search (name, phone, address)
