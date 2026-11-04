@@ -178,6 +178,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         centerTitle: false,
         actions: [
+          if (isGuest)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: TextButton.icon(
+                // Sign in hides its Instant SOS button: they are already a guest
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const LoginScreen(allowInstantSos: false)),
+                ),
+                icon: const Icon(Icons.login_rounded, size: 18, color: Color(0xFF0D9488)),
+                label: const Text(
+                  'Sign In',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0D9488)),
+                ),
+              ),
+            ),
           if (!isGuest)
             Padding(
               padding: const EdgeInsets.only(right: 16.0),

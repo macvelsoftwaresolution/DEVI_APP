@@ -105,14 +105,38 @@ class ApiService {
     }
   }
 
-  // --- Auth: Login by Mobile ---
-  Future<Map<String, dynamic>> login(String phone) async {
+  // --- Auth: WhatsApp code, purpose 'login' or 'signup' ---
+  Future<Map<String, dynamic>> sendOtp(String phone, String purpose) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/auth/otp/send'),
+            headers: _headers,
+            body: jsonEncode({'phone': phone, 'purpose': purpose}),
+          )
+          .timeout(const Duration(seconds: 15));
+      final body = jsonDecode(res.body);
+      return {
+        'success': res.statusCode == 200 && body['success'] == true,
+        'message': body['message'] ?? 'Could not send the code. Please try again.',
+      };
+    } catch (e) {
+      debugPrint('API Send OTP Error: $e');
+      return {
+        'success': false,
+        'message': 'Unable to reach server. Please ensure backend is running.',
+      };
+    }
+  }
+
+  // --- Auth: Login by Mobile and WhatsApp code ---
+  Future<Map<String, dynamic>> login(String phone, String otp) async {
     try {
       final res = await http
           .post(
             Uri.parse('$baseUrl/auth/login'),
             headers: _headers,
-            body: jsonEncode({'phone': phone}),
+            body: jsonEncode({'phone': phone, 'otp': otp}),
           )
           .timeout(const Duration(seconds: 8));
 
@@ -127,7 +151,7 @@ class ApiService {
       } else {
         return {
           'success': false,
-          'message': body['message'] ?? 'This mobile number is not registered. Please sign up first.',
+          'message': body['message'] ?? 'Could not sign in. Please try again.',
         };
       }
     } catch (e) {
@@ -139,29 +163,34 @@ class ApiService {
     }
   }
 
-  // --- Auth: Silently get a fresh token for a saved session (no OTP login) ---
-  Future<void> _ensureToken(String phone, {bool force = false}) async {
-    if (!force && _authToken != null && _authToken!.isNotEmpty) return;
-    await login(phone);
+  // --- Auth: Fresh token for a saved session. True: renewed. False: the server refused it,
+  // the user must sign in again. Null: server not reached, so the saved session stays. ---
+  Future<bool?> refreshSession() async {
+    try {
+      final res = await http
+          .post(Uri.parse('$baseUrl/auth/refresh'), headers: _headers)
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 401 || res.statusCode == 403) return false;
+      if (res.statusCode != 200) return null;
+      final token = jsonDecode(res.body)['data']?['token'];
+      if (token is! String) return null;
+      setAuthToken(token);
+      return true;
+    } catch (e) {
+      debugPrint('API Refresh Session Error: $e');
+      return null;
+    }
   }
 
   // --- User: Get Profile & Guardians ---
   Future<Map<String, dynamic>?> getProfile(String phone) async {
     try {
-      await _ensureToken(phone);
-      Future<http.Response> fetch() => http
+      final res = await http
           .get(
             Uri.parse('$baseUrl/user/profile/${Uri.encodeComponent(phone)}'),
             headers: _headers,
           )
           .timeout(const Duration(seconds: 8));
-
-      var res = await fetch();
-      // Token expired or invalid: refresh once and retry
-      if (res.statusCode == 401 || res.statusCode == 403) {
-        await _ensureToken(phone, force: true);
-        res = await fetch();
-      }
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
@@ -180,10 +209,12 @@ class ApiService {
     String? address1,
     String? address2,
     List<Map<String, String>>? guardians,
+    String? otp,
   }) async {
     try {
       final payload = <String, dynamic>{
         'phone': phone,
+        'otp': ?otp,
         'name': ?name,
         'address1': ?address1,
         'address2': ?address2,
@@ -375,16 +406,9 @@ class ApiService {
           ? '$baseUrl/sos/history/${Uri.encodeComponent(userPhone)}'
           : '$baseUrl/sos/history';
 
-      Future<http.Response> fetch() => http
+      final res = await http
           .get(Uri.parse(url), headers: _headers)
           .timeout(const Duration(seconds: 8));
-
-      var res = await fetch();
-      // Token expired or invalid: refresh once and retry
-      if ((res.statusCode == 401 || res.statusCode == 403) && userPhone != null) {
-        await _ensureToken(userPhone, force: true);
-        res = await fetch();
-      }
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);

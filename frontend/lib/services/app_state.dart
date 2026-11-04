@@ -292,6 +292,15 @@ class AppState extends ChangeNotifier {
       if (isLoggedIn && savedPhone.isNotEmpty) {
         phone = savedPhone;
         await prefs.setString(_keyLoggedInPhone, savedPhone);
+        final session = await ApiService.instance.refreshSession();
+        if (session == false) {
+          // Signing in needs a code now, so this device cannot renew it alone: back to sign in
+          await clearSession();
+          return false;
+        }
+        if (session == true) {
+          await _secureStorage.write(key: _keyAuthToken, value: ApiService.instance.authToken);
+        }
         // Load latest profile from backend
         await loadUserProfile(savedPhone);
         return true;
@@ -357,6 +366,7 @@ class AppState extends ChangeNotifier {
     String? newAddress1,
     String? newAddress2,
     List<GuardianModel>? newGuardians,
+    String? otp,
   }) async {
     final targetPhone = (newPhone != null && newPhone.isNotEmpty) ? newPhone : phone;
     if (targetPhone.isEmpty) return false;
@@ -375,6 +385,7 @@ class AppState extends ChangeNotifier {
         address1: newAddress1 ?? address1,
         address2: newAddress2 ?? address2,
         guardians: guardiansPayload,
+        otp: otp,
       );
 
       if (success) {

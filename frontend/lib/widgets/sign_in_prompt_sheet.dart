@@ -7,7 +7,7 @@ import 'devi_button.dart';
 
 /// Asks a guest to sign in once they are safe after an SOS. Never shown during an emergency.
 /// "Later" asks once more on the next app open ([isReminder] false); the reminder itself
-/// is the last ask (Settings keeps its Sign Up button).
+/// is the last ask (Settings keeps its Sign In and Sign Up buttons).
 Future<void> showSignInPromptSheet(BuildContext context, {bool isReminder = false}) async {
   final signIn = await showModalBottomSheet<bool>(
     context: context,

@@ -13,6 +13,7 @@ import '../widgets/country_prefix.dart';
 import '../widgets/input_field.dart';
 import '../widgets/devi_button.dart';
 import '../widgets/devi_logo.dart';
+import '../widgets/otp_sheet.dart';
 import 'sos_screen.dart';
 
 class _ContactSuggestion {
@@ -553,13 +554,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isSaving = true);
 
     // Dynamically persist to Supabase backend
-    final saved = await AppState.instance.saveProfileToBackend(
-      newName: name,
-      newPhone: phone!,
-      newAddress1: address1,
-      newAddress2: null,
-      newGuardians: newGuardians,
-    );
+    Future<bool> save({String? otp}) => AppState.instance.saveProfileToBackend(
+          newName: name,
+          newPhone: phone,
+          newAddress1: address1,
+          newAddress2: null,
+          newGuardians: newGuardians,
+          otp: otp,
+        );
+
+    // No session yet: this is a sign up, which must prove the number first
+    bool saved;
+    if (ApiService.instance.authToken?.isNotEmpty ?? false) {
+      saved = await save();
+    } else {
+      final sent = await ApiService.instance.sendOtp(phone!, 'signup');
+      if (!mounted) return;
+      saved = sent['success'] == true;
+      if (saved) {
+        final verified = await showOtpSheet(
+          context,
+          phone: phone,
+          onVerify: (code) async {
+            final ok = await save(otp: code);
+            return ok ? null : ApiService.instance.lastProfileError ?? 'Could not sign up. Please try again.';
+          },
+          onResend: () async {
+            final again = await ApiService.instance.sendOtp(phone, 'signup');
+            return again['success'] == true ? null : again['message']?.toString();
+          },
+        );
+        if (!mounted) return;
+        if (verified != true) {
+          setState(() => _isSaving = false);
+          return;
+        }
+      } else {
+        ApiService.instance.lastProfileError = sent['message']?.toString();
+      }
+    }
 
     if (!saved) {
       if (!mounted) return;
@@ -583,7 +616,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     AppState.instance.setProfilePhoto(_selectedPhotoPath);
 
     // Save session to SharedPreferences for persistent auto-login
-    await AppState.instance.saveSession(phone);
+    await AppState.instance.saveSession(phone!);
 
     if (!mounted) return;
     setState(() => _isSaving = false);

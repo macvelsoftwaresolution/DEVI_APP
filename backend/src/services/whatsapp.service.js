@@ -166,4 +166,52 @@ export const WhatsAppService = {
       return { success: false, reason, error: err.message };
     }
   },
+
+  /**
+   * Sends a login code with the approved authentication template (its Copy code button repeats the code)
+   * @param {string} toNumber - E.164 number
+   * @param {string} code - The 6-digit code. Never logged.
+   */
+  async sendOtp(toNumber, code) {
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    if (!phoneNumberId || !accessToken) return { success: false, reason: 'CREDENTIALS_MISSING' };
+
+    const clean = toNumber.toString().replace(/\D/g, '');
+    try {
+      const response = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: clean,
+          type: 'template',
+          template: {
+            name: 'devi_agent_pin',
+            language: { code: 'en_US' },
+            components: [
+              { type: 'body', parameters: [{ type: 'text', text: code }] },
+              { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+            ],
+          },
+        }),
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.messages?.length > 0) return { success: true };
+
+      const reason = classifyMetaError(data.error);
+      console.warn(`⚠️ [WHATSAPP OTP FAILED] To +${maskPhone(clean)}: ${reason}`, data.error ? `(${data.error.code}) ${data.error.message}` : '');
+      return { success: false, reason };
+    } catch (err) {
+      const reason = err.name === 'TimeoutError' || err.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK';
+      console.error(`❌ [WHATSAPP OTP ${reason}] To +${maskPhone(clean)}:`, err.message);
+      return { success: false, reason };
+    }
+  },
 };

@@ -8,6 +8,7 @@ import '../utils/phone_utils.dart';
 import '../widgets/country_prefix.dart';
 import '../widgets/devi_button.dart';
 import '../widgets/devi_logo.dart';
+import '../widgets/otp_sheet.dart';
 import 'profile_screen.dart';
 import 'sos_screen.dart';
 
@@ -58,8 +59,8 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // Dynamic login call to Node.js backend
-      final res = await ApiService.instance.login(phone);
+      // The server refuses unregistered numbers here, before any code is paid for
+      final res = await ApiService.instance.sendOtp(phone, 'login');
       if (!res['success']) {
         if (!mounted) return;
         final errorMsg = res['message'] ?? 'This mobile number is not registered. Please sign up first.';
@@ -95,6 +96,21 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         return;
       }
+
+      if (!mounted) return;
+      final verified = await showOtpSheet(
+        context,
+        phone: phone,
+        onVerify: (code) async {
+          final login = await ApiService.instance.login(phone, code);
+          return login['success'] == true ? null : login['message']?.toString();
+        },
+        onResend: () async {
+          final sent = await ApiService.instance.sendOtp(phone, 'login');
+          return sent['success'] == true ? null : sent['message']?.toString();
+        },
+      );
+      if (verified != true) return;
 
       // Load user profile & guardians dynamically from backend
       await AppState.instance.loadUserProfile(phone);

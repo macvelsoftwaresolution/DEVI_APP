@@ -46,6 +46,19 @@ export const adminLoginLimiter = rateLimit({
 });
 
 /**
+ * OTP rate limiter: each code is a paid WhatsApp message, and otp.service.js limits each number.
+ * This stops one IP walking through many numbers. Mobile networks share IPs, so it stays generous.
+ * Max 30 send or verify calls per 15 minutes per IP
+ */
+export const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler('Too many attempts. Please wait a few minutes.'),
+});
+
+/**
  * Guest sync rate limiter: /user/guest needs no login, so it must not be usable to create
  * guest records or rewrite guest guardians in bulk.
  * The app calls it at start-up and when a guest edits guardians: 30 per 15 minutes per IP is plenty.

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { UserService } from '../services/user.service.js';
+import { OtpService } from '../services/otp.service.js';
 import { MAX_GUARDIANS } from '../utils/sosRecipients.js';
 import { guestSyncLimiter } from '../middlewares/rateLimiter.js';
 import { optionalToken, verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
@@ -55,7 +56,7 @@ router.get('/profile/:phone', verifyToken, async (req, res, next) => {
 // PUT /api/user/profile
 router.put('/profile', optionalToken, async (req, res, next) => {
   try {
-    const { phone, name, address1, address2, guardians } = req.body;
+    const { phone, name, address1, address2, guardians, otp } = req.body;
     const cleanPhone = typeof phone === 'string' ? normalizePhone(phone) : null;
     if (!cleanPhone) {
       return res.status(400).json({
@@ -131,6 +132,14 @@ router.put('/profile', optionalToken, async (req, res, next) => {
         }
         seen.add(guardianPhone);
       }
+    }
+
+    // Last, so a form error does not use up the code
+    if (isNewSignup && !(await OtpService.verifyCode(cleanPhone, otp))) {
+      return res.status(401).json({
+        success: false,
+        message: 'Wrong or expired code. Please try again.',
+      });
     }
 
     const updatedUser = await UserService.updateUserProfile(cleanPhone, {
