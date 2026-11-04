@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
 import { encryptField as enc, decryptField as dec, blindIndex, blindIndexes } from '../utils/encryption.js';
+import { canonicalPhone, normalizePhone } from '../utils/phone.js';
 
 // Decrypted profile fields of a users row (each value is bound to its column and this row, E6)
 const decryptUser = (row) => ({
@@ -15,7 +16,7 @@ const decryptUser = (row) => ({
 export const UserService = {
   async findUserByPhone(phone) {
     if (!phone) return null;
-    const cleanPhone = phone.trim();
+    const cleanPhone = canonicalPhone(phone);
 
     try {
       const { data: user, error } = await supabase
@@ -62,7 +63,7 @@ export const UserService = {
 
   async createOrGetUser(phone) {
     if (!phone) return null;
-    const cleanPhone = phone.trim();
+    const cleanPhone = canonicalPhone(phone);
 
     // Check if user already exists in DB
     const existing = await this.findUserByPhone(cleanPhone);
@@ -149,12 +150,14 @@ export const UserService = {
       // If guest provided guardians, sync them to guardians table
       if (Array.isArray(guardians) && guardians.length > 0) {
         await supabase.from('guardians').delete().eq('user_id', user.id);
+        // Guest lists are not validated by a route: only numbers we could really alert are kept
         const rows = guardians
-          .filter((g) => g.phone && g.phone.trim() !== '')
+          .map((g) => ({ name: g.name, phone: normalizePhone(g.phone) }))
+          .filter((g) => g.phone)
           .map((g) => ({
             user_id: user.id,
             name: enc(g.name || 'Guardian', 'guardians.name', user.id),
-            mobile_number: enc(g.phone.trim(), 'guardians.mobile_number', user.id),
+            mobile_number: enc(g.phone, 'guardians.mobile_number', user.id),
           }));
         if (rows.length > 0) {
           await supabase.from('guardians').insert(rows);
@@ -171,7 +174,7 @@ export const UserService = {
 
   async updateUserProfile(phone, { name, address1, address2, guardians }) {
     if (!phone) throw new Error('Phone is required');
-    const cleanPhone = phone.trim();
+    const cleanPhone = canonicalPhone(phone);
 
     // Ensure user exists in Supabase
     let user = await this.findUserByPhone(cleanPhone);
@@ -219,7 +222,7 @@ export const UserService = {
             .map((g) => ({
               user_id: user.id,
               name: enc(g.name || 'Guardian', 'guardians.name', user.id),
-              mobile_number: enc(g.phone.trim(), 'guardians.mobile_number', user.id),
+              mobile_number: enc(canonicalPhone(g.phone), 'guardians.mobile_number', user.id),
             }));
 
           if (rows.length > 0) {

@@ -1,11 +1,9 @@
 import { Router } from 'express';
 import { UserService } from '../services/user.service.js';
 import { verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
+import { normalizePhone } from '../utils/phone.js';
 
 const router = Router();
-
-// Mobile validation helper
-const isValidMobile = (phone) => /^[6-9]\d{9}$/.test(phone);
 
 // POST /api/auth/login
 router.post('/login', async (req, res, next) => {
@@ -18,11 +16,11 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
-    const cleanPhone = phone.trim();
-    if (!isValidMobile(cleanPhone)) {
+    const cleanPhone = normalizePhone(phone);
+    if (!cleanPhone) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid mobile number. Must be exactly 10 digits starting with 6, 7, 8, or 9',
+        message: 'Enter a valid mobile number for a supported country',
       });
     }
 

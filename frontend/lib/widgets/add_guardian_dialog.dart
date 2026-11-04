@@ -1,6 +1,9 @@
+import 'package:country_picker/country_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
+import '../utils/phone_utils.dart';
+import 'country_prefix.dart';
 
 /// Independent, reusable Add Guardian Dialog.
 /// Can be invoked from any screen (SOS Screen, Settings Screen, etc.)
@@ -41,6 +44,7 @@ class _AddGuardianDialogState extends State<AddGuardianDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
+  Country _country = PhoneUtils.defaultCountry;
 
   @override
   void dispose() {
@@ -52,8 +56,8 @@ class _AddGuardianDialogState extends State<AddGuardianDialog> {
   void _submit() {
     if (_formKey.currentState?.validate() ?? false) {
       final name = _nameController.text.trim();
-      final phone = _phoneController.text.trim();
-      widget.onGuardianAdded(name, phone);
+      final phone = PhoneUtils.fromField(_phoneController.text, _country);
+      widget.onGuardianAdded(name, phone!);
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -143,7 +147,7 @@ class _AddGuardianDialogState extends State<AddGuardianDialog> {
               keyboardType: TextInputType.phone,
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(10),
+                LengthLimitingTextInputFormatter(PhoneUtils.maxDigits(_country)),
               ],
               decoration: InputDecoration(
                 hintText: '9042024830',
@@ -152,12 +156,6 @@ class _AddGuardianDialogState extends State<AddGuardianDialog> {
                   fontSize: 14,
                 ),
                 floatingLabelBehavior: FloatingLabelBehavior.never,
-                prefixText: '+91 ',
-                prefixStyle: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: AppColors.textDark,
-                ),
                 filled: true,
                 fillColor: AppColors.inputFill,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -165,15 +163,20 @@ class _AddGuardianDialogState extends State<AddGuardianDialog> {
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
                 ),
-                prefixIcon: const Icon(Icons.phone_outlined, size: 20, color: AppColors.textMuted),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(left: 14, right: 8),
+                  child: CountryPrefix(
+                    country: _country,
+                    onChanged: (c) => setState(() => _country = c),
+                  ),
+                ),
+                prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
               ),
               validator: (val) {
-                final phone = val?.trim() ?? '';
-                if (phone.isEmpty) return 'Please enter mobile number';
-                if (phone.length != 10) return 'Enter exactly 10 digits';
-                if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
-                  return 'Starts with 6, 7, 8, or 9';
-                }
+                final digits = val?.trim() ?? '';
+                if (digits.isEmpty) return 'Please enter mobile number';
+                final phone = PhoneUtils.fromField(digits, _country);
+                if (phone == null) return 'Enter a valid mobile number';
                 if (widget.currentUserPhone != null && phone == widget.currentUserPhone) {
                   return 'Cannot be your own mobile number';
                 }

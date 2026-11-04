@@ -1,43 +1,32 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseIndianMobile,
   pickSosRecipients,
   sanitizeVictimName,
   RecipientLimiter,
   MAX_GUARDIANS,
 } from '../src/utils/sosRecipients.js';
 
-test('parseIndianMobile accepts Indian mobile formats only', () => {
-  assert.equal(parseIndianMobile('9876543210'), '9876543210');
-  assert.equal(parseIndianMobile('+91 98765 43210'), '9876543210');
-  assert.equal(parseIndianMobile('09876543210'), '9876543210');
-  assert.equal(parseIndianMobile('112'), null);
-  assert.equal(parseIndianMobile('5876543210'), null);
-  assert.equal(parseIndianMobile('Amma (9876543210)'), '9876543210');
-  assert.equal(parseIndianMobile(undefined), null);
-});
-
 const account = { guardians: [{ phone: '9000000001' }, { phone: '9000000002' }] };
 
 test('logged-in user: saved guardians are verified, new numbers are not', () => {
   const r = pickSosRecipients({ account, requestContacts: ['9000000001', '9000000099'] });
   assert.deepEqual(r, [
-    { phone: '9000000001', verified: true },
-    { phone: '9000000099', verified: false },
+    { phone: '+919000000001', verified: true },
+    { phone: '+919000000099', verified: false },
   ]);
 });
 
 test('logged-in user: a guardian removed in the app is not alerted', () => {
   const r = pickSosRecipients({ account, requestContacts: ['9000000001'] });
-  assert.deepEqual(r.map((x) => x.phone), ['9000000001']);
+  assert.deepEqual(r.map((x) => x.phone), ['+919000000001']);
 });
 
 test('logged-in user: empty app list falls back to saved guardians', () => {
-  const r = pickSosRecipients({ account, requestContacts: ['112'] });
+  const r = pickSosRecipients({ account, requestContacts: [] });
   assert.deepEqual(r, [
-    { phone: '9000000001', verified: true },
-    { phone: '9000000002', verified: true },
+    { phone: '+919000000001', verified: true },
+    { phone: '+919000000002', verified: true },
   ]);
 });
 
@@ -50,8 +39,13 @@ test('guest: every number is unverified, duplicates removed, at most 3', () => {
 });
 
 test('guest without guardians gets no recipients (control room path)', () => {
-  assert.deepEqual(pickSosRecipients({ account: null, requestContacts: ['112'] }), []);
+  assert.deepEqual(pickSosRecipients({ account: null, requestContacts: [] }), []);
   assert.deepEqual(pickSosRecipients({ account: null, requestContacts: undefined }), []);
+});
+
+test('a number from a country not open is never alerted', () => {
+  const r = pickSosRecipients({ account: null, requestContacts: ['+971501234567', '9000000001'] });
+  assert.deepEqual(r.map((x) => x.phone), ['+919000000001']);
 });
 
 test('sanitizeVictimName removes links and limits length', () => {

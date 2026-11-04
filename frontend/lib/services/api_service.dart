@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../utils/phone_utils.dart';
 
 class ApiService {
   static final ApiService instance = ApiService._internal();
@@ -88,6 +89,22 @@ class ApiService {
     return headers;
   }
 
+  // --- Countries open on the server. Offline the app keeps the ones it has. ---
+  Future<void> loadAllowedCountries() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$baseUrl/user/countries'))
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) return;
+      final countries = jsonDecode(res.body)['data']?['countries'];
+      if (countries is List && countries.isNotEmpty) {
+        PhoneUtils.allowedCountries = countries.map((c) => c.toString()).toList();
+      }
+    } catch (e) {
+      debugPrint('Could not load allowed countries: $e');
+    }
+  }
+
   // --- Auth: Login by Mobile ---
   Future<Map<String, dynamic>> login(String phone) async {
     try {
@@ -134,7 +151,7 @@ class ApiService {
       await _ensureToken(phone);
       Future<http.Response> fetch() => http
           .get(
-            Uri.parse('$baseUrl/user/profile/$phone'),
+            Uri.parse('$baseUrl/user/profile/${Uri.encodeComponent(phone)}'),
             headers: _headers,
           )
           .timeout(const Duration(seconds: 8));
@@ -355,7 +372,7 @@ class ApiService {
   Future<List<Map<String, dynamic>>> getHistory([String? userPhone]) async {
     try {
       final url = (userPhone != null && userPhone.isNotEmpty)
-          ? '$baseUrl/sos/history/$userPhone'
+          ? '$baseUrl/sos/history/${Uri.encodeComponent(userPhone)}'
           : '$baseUrl/sos/history';
 
       Future<http.Response> fetch() => http

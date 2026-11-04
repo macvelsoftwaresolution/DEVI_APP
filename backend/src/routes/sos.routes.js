@@ -8,6 +8,7 @@ import { toEvidenceRef, parseEvidenceRef, evidenceLink, withEvidenceLink } from 
 import { sosTriggerLimiter, evidenceUploadLimiter } from '../middlewares/rateLimiter.js';
 import { maskPhone } from '../utils/logMask.js';
 import { pickSosRecipients, sanitizeVictimName, recipientLimiter, RECIPIENT_LIMIT } from '../utils/sosRecipients.js';
+import { canonicalPhone } from '../utils/phone.js';
 import {
   verifyAdmin,
   optionalToken,
@@ -444,7 +445,7 @@ router.post('/history/guest', async (req, res, next) => {
 // Guest IDs are refused here: knowing one must never reveal its alerts (guests use /history/guest).
 router.get('/history/:phone', optionalToken, async (req, res, next) => {
   try {
-    const { phone } = req.params;
+    const phone = canonicalPhone(req.params.phone);
 
     if (!req.user) {
       return res.status(401).json({

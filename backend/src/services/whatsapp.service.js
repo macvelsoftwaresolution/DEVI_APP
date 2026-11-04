@@ -39,7 +39,7 @@ export const WhatsAppService = {
 
     // Clean phone number to E.164 format without '+' symbol for Meta API (e.g. 91XXXXXXXXXX)
     let clean = toNumber.toString().replace(/\D/g, '');
-    if (clean.length === 10) {
+    if (clean.length === 10 && !toNumber.toString().startsWith('+')) {
       clean = '91' + clean; // Default to India country code
     }
 

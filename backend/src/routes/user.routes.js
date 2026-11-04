@@ -4,18 +4,23 @@ import { UserService } from '../services/user.service.js';
 import { MAX_GUARDIANS } from '../utils/sosRecipients.js';
 import { guestSyncLimiter } from '../middlewares/rateLimiter.js';
 import { optionalToken, verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
+import { normalizePhone, allowedCountries } from '../utils/phone.js';
 
 const router = Router();
 
-const isValidMobile = (phone) => /^[6-9]\d{9}$/.test(phone);
 // Random 128-bit guest ID (the app's UUID v4, hex). Old time-based IDs could be guessed (R14).
 export const isValidGuestId = (id) => typeof id === 'string' && /^GUEST_[0-9A-F]{32}$/.test(id);
+
+// GET /api/user/countries - Countries the app offers in its number fields
+router.get('/countries', (req, res) => {
+  res.status(200).json({ success: true, data: { countries: allowedCountries() } });
+});
 
 // GET /api/user/profile/:phone
 router.get('/profile/:phone', verifyToken, async (req, res, next) => {
   try {
-    const { phone } = req.params;
-    if (!phone || !isValidMobile(phone.trim())) {
+    const phone = normalizePhone(req.params.phone);
+    if (!phone) {
       return res.status(400).json({
         success: false,
         message: 'Invalid mobile number parameter',
@@ -23,14 +28,14 @@ router.get('/profile/:phone', verifyToken, async (req, res, next) => {
     }
 
     // Users can only query their own profile
-    if (req.user.phone !== phone.trim()) {
+    if (req.user.phone !== phone) {
       return res.status(403).json({
         success: false,
         message: 'Access forbidden: You cannot view another user profile',
       });
     }
 
-    const user = await UserService.findUserByPhone(phone.trim());
+    const user = await UserService.findUserByPhone(phone);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -51,14 +56,13 @@ router.get('/profile/:phone', verifyToken, async (req, res, next) => {
 router.put('/profile', optionalToken, async (req, res, next) => {
   try {
     const { phone, name, address1, address2, guardians } = req.body;
-    if (!phone || typeof phone !== 'string' || !isValidMobile(phone.trim())) {
+    const cleanPhone = typeof phone === 'string' ? normalizePhone(phone) : null;
+    if (!cleanPhone) {
       return res.status(400).json({
         success: false,
-        message: 'A valid 10-digit mobile number (starting with 6-9) is required',
+        message: 'Enter a valid mobile number for a supported country',
       });
     }
-
-    const cleanPhone = phone.trim();
 
     // If authenticated, ensure user can only modify their own profile
     if (req.user && req.user.phone && req.user.phone !== cleanPhone) {
@@ -106,25 +110,26 @@ router.put('/profile', optionalToken, async (req, res, next) => {
       const seen = new Set();
       for (let i = 0; i < guardians.length; i++) {
         const g = guardians[i];
-        if (!g.phone || !isValidMobile(g.phone.trim())) {
+        const guardianPhone = normalizePhone(g.phone);
+        if (!guardianPhone) {
           return res.status(400).json({
             success: false,
-            message: `Guardian #${i + 1} has an invalid mobile number. Must be 10 digits starting with 6-9`,
+            message: `Guardian #${i + 1} has an invalid mobile number`,
           });
         }
-        if (g.phone.trim() === cleanPhone) {
+        if (guardianPhone === cleanPhone) {
           return res.status(400).json({
             success: false,
             message: `Guardian #${i + 1} cannot have the same mobile number as the registered user`,
           });
         }
-        if (seen.has(g.phone.trim())) {
+        if (seen.has(guardianPhone)) {
           return res.status(400).json({
             success: false,
-            message: `Guardian mobile number ${g.phone.trim()} is duplicated`,
+            message: `Guardian mobile number ${guardianPhone} is duplicated`,
           });
         }
-        seen.add(g.phone.trim());
+        seen.add(guardianPhone);
       }
     }
 

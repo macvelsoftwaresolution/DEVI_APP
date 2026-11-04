@@ -1,9 +1,12 @@
+import 'package:country_picker/country_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import '../../services/app_state.dart';
 import '../../services/onboarding_service.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/phone_utils.dart';
+import '../../widgets/country_prefix.dart';
 import '../../widgets/devi_button.dart';
 import '../../widgets/input_field.dart';
 import '../login_screen.dart';
@@ -12,14 +15,16 @@ import 'onboarding_flow.dart';
 
 class _ContactSuggestion {
   final String name;
-  final String phoneNumber; // 10-digit clean phone number
+  final String phoneNumber; // Digits after the country code
+  final Country country;
   final String rawNumber;
 
-  const _ContactSuggestion({
+  _ContactSuggestion({
     required this.name,
-    required this.phoneNumber,
+    required String e164,
     required this.rawNumber,
-  });
+  })  : phoneNumber = PhoneUtils.nationalOf(e164),
+        country = PhoneUtils.countryOf(e164);
 }
 
 /// Name + one guardian, asked once on first run, so every SOS (Instant SOS included)
@@ -40,6 +45,7 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
   String? _nameError;
   String? _guardianNameError;
   String? _guardianPhoneError;
+  Country _guardianCountry = PhoneUtils.defaultCountry;
   bool _saving = false;
 
   List<_ContactSuggestion> _allContactSuggestions = [];
@@ -64,7 +70,9 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
     _nameController.text = state.setupName;
     if (state.setupGuardians.isNotEmpty) {
       _guardianNameController.text = state.setupGuardians.first.name;
-      _guardianPhoneController.text = state.setupGuardians.first.phone;
+      final saved = state.setupGuardians.first.phone;
+      _guardianPhoneController.text = PhoneUtils.nationalOf(saved);
+      _guardianCountry = PhoneUtils.countryOf(saved);
     }
   }
 
@@ -100,12 +108,12 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
       for (final c in contacts) {
         final name = (c.displayName ?? '').trim();
         for (final p in c.phones) {
-          final clean = _normalizePhone(p.number);
-          if (clean.length == 10 && !seen.contains(clean)) {
-            seen.add(clean);
+          final e164 = PhoneUtils.fromContact(p.number);
+          if (e164 != null && !seen.contains(e164)) {
+            seen.add(e164);
             list.add(_ContactSuggestion(
               name: name.isNotEmpty ? name : 'Contact',
-              phoneNumber: clean,
+              e164: e164,
               rawNumber: p.number,
             ));
           }
@@ -120,20 +128,6 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
     } catch (_) {
       _isLoadingContacts = false;
     }
-  }
-
-  String _normalizePhone(String raw) {
-    final digits = raw.replaceAll(RegExp(r'\D'), '');
-    if (digits.length == 12 && digits.startsWith('91')) {
-      return digits.substring(2);
-    }
-    if (digits.length == 11 && digits.startsWith('0')) {
-      return digits.substring(1);
-    }
-    if (digits.length >= 10) {
-      return digits.substring(digits.length - 10);
-    }
-    return digits;
   }
 
   void _onPhoneChanged(String value) {
@@ -166,6 +160,7 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
     setState(() {
       _guardianPhoneController.text = suggestion.phoneNumber;
       _guardianPhoneController.selection = TextSelection.collapsed(offset: suggestion.phoneNumber.length);
+      _guardianCountry = suggestion.country;
       // Picking a contact is deliberate, so its name replaces any earlier one
       if (suggestion.name != 'Contact') {
         _guardianNameController.text = suggestion.name;
@@ -189,18 +184,18 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
       );
       if (contact == null) return;
       final phone = contact.phones
-          .map((p) => (raw: p.number, clean: _normalizePhone(p.number)))
-          .where((p) => p.clean.length == 10)
+          .map((p) => (raw: p.number, e164: PhoneUtils.fromContact(p.number)))
+          .where((p) => p.e164 != null)
           .firstOrNull;
       if (phone == null) {
-        _showMessage('This contact has no 10-digit mobile number.');
+        _showMessage('This contact has no valid mobile number.');
         return;
       }
       final name = contact.displayName?.trim() ?? '';
       _selectSuggestion(
         _ContactSuggestion(
           name: name.isNotEmpty ? name : 'Contact',
-          phoneNumber: phone.clean,
+          e164: phone.e164!,
           rawNumber: phone.raw,
         ),
       );
@@ -224,23 +219,19 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
   Future<void> _save() async {
     final name = _nameController.text.trim();
     final guardianName = _guardianNameController.text.trim();
-    final guardianPhone = _guardianPhoneController.text.trim();
+    final guardianPhone = PhoneUtils.fromField(_guardianPhoneController.text, _guardianCountry);
 
     setState(() {
       _nameError = name.length < 2 ? 'Enter your name' : null;
       _guardianNameError = guardianName.length < 2 ? 'Enter your guardian\'s name' : null;
-      _guardianPhoneError = guardianPhone.length != 10
-          ? 'Enter a 10-digit mobile number'
-          : !RegExp(r'^[6-9]\d{9}$').hasMatch(guardianPhone)
-              ? 'Number must start with 6, 7, 8 or 9'
-              : null;
+      _guardianPhoneError = guardianPhone == null ? 'Enter a valid mobile number' : null;
     });
     if (_nameError != null || _guardianNameError != null || _guardianPhoneError != null) return;
 
     setState(() => _saving = true);
     await AppState.instance.saveQuickSetup(
       name: name,
-      guardian: GuardianModel(name: guardianName, phone: guardianPhone),
+      guardian: GuardianModel(name: guardianName, phone: guardianPhone!),
     );
     await OnboardingService.markSetupDone();
     // Straight to the SOS screen as a guest: no sign in stands between the user and Instant SOS
@@ -372,9 +363,9 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
                                 fontSize: 12.5,
                               ),
                               children: [
-                                const TextSpan(
-                                  text: '+91 ',
-                                  style: TextStyle(
+                                TextSpan(
+                                  text: '+${suggestion.country.phoneCode} ',
+                                  style: const TextStyle(
                                     color: AppColors.textMuted,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -482,13 +473,19 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
             label: 'Guardian mobile number',
             hintText: '98765 43210',
             controller: _guardianPhoneController,
-            // India only for now; a country picker replaces this prefix later
-            prefixText: '🇮🇳 +91  ',
+            prefix: CountryPrefix(
+              country: _guardianCountry,
+              hasError: _guardianPhoneError != null,
+              onChanged: (c) => setState(() {
+                _guardianCountry = c;
+                _guardianPhoneError = null;
+              }),
+            ),
             keyboardType: TextInputType.phone,
             autofillHints: const [AutofillHints.telephoneNumber],
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(10),
+              LengthLimitingTextInputFormatter(PhoneUtils.maxDigits(_guardianCountry)),
             ],
             suffixIcon: InkWell(
               onTap: _pickContactFromBook,

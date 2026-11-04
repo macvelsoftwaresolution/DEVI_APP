@@ -17,6 +17,7 @@ import '../widgets/emergency_sound_card.dart';
 import '../widgets/location_prompt_dialog.dart';
 import '../widgets/sign_in_prompt_sheet.dart';
 import '../widgets/sos_action_card.dart';
+import '../utils/phone_utils.dart';
 import '../widgets/sos_guide_card.dart';
 import '../widgets/sos_top_bar.dart';
 import 'history_screen.dart';
@@ -400,12 +401,8 @@ class _SosScreenState extends State<SosScreen>
 
       // 2. Fetch current GPS location honestly with accuracy & timestamp
       final locResult = await LocationService.getCurrentLocation();
-      final contactStrings = guardiansList.isEmpty
-          ? ['112 National Police Emergency Helpline (Instant SOS)']
-          : guardiansList.map((g) => '${g.name} (${g.phone})').toList();
-      final guardianPhones = guardiansList.isEmpty
-          ? ['112']
-          : guardiansList.map((g) => g.phone).toList();
+      final contactStrings = guardiansList.map((g) => '${g.name} (${g.phone})').toList();
+      final guardianPhones = guardiansList.map((g) => g.phone).toList();
 
       final defaultUserName = isGuestMode
           ? 'Instant SOS User'
@@ -448,13 +445,9 @@ class _SosScreenState extends State<SosScreen>
 
       // 5. Emergency Auto-Call: only when the server was not reached (it uses the SIM, not internet).
       // A delivered alert gets the server's IVR call; a call from this phone too would show as busy.
-      // 112 is on HOLD per test request; routes directly to Web & WhatsApp!
       if (delivered) {
         debugPrint('📞 [SOS CALL] Alert delivered: guardians are called by the server. Skipping phone call.');
-      } else if (primaryPhone.isEmpty) {
-        // Direct 112 police call is put on HOLD for testing per user request!
-        debugPrint('⏸️ [112 POLICE CALL ON HOLD] Real 112 call paused. Dispatched to Web Dashboard & WhatsApp.');
-      } else {
+      } else if (primaryPhone.isNotEmpty) {
         await SmsService.makePhoneCall(primaryPhone);
       }
 
@@ -499,18 +492,13 @@ class _SosScreenState extends State<SosScreen>
       final failed = results.whereType<Map>().where((r) => r['sent'] != true).toList();
       final guardians = _appState.guardians;
 
-      String last10(String p) {
-        final d = p.replaceAll(RegExp(r'\D'), '');
-        return d.length > 10 ? d.substring(d.length - 10) : d;
-      }
-
       final failedNames = <String>[];
       for (final r in failed) {
         final phone = (r['phone'] ?? '').toString();
-        final match = guardians.where((g) => last10(g.phone) == last10(phone)).toList();
+        final match = guardians.where((g) => g.phone == PhoneUtils.normalize(phone)).toList();
         final name = match.isNotEmpty && match.first.name.trim().isNotEmpty
             ? match.first.name.trim()
-            : (r['role'] == 'control_room' ? 'Emergency control room' : '+91 ${last10(phone)}');
+            : (r['role'] == 'control_room' ? 'Emergency control room' : PhoneUtils.display(phone));
         failedNames.add(name);
         if (callPhone == null && r['role'] != 'control_room') {
           callPhone = phone;
@@ -612,26 +600,21 @@ class _SosScreenState extends State<SosScreen>
     }
   }
 
-  // --- Direct call from the warning: the contact WhatsApp missed, else first guardian, else 112 ---
-  String get _warningCallPhone {
+  // --- Direct call from the warning: the contact WhatsApp missed, else first guardian, else nobody ---
+  String? get _warningCallPhone {
     if (!_sosDeliveryPending && _whatsappCallPhone != null) return _whatsappCallPhone!;
     final guardians = _appState.guardians;
-    return guardians.isNotEmpty ? guardians.first.phone : '112';
+    return guardians.isNotEmpty ? guardians.first.phone : null;
   }
 
   String get _warningCallLabel {
     if (!_sosDeliveryPending && _whatsappCallName != null) return 'Call $_whatsappCallName';
     final guardians = _appState.guardians;
-    if (guardians.isEmpty) return 'Call 112';
-    return guardians.first.name.trim().isNotEmpty ? 'Call ${guardians.first.name.trim()}' : 'Call guardian';
-  }
-
-  void _callForHelpDirectly() {
-    SmsService.makePhoneCall(_warningCallPhone);
+    return guardians.isNotEmpty && guardians.first.name.trim().isNotEmpty ? 'Call ${guardians.first.name.trim()}' : 'Call guardian';
   }
 
   Widget _buildDeliveryWarning() {
-    final callLabel = _warningCallLabel;
+    final callPhone = _warningCallPhone;
     final title = _sosDeliveryPending ? 'Alert not sent yet' : 'WhatsApp not delivered';
     final icon = _sosDeliveryPending ? Icons.wifi_off_rounded : Icons.sms_failed_rounded;
     final message = _sosDeliveryPending
@@ -669,21 +652,23 @@ class _SosScreenState extends State<SosScreen>
             message,
             style: const TextStyle(fontSize: 13, height: 1.35, color: Color(0xFF7F1D1D)),
           ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _callForHelpDirectly,
-              icon: const Icon(Icons.call_rounded, size: 18),
-              label: Text(callLabel, style: const TextStyle(fontWeight: FontWeight.w800)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFDC2626),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          if (callPhone != null) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => SmsService.makePhoneCall(callPhone),
+                icon: const Icon(Icons.call_rounded, size: 18),
+                label: Text(_warningCallLabel, style: const TextStyle(fontWeight: FontWeight.w800)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

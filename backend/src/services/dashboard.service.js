@@ -127,9 +127,6 @@ async function loadData() {
   return { incidents, usersMap, guardiansMap, acksMap };
 }
 
-// Guardians and call acknowledgements store a number in different formats: compare the last 10 digits
-const samePhone = (a, b) => String(a || '').replace(/\D/g, '').slice(-10) === String(b || '').replace(/\D/g, '').slice(-10);
-
 // Admin dashboard (view only): stats, SOS records and users
 export const DashboardService = {
   async getStats({ days = 30 } = {}) {
@@ -202,9 +199,9 @@ export const DashboardService = {
     const acks = acksMap.get(incident.id) || [];
     return {
       ...incident,
-      guardians: saved.map((g) => ({ ...g, ackTime: acks.find((a) => samePhone(a.phone, g.phone))?.time || null })),
+      guardians: saved.map((g) => ({ ...g, ackTime: acks.find((a) => a.phone === g.phone)?.time || null })),
       // Numbers not on the saved list: guest SOS, control room, or a guardian removed since
-      otherAcks: acks.filter((a) => !saved.some((g) => samePhone(a.phone, g.phone))),
+      otherAcks: acks.filter((a) => !saved.some((g) => g.phone === a.phone)),
     };
   },
 

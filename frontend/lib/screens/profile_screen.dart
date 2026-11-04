@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:country_picker/country_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,8 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../theme/app_colors.dart';
+import '../utils/phone_utils.dart';
+import '../widgets/country_prefix.dart';
 import '../widgets/input_field.dart';
 import '../widgets/devi_button.dart';
 import '../widgets/devi_logo.dart';
@@ -14,14 +17,16 @@ import 'sos_screen.dart';
 
 class _ContactSuggestion {
   final String name;
-  final String phoneNumber; // 10-digit clean phone number
+  final String phoneNumber; // Digits after the country code
+  final Country country;
   final String rawNumber;
 
-  const _ContactSuggestion({
+  _ContactSuggestion({
     required this.name,
-    required this.phoneNumber,
+    required String e164,
     required this.rawNumber,
-  });
+  })  : phoneNumber = PhoneUtils.nationalOf(e164),
+        country = PhoneUtils.countryOf(e164);
 }
 
 class ProfileScreen extends StatefulWidget {
@@ -35,6 +40,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
+  late Country _phoneCountry;
+  late final List<Country> _guardianCountries;
   late final TextEditingController _address1Controller;
   late final List<TextEditingController> _guardianNameControllers;
   late final List<TextEditingController> _guardianPhoneControllers;
@@ -73,7 +80,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameController = TextEditingController(
       text: isEditing ? state.name : (widget.isEditing ? '' : state.setupName),
     );
-    _phoneController = TextEditingController(text: isEditing ? state.phone : '');
+    _phoneController = TextEditingController(text: isEditing ? PhoneUtils.nationalOf(state.phone) : '');
+    _phoneCountry = isEditing ? PhoneUtils.countryOf(state.phone) : PhoneUtils.defaultCountry;
     _address1Controller = TextEditingController(text: isEditing ? state.address1 : '');
 
     final existingGuardians = state.rawGuardians;
@@ -82,16 +90,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           .map((g) => TextEditingController(text: g.name))
           .toList();
       _guardianPhoneControllers = existingGuardians
-          .map((g) => TextEditingController(text: g.phone))
+          .map((g) => TextEditingController(text: PhoneUtils.nationalOf(g.phone)))
           .toList();
+      _guardianCountries = existingGuardians.map((g) => PhoneUtils.countryOf(g.phone)).toList();
     } else if (!widget.isEditing && state.setupGuardians.isNotEmpty) {
       // Sign up after first-run quick setup: start from the guardians already entered
       _guardianNameControllers = state.setupGuardians
           .map((g) => TextEditingController(text: g.name))
           .toList();
       _guardianPhoneControllers = state.setupGuardians
-          .map((g) => TextEditingController(text: g.phone))
+          .map((g) => TextEditingController(text: PhoneUtils.nationalOf(g.phone)))
           .toList();
+      _guardianCountries = state.setupGuardians.map((g) => PhoneUtils.countryOf(g.phone)).toList();
     } else {
       _guardianNameControllers = [
         TextEditingController(),
@@ -99,10 +109,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _guardianPhoneControllers = [
         TextEditingController(),
       ];
+      _guardianCountries = [PhoneUtils.defaultCountry];
     }
     if (_guardianPhoneControllers.isEmpty) {
       _guardianNameControllers.add(TextEditingController());
       _guardianPhoneControllers.add(TextEditingController());
+      _guardianCountries.add(PhoneUtils.defaultCountry);
     }
     _guardianNameErrors = List.filled(_guardianPhoneControllers.length, null, growable: true);
     _guardianPhoneErrors = List.filled(_guardianPhoneControllers.length, null, growable: true);
@@ -127,6 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _guardianNameControllers.add(TextEditingController());
         _guardianPhoneControllers.add(TextEditingController());
+        _guardianCountries.add(PhoneUtils.defaultCountry);
         _guardianNameErrors.add(null);
         _guardianPhoneErrors.add(null);
       });
@@ -155,6 +168,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _guardianPhoneControllers[index].dispose();
         _guardianNameControllers.removeAt(index);
         _guardianPhoneControllers.removeAt(index);
+        _guardianCountries.removeAt(index);
         _guardianNameErrors.removeAt(index);
         _guardianPhoneErrors.removeAt(index);
       });
@@ -423,7 +437,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _onFinish() async {
     final name = _nameController.text.trim();
-    final phone = _phoneController.text.trim();
+    final phoneDigits = _phoneController.text.trim();
+    final phone = PhoneUtils.fromField(phoneDigits, _phoneCountry);
     final address1 = _address1Controller.text.trim();
 
     bool hasError = false;
@@ -443,14 +458,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     // 2. Mobile Number Validation
-    if (phone.isEmpty) {
+    if (phoneDigits.isEmpty) {
       _phoneError = 'Mobile number is required';
       hasError = true;
-    } else if (phone.length != 10) {
-      _phoneError = 'Mobile number must be exactly 10 digits';
-      hasError = true;
-    } else if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
-      _phoneError = 'Enter a valid number starting with 6, 7, 8, or 9';
+    } else if (phone == null) {
+      _phoneError = 'Enter a valid mobile number';
       hasError = true;
     } else {
       _phoneError = null;
@@ -477,10 +489,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     for (int i = 0; i < _guardianPhoneControllers.length; i++) {
       final gName = _guardianNameControllers[i].text.trim();
-      final gPhone = _guardianPhoneControllers[i].text.trim();
+      final gDigits = _guardianPhoneControllers[i].text.trim();
+      final gPhone = PhoneUtils.fromField(gDigits, _guardianCountries[i]);
 
       // If both name and phone are empty and index > 0, skip optional slot
-      if (gName.isEmpty && gPhone.isEmpty) {
+      if (gName.isEmpty && gDigits.isEmpty) {
         if (i == 0) {
           _guardianPhoneErrors[i] = 'At least 1 guardian is required';
           hasError = true;
@@ -497,14 +510,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         hasError = true;
       }
 
-      if (gPhone.isEmpty) {
+      if (gDigits.isEmpty) {
         _guardianPhoneErrors[i] = 'Phone number is required';
         hasError = true;
-      } else if (gPhone.length != 10) {
-        _guardianPhoneErrors[i] = 'Must be exactly 10 digits';
-        hasError = true;
-      } else if (!RegExp(r'^[6-9]\d{9}$').hasMatch(gPhone)) {
-        _guardianPhoneErrors[i] = 'Starts with 6, 7, 8, or 9';
+      } else if (gPhone == null) {
+        _guardianPhoneErrors[i] = 'Enter a valid mobile number';
         hasError = true;
       } else if (gPhone == phone) {
         _guardianPhoneErrors[i] = 'Cannot be your own number';
@@ -515,7 +525,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       if (_guardianNameErrors[i] == null && _guardianPhoneErrors[i] == null) {
-        seenPhones.add(gPhone);
+        seenPhones.add(gPhone!);
         validGuardianCount++;
         newGuardians.add(GuardianModel(name: gName, phone: gPhone));
       }
@@ -545,7 +555,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Dynamically persist to Supabase backend
     final saved = await AppState.instance.saveProfileToBackend(
       newName: name,
-      newPhone: phone,
+      newPhone: phone!,
       newAddress1: address1,
       newAddress2: null,
       newGuardians: newGuardians,
@@ -627,12 +637,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       for (final c in contacts) {
         final name = (c.displayName ?? '').trim();
         for (final p in c.phones) {
-          final clean = _normalizePhone(p.number);
-          if (clean.length == 10 && !seen.contains(clean)) {
-            seen.add(clean);
+          final e164 = PhoneUtils.fromContact(p.number);
+          if (e164 != null && !seen.contains(e164)) {
+            seen.add(e164);
             list.add(_ContactSuggestion(
               name: name.isNotEmpty ? name : 'Contact',
-              phoneNumber: clean,
+              e164: e164,
               rawNumber: p.number,
             ));
           }
@@ -647,20 +657,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {
       _isLoadingContacts = false;
     }
-  }
-
-  String _normalizePhone(String raw) {
-    final digits = raw.replaceAll(RegExp(r'\D'), '');
-    if (digits.length == 12 && digits.startsWith('91')) {
-      return digits.substring(2);
-    }
-    if (digits.length == 11 && digits.startsWith('0')) {
-      return digits.substring(1);
-    }
-    if (digits.length >= 10) {
-      return digits.substring(digits.length - 10);
-    }
-    return digits;
   }
 
   void _onPhoneChanged(String value, {required int guardianIndex}) {
@@ -704,6 +700,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _guardianPhoneControllers[guardianIndex].text = suggestion.phoneNumber;
         _guardianPhoneControllers[guardianIndex].selection =
             TextSelection.collapsed(offset: suggestion.phoneNumber.length);
+        _guardianCountries[guardianIndex] = suggestion.country;
         if (_guardianNameControllers[guardianIndex].text.trim().isEmpty &&
             suggestion.name != 'Contact') {
           _guardianNameControllers[guardianIndex].text = suggestion.name;
@@ -724,14 +721,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
       if (contact != null && contact.phones.isNotEmpty) {
         final rawPhone = contact.phones.first.number;
-        final cleanPhone = _normalizePhone(rawPhone);
-        if (cleanPhone.length == 10) {
+        final e164 = PhoneUtils.fromContact(rawPhone);
+        if (e164 != null) {
           _selectSuggestion(
             _ContactSuggestion(
               name: (contact.displayName != null && contact.displayName!.trim().isNotEmpty)
                   ? contact.displayName!.trim()
                   : 'Contact',
-              phoneNumber: cleanPhone,
+              e164: e164,
               rawNumber: rawPhone,
             ),
             guardianIndex,
@@ -859,9 +856,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 fontSize: 12.5,
                               ),
                               children: [
-                                const TextSpan(
-                                  text: '+91 ',
-                                  style: TextStyle(
+                                TextSpan(
+                                  text: '+${suggestion.country.phoneCode} ',
+                                  style: const TextStyle(
                                     color: AppColors.textMuted,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -1098,13 +1095,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     hintText: 'Enter mobile number',
                     controller: _phoneController,
                     prefixIcon: Icons.phone_outlined,
-                    prefixText: '+91',
+                    prefix: CountryPrefix(
+                      country: _phoneCountry,
+                      hasError: _phoneError != null,
+                      onChanged: (c) => setState(() {
+                        _phoneCountry = c;
+                        _phoneError = null;
+                      }),
+                    ),
                     keyboardType: TextInputType.phone,
                     autofillHints: const [AutofillHints.telephoneNumber],
                     errorText: _phoneError,
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(10),
+                      LengthLimitingTextInputFormatter(PhoneUtils.maxDigits(_phoneCountry)),
                     ],
                     onChanged: (_) {
                       if (_phoneError != null) setState(() => _phoneError = null);
@@ -1254,13 +1258,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             hintText: 'Enter guardian phone number',
                             controller: _guardianPhoneControllers[index],
                             prefixIcon: Icons.phone_outlined,
-                            prefixText: '+91',
+                            prefix: CountryPrefix(
+                              country: _guardianCountries[index],
+                              hasError: phoneErr != null,
+                              onChanged: (c) => setState(() {
+                                _guardianCountries[index] = c;
+                                _guardianPhoneErrors[index] = null;
+                              }),
+                            ),
                             keyboardType: TextInputType.phone,
                             autofillHints: const [AutofillHints.telephoneNumber],
                             errorText: phoneErr,
                             inputFormatters: [
                               FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(10),
+                              LengthLimitingTextInputFormatter(PhoneUtils.maxDigits(_guardianCountries[index])),
                             ],
                             suffixIcon: InkWell(
                               onTap: () => _pickContactFromBook(index),

@@ -82,7 +82,7 @@ test('verifyToken attaches the user and rejects missing or bad tokens', () => {
   const req = mockReq({ authorization: `Bearer ${signUserToken({ id: 7, name: 'Priya' }, '9876543210')}` });
   const ok = runMiddleware(verifyToken, req);
   assert.equal(ok.nextCalled, true);
-  assert.equal(req.user.phone, '9876543210');
+  assert.equal(req.user.phone, '+919876543210');
 
   assert.equal(runMiddleware(verifyToken, mockReq()).res.statusCode, 401);
   assert.equal(runMiddleware(verifyToken, mockReq({ authorization: 'Bearer junk' })).res.statusCode, 403);

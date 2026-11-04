@@ -188,7 +188,7 @@ DEVI_APP/
 - **EmergencyService (Android native foreground service, `EmergencyService.kt`):** Started the moment SOS is pressed. Types `camera|microphone|location`. Records 2 minutes of front-camera video + audio with CameraX (audio-only fallback), and keeps live location allowed while the app is minimized or a call is in progress. Shows one discreet ongoing notification ("Daily Reminder — Your reminder is active"). Stopped on "I Am Safe". Dart bridge: `emergency_foreground_service.dart`.
 - **LocationService:** Takes a high-accuracy GPS fix, then streams live location (about every 2s / 2m) over WebSocket. Asks the user to turn location on (or allow permission) when the app opens or resumes.
 - **EmergencyMediaService:** Controls the 2-minute evidence recording and uploads the file to the backend (Cloudinary).
-- **SmsService:** Calls the first guardian. The direct `112` call is on hold during testing.
+- **SmsService:** Calls the first guardian from the phone when the alert could not reach the server. A delivered alert gets the server's IVR call instead.
 
 After SOS is sent, the app minimizes itself to the home screen (Android) so the alert is not visible on screen.
 
@@ -277,7 +277,7 @@ Runs at `https://devi.macvelsoftware.com` (local: `http://localhost:5173`). Uses
 1. **Incident list:** Search, stats (Total / Active / Resolved) and filter tabs (All / Active / Resolved).
 2. **Live map:** Victim markers, the live movement trail with direction arrows, the SOS start point and a GPS accuracy circle.
 3. **New SOS alert:** Siren sound, spoken announcement, a pop-up banner and auto-zoom to the victim.
-4. **Incident drawer:** Evidence video, victim details (name, phone, location, GPS accuracy), Call Victim / Call 112, operator notes and Mark Resolved.
+4. **Incident drawer:** Evidence video, victim details (name, phone, location, GPS accuracy), Call Victim, operator notes and Mark Resolved.
 5. **Public track page (`/track/:alertId`):** The link sent on WhatsApp. Shows the victim's live location and trail.
 
 ---

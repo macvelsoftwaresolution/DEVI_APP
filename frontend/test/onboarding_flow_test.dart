@@ -65,7 +65,7 @@ void main() {
     await tester.enterText(fields.at(2), 'Amma');
     await tester.tap(find.text('Save & Continue'));
     await tester.pump();
-    expect(find.text('Number must start with 6, 7, 8 or 9'), findsOneWidget);
+    expect(find.text('Enter a valid mobile number'), findsOneWidget);
 
     await tester.enterText(fields.at(1), '9876543210');
     await tester.tap(find.text('Save & Continue'));
@@ -81,11 +81,11 @@ void main() {
     const secure = FlutterSecureStorage();
     expect(await secure.read(key: 'devi_setup_name'), 'Priya');
     final guardians = jsonDecode((await secure.read(key: 'devi_guest_guardians'))!) as List;
-    expect(guardians.single, {'name': 'Amma', 'phone': '9876543210'});
+    expect(guardians.single, {'name': 'Amma', 'phone': '+919876543210'});
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('devi_setup_name'), isNull);
     expect(prefs.getString('devi_guest_guardians'), isNull);
-    expect(AppState.instance.setupGuardians.single.phone, '9876543210');
+    expect(AppState.instance.setupGuardians.single.phone, '+919876543210');
 
     // Next launch goes straight to the SOS screen as a guest
     expect(await OnboardingFlow.firstScreen(isLoggedIn: false), isA<SosScreen>());
@@ -154,7 +154,7 @@ void main() {
     await AppState.instance.checkAutoLogin();
 
     expect(AppState.instance.setupName, 'Priya');
-    expect(AppState.instance.guardians.single.phone, '9876543210');
+    expect(AppState.instance.guardians.single.phone, '+919876543210');
     const secure = FlutterSecureStorage();
     expect(await secure.read(key: 'devi_setup_name'), 'Priya');
     expect(await secure.read(key: 'devi_guest_guardians'), oldGuardians);

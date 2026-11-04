@@ -135,7 +135,7 @@ class SosGuideCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Call them now or dial 112.',
+                    'Call them now.',
                     style: TextStyle(fontSize: 13, color: Color(0xFF111B21), height: 1.4),
                   ),
                   Align(

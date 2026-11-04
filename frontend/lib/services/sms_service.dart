@@ -63,7 +63,7 @@ class SmsService {
     return 0;
   }
 
-  /// Initiates a phone call to the primary guardian or emergency number (112)
+  /// Initiates a phone call to a guardian
   static Future<bool> makePhoneCall(String phone) async {
     final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
     if (clean.isEmpty) return false;

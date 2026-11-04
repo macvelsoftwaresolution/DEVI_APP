@@ -1,8 +1,11 @@
+import 'package:country_picker/country_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../theme/app_colors.dart';
+import '../utils/phone_utils.dart';
+import '../widgets/country_prefix.dart';
 import '../widgets/devi_button.dart';
 import '../widgets/devi_logo.dart';
 import 'profile_screen.dart';
@@ -20,6 +23,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
+  Country _country = PhoneUtils.defaultCountry;
   bool _isLoading = false;
   String? _phoneError;
 
@@ -35,19 +39,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signIn() async {
-    final phone = _phoneController.text.trim();
-    
+    final digits = _phoneController.text.trim();
+
     // Strict mobile number validation
-    if (phone.isEmpty) {
+    if (digits.isEmpty) {
       setState(() => _phoneError = 'Please enter your mobile number');
       return;
     }
-    if (phone.length != 10) {
-      setState(() => _phoneError = 'Mobile number must be exactly 10 digits');
-      return;
-    }
-    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(phone)) {
-      setState(() => _phoneError = 'Enter a valid number starting with 6, 7, 8, or 9');
+    final phone = PhoneUtils.fromField(digits, _country);
+    if (phone == null) {
+      setState(() => _phoneError = 'Enter a valid mobile number');
       return;
     }
 
@@ -249,15 +250,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                     : AppColors.textMuted,
                               ),
                               const SizedBox(width: 8),
-                              Text(
-                                '+91',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: _phoneError != null
-                                      ? AppColors.emergencyRed
-                                      : AppColors.primaryNavy,
-                                ),
+                              CountryPrefix(
+                                country: _country,
+                                hasError: _phoneError != null,
+                                onChanged: (c) => setState(() {
+                                  _country = c;
+                                  _phoneError = null;
+                                }),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
@@ -266,7 +265,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   keyboardType: TextInputType.phone,
                                   inputFormatters: [
                                     FilteringTextInputFormatter.digitsOnly,
-                                    LengthLimitingTextInputFormatter(10),
+                                    LengthLimitingTextInputFormatter(PhoneUtils.maxDigits(_country)),
                                   ],
                                   onChanged: (_) {
                                     if (_phoneError != null) {

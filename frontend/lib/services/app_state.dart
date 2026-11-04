@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import '../utils/phone_utils.dart';
 import 'api_service.dart';
 import 'emergency_media_service.dart';
 import 'onboarding_service.dart';
@@ -18,7 +19,7 @@ class GuardianModel {
   factory GuardianModel.fromMap(Map<String, dynamic> map) {
     return GuardianModel(
       name: map['name']?.toString() ?? '',
-      phone: map['phone']?.toString() ?? '',
+      phone: PhoneUtils.normalize(map['phone']?.toString() ?? ''),
     );
   }
 }
@@ -272,10 +273,11 @@ class AppState extends ChangeNotifier {
 
   Future<bool> checkAutoLogin() async {
     await _loadQuickSetup();
+    ApiService.instance.loadAllowedCountries();
     try {
       final prefs = await SharedPreferences.getInstance();
       final isLoggedIn = prefs.getBool(_keyIsLoggedIn) ?? false;
-      final savedPhone = prefs.getString(_keyLoggedInPhone);
+      final savedPhone = PhoneUtils.normalize(prefs.getString(_keyLoggedInPhone) ?? '');
       final savedPhoto = prefs.getString(_keyProfilePhoto);
       final savedToken = await _readAuthToken(prefs);
 
@@ -287,8 +289,9 @@ class AppState extends ChangeNotifier {
         profilePhotoPath = savedPhoto;
       }
 
-      if (isLoggedIn && savedPhone != null && savedPhone.isNotEmpty) {
+      if (isLoggedIn && savedPhone.isNotEmpty) {
         phone = savedPhone;
+        await prefs.setString(_keyLoggedInPhone, savedPhone);
         // Load latest profile from backend
         await loadUserProfile(savedPhone);
         return true;

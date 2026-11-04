@@ -45,6 +45,8 @@ dependencies:
   uuid: ^4.5.1
   flutter_secure_storage: ^11.2.0
   flutter_contacts: ^2.6.0
+  country_picker: ^2.0.28
+  phone_numbers_parser: ^9.0.29
 
 dev_dependencies:
   flutter_test:

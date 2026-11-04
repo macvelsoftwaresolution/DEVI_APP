@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { MapPin, Navigation, Phone, Clock, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { MapPin, Navigation, Clock, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { apiUrl } from '../config/api';
 
 // Guardian link from the WhatsApp alert (/track/:alertId?k=<view key>).
@@ -48,13 +48,6 @@ const buttonStyle = {
   gap: '8px',
   textDecoration: 'none',
 };
-
-const EMERGENCY_CALL = (
-  <a href="tel:112" style={{ ...buttonStyle, background: 'var(--bg-elevated)', border: '1px solid var(--border)', marginTop: '10px' }}>
-    <Phone size={16} />
-    Call 112 (Emergency)
-  </a>
-);
 
 function Message({ icon, title, text }) {
   return (
@@ -139,7 +132,6 @@ export default function TrackPage() {
               title="This alert has ended"
               text="The SOS was marked safe and this link has expired. The location is no longer shown."
             />
-            {EMERGENCY_CALL}
           </>
         )}
 
@@ -148,9 +140,8 @@ export default function TrackPage() {
             <Message
               icon={<ShieldAlert size={40} color="var(--amber)" />}
               title="This link is not valid"
-              text="Open the full link from the DEVI WhatsApp alert. If someone is in danger, call 112 now."
+              text="Open the full link from the DEVI WhatsApp alert."
             />
-            {EMERGENCY_CALL}
           </>
         )}
 
@@ -159,9 +150,8 @@ export default function TrackPage() {
             <Message
               icon={<ShieldAlert size={40} color="var(--amber)" />}
               title="Could not load the location"
-              text="Check your internet connection and open the link again. If someone is in danger, call 112 now."
+              text="Check your internet connection and open the link again."
             />
-            {EMERGENCY_CALL}
           </>
         )}
 
@@ -226,7 +216,6 @@ export default function TrackPage() {
             ) : (
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>GPS location was not available for this SOS.</p>
             )}
-            {EMERGENCY_CALL}
           </>
         )}
       </div>

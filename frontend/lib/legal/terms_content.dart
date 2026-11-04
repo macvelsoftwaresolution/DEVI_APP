@@ -24,8 +24,8 @@ class TermsContent {
     TermsSection(
       'DEVI is not a replacement for police or ambulance',
       'DEVI depends on your phone, battery, GPS, mobile network, internet and WhatsApp. '
-          'An alert can be delayed or fail to reach someone. In danger, also call 112 '
-          '(Police) or 1091 (Women Helpline) directly.',
+          'An alert can be delayed or fail to reach someone. In danger, also call the '
+          'police or a women\'s helpline directly.',
     ),
     TermsSection(
       'What we collect and why',

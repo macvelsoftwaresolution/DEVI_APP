@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../services/app_state.dart';
 import '../theme/app_colors.dart';
+import '../utils/phone_utils.dart';
 import '../widgets/add_guardian_dialog.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
@@ -281,7 +282,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            isGuest ? 'Direct Emergency Mode • Instant SOS' : '+91 ${_appState.phone} • Registered',
+                            isGuest ? 'Direct Emergency Mode • Instant SOS' : '${PhoneUtils.display(_appState.phone)} • Registered',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -539,7 +540,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      '+91 ${guardian.phone}',
+                                      PhoneUtils.display(guardian.phone),
                                       style: const TextStyle(
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w500,

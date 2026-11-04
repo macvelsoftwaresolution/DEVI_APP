@@ -11,6 +11,7 @@ class CustomTextField extends StatelessWidget {
   final TextEditingController? controller;
   final IconData? prefixIcon;
   final String? prefixText;
+  final Widget? prefix;
   final TextInputType? keyboardType;
   final bool isWhiteBackground;
   final ValueChanged<String>? onChanged;
@@ -30,6 +31,7 @@ class CustomTextField extends StatelessWidget {
     this.controller,
     this.prefixIcon,
     this.prefixText,
+    this.prefix,
     this.keyboardType,
     this.isWhiteBackground = true,
     this.onChanged,
@@ -115,6 +117,10 @@ class CustomTextField extends StatelessWidget {
                     color: hasError ? AppColors.emergencyRed : AppColors.primaryNavy,
                   ),
                 ),
+                const SizedBox(width: 8),
+              ],
+              if (prefix != null) ...[
+                prefix!,
                 const SizedBox(width: 8),
               ],
               Expanded(

@@ -1,6 +1,13 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET, ADMIN_JWT_SECRET, SOS_LINK_SECRET, ADMIN_SECRET_KEY, ADMIN_TOKEN_EXPIRY, ADMIN_PASSWORD_VERSION } from '../config/security.js';
+import { canonicalPhone } from '../utils/phone.js';
+
+// Tokens signed before numbers moved to E.164 carry 10 digits and stay valid for 30 days
+const decodeUserToken = (token) => {
+  const decoded = jwt.verify(token, JWT_SECRET);
+  return decoded.phone ? { ...decoded, phone: canonicalPhone(decoded.phone) } : decoded;
+};
 
 /**
  * Signs a 30-day JWT for an app user (used by login & first-time sign up)
@@ -33,8 +40,7 @@ export const verifyToken = (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    req.user = decodeUserToken(token);
     next();
   } catch (err) {
     return res.status(403).json({
@@ -53,8 +59,7 @@ export const optionalToken = (req, res, next) => {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.split(' ')[1];
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = decoded;
+      req.user = decodeUserToken(token);
     } catch {
       // Proceed as unauthenticated guest without error
     }

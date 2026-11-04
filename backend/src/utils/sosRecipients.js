@@ -1,4 +1,6 @@
 // Who receives an SOS WhatsApp, and what name it shows.
+import { normalizePhone } from './phone.js';
+
 // The WhatsApp goes out from DEVI's business number, so a request must not be able to send it to
 // any numbers it likes: a flood of fake alerts gets the number reported and banned by Meta, and then
 // real SOS alerts stop reaching guardians.
@@ -18,14 +20,7 @@ export const RECIPIENT_LIMIT = 3;
 export const RECIPIENT_WINDOW_MS = 60 * 60 * 1000;
 export const MAX_NAME_LENGTH = 40;
 
-// Any Indian mobile format (+91, 0 prefix, spaces) → 10 digits, or null
-export const parseIndianMobile = (raw) => {
-  const digits = String(raw ?? '').replace(/\D/g, '');
-  const match = digits.match(/^(?:91|0)?([6-9]\d{9})$/);
-  return match ? match[1] : null;
-};
-
-const uniqueMobiles = (values) => [...new Set(values.map(parseIndianMobile).filter(Boolean))];
+const uniqueMobiles = (values) => [...new Set(values.map(normalizePhone).filter(Boolean))];
 
 /**
  * @param {object} p
