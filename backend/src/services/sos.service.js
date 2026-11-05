@@ -7,6 +7,8 @@ import { GeocodeService } from './geocode.service.js';
 import { toLatLng, hasFix, NO_FIX_PLACEHOLDER, encryptCoords, readCoords } from '../utils/coords.js';
 
 const NO_LOCATION_TEXT = 'Location not yet available';
+// How long an SOS waits for a place name before sending. The WhatsApp link uses coordinates anyway.
+const PLACE_WAIT_MS = 1000;
 
 // SOS alerts: creation, idempotency, live tracking, evidence, history, signal state, resolve
 export const SosService = {
@@ -90,7 +92,8 @@ export const SosService = {
     latitude = coords.latitude;
     longitude = coords.longitude;
 
-    // Auto-resolve real place name if location is missing or generic coordinates or URL
+    // The place name is looked up after the alert is saved (fillPlaceName): a slow geocoder must
+    // never hold back an SOS. Until then a generic location is stored as its GPS text.
     let resolvedAddress = location;
     const isGenericLocation =
       !resolvedAddress ||
@@ -101,12 +104,6 @@ export const SosService = {
       resolvedAddress.includes('Location disabled') ||
       /^\s*[-+]?[0-9]*\.?[0-9]+\s*,\s*[-+]?[0-9]*\.?[0-9]+\s*$/.test(resolvedAddress);
 
-    if (isGenericLocation && hasFix(latitude, longitude)) {
-      const placeName = await GeocodeService.reverseGeocode(latitude, longitude);
-      if (placeName) {
-        resolvedAddress = placeName;
-      }
-    }
     if (!hasFix(latitude, longitude)) {
       // Device text such as "Location disabled on device" is kept; anything else becomes the honest default
       resolvedAddress = (location && !isGenericLocation) ? location : NO_LOCATION_TEXT;
@@ -150,6 +147,15 @@ export const SosService = {
         alertPayload.latitude = NO_FIX_PLACEHOLDER;
         alertPayload.longitude = NO_FIX_PLACEHOLDER;
         ({ data, error } = await supabase.from('sos_history').insert([alertPayload]).select().single());
+      }
+
+      // Another request with this key saved first (a retry racing the original). Its message also
+      // names idempotency_key, so this must come before the missing-column fallback below, which
+      // would drop the key and create a second alert with a second round of messages and calls.
+      if (error?.code === '23505' && idempotencyKey) {
+        const existing = await this.findExistingSos({ idempotencyKey, userPhone });
+        if (existing) return { ...existing, duplicate: true };
+        throw error;
       }
 
       if (error) {
@@ -199,6 +205,7 @@ export const SosService = {
         status: alert.status || 'ACTIVE',
         lastUpdated: alert.created_at || new Date().toISOString(),
         evidenceUrl: alert.evidence_url || null,
+        needsPlaceName: isGenericLocation && hasFix(latitude, longitude),
       };
 
       liveTrackSessions.set(alert.id.toString(), sessionData);
@@ -207,6 +214,46 @@ export const SosService = {
     } catch (err) {
       console.error('Unexpected error in createSosAlert:', err);
       throw err;
+    }
+  },
+
+  // Looks up the place name of a saved alert and stores it. Waits at most waitMs, so the first call
+  // can speak the place when it is quick; a slower answer still reaches the saved alert afterwards.
+  async fillPlaceName(session, waitMs = PLACE_WAIT_MS) {
+    if (!session.needsPlaceName) return session;
+    delete session.needsPlaceName;
+
+    const lookup = (async () => {
+      try {
+        const place = await GeocodeService.reverseGeocode(session.latitude, session.longitude);
+        if (!place) return;
+        session.location = place;
+        const { error } = await supabase
+          .from('sos_history')
+          .update({ location_address: enc(place, 'sos_history.location_address', session.id) })
+          .eq('id', session.id);
+        if (error) console.warn(`⚠️ Place name of alert ${session.id} not saved:`, error.message);
+      } catch (e) {
+        console.warn(`⚠️ Place name lookup failed for alert ${session.id}:`, e.message);
+      }
+    })();
+
+    let timer;
+    await Promise.race([lookup, new Promise((resolve) => { timer = setTimeout(resolve, waitMs); })]);
+    clearTimeout(timer);
+    return session;
+  },
+
+  // The saved status, for decisions that must survive a restart. Memory can say RESOLVED when the
+  // database update failed, and that must not stop retries. Null when it cannot be read.
+  async getSavedAlertStatus(alertId) {
+    try {
+      const { data, error } = await supabase.from('sos_history').select('status').eq('id', alertId).maybeSingle();
+      if (error || !data) return null;
+      return String(data.status || 'ACTIVE').toUpperCase();
+    } catch (e) {
+      console.warn(`⚠️ Status of alert ${alertId} not read:`, e.message);
+      return null;
     }
   },
 

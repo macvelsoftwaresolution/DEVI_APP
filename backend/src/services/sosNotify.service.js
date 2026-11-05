@@ -26,9 +26,10 @@ const POLL_MS = 15_000;
 const BATCH = 10;
 const FIELD = 'pgmq.sos_notify';
 
-// Failures a retry cannot fix
-const PERMANENT_WHATSAPP = new Set(['NOT_ON_WHATSAPP', 'TEMPLATE_PROBLEM', 'PHONE_EMPTY', 'CREDENTIALS_MISSING', 'TOKEN_EXPIRED']);
-const PERMANENT_IVR = new Set(['Invalid phone number', 'No telephony provider configured in .env']);
+// Failures of this one number that no retry can fix. An expired token, a template problem or missing
+// provider settings stop every alert until someone fixes them, so those jobs stay and keep retrying.
+const PERMANENT_WHATSAPP = new Set(['NOT_ON_WHATSAPP', 'PHONE_EMPTY']);
+const PERMANENT_IVR = new Set(['Invalid phone number']);
 
 const defaultSenders = {
   whatsapp: (job) =>
@@ -46,7 +47,7 @@ const defaultSenders = {
 const isPermanent = (kind, out) =>
   kind === 'whatsapp' ? PERMANENT_WHATSAPP.has(out?.reason) : PERMANENT_IVR.has(out?.error);
 
-const alertStatus = async (alertId) => (await SosService.getAlertLocation(alertId))?.status || null;
+const alertStatus = (alertId) => SosService.getSavedAlertStatus(alertId);
 
 export const createSosNotify = ({ queue = QueueService, senders = defaultSenders, getAlertStatus = alertStatus } = {}) => {
   let missingQueueLogged = false;

@@ -9,12 +9,16 @@ const SEND_TIMEOUT_MS = 5000;
 
 // Maps Meta Graph API errors to a short reason the app and dashboard can act on.
 // Note: "sent" only means Meta accepted the message; delivery receipts need a webhook.
-const classifyMetaError = (error) => {
+// Goes by error.code only: Meta also uses type "OAuthException" for rate limits and delivery
+// errors, so the type says nothing about the token.
+const RATE_LIMIT_CODES = new Set([4, 80007, 130429, 131048, 131056, 131064, 133016]);
+
+export const classifyMetaError = (error) => {
   if (!error) return 'UNKNOWN';
   const code = Number(error.code);
-  if (code === 190 || error.type === 'OAuthException') return 'TOKEN_EXPIRED';
+  if (code === 190) return 'TOKEN_EXPIRED';
   if (code === 131026) return 'NOT_ON_WHATSAPP';
-  if (code === 131056 || code === 130429 || code === 4 || code === 80007) return 'RATE_LIMITED';
+  if (RATE_LIMIT_CODES.has(code)) return 'RATE_LIMITED';
   if (code >= 132000 && code < 133000) return 'TEMPLATE_PROBLEM';
   return 'META_ERROR';
 };

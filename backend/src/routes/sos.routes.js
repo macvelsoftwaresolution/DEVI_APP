@@ -57,7 +57,7 @@ const hasViewAccess = (req, alertId) =>
 // The stored evidence reference becomes the protected link, or null without view access.
 const publicSession = (session, { includeEvidence = true } = {}) => {
   if (!session) return session;
-  const { idempotencyKey, userPhone, userId, ...rest } = session;
+  const { idempotencyKey, userPhone, userId, needsPlaceName, ...rest } = session;
   return { ...rest, evidenceUrl: includeEvidence ? evidenceLink(rest.id, rest.evidenceUrl) : null };
 };
 
@@ -75,13 +75,7 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     const account = req.user?.phone && !req.user.isGuest ? await UserService.findUserByPhone(req.user.phone) : null;
     const userPhone = sosUserId(req.user?.phone, reqData.userPhone);
 
-    // STEP 1: Idempotency & Active Session Check (Prevents duplicate DB alerts & duplicate SMS)
-    const existingSession = await SosService.findExistingSos({
-      idempotencyKey: finalIdempotencyKey,
-      userPhone,
-    });
-
-    if (existingSession) {
+    const replyDuplicate = (existingSession) => {
       // The idempotency key is not logged: with it, /trigger hands back the alert's control token
       console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${maskPhone(userPhone)}. 🛑 Skipping duplicate SMS broadcast.`);
 
@@ -99,7 +93,15 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
           ...((isSameDevice || isOwner) && { controlToken: signSosControlToken(existingSession.id) }),
         },
       });
-    }
+    };
+
+    // STEP 1: Idempotency & Active Session Check (Prevents duplicate DB alerts & duplicate SMS)
+    const existingSession = await SosService.findExistingSos({
+      idempotencyKey: finalIdempotencyKey,
+      userPhone,
+    });
+
+    if (existingSession) return replyDuplicate(existingSession);
 
     // STEP 2: Fresh SOS - Create session and persist to database
     const alert = await SosService.createSosAlert({
@@ -111,6 +113,9 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       idempotencyKey: finalIdempotencyKey,
       capturedAt: captured_at,
     });
+
+    // Lost a race with a request using the same key: that request sends the alerts
+    if (alert.duplicate) return replyDuplicate(alert);
 
     console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${maskPhone(userPhone)}`);
 
@@ -129,6 +134,8 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       timestamp: alert.timestamp || new Date().toISOString(),
       status: 'ACTIVE',
     });
+
+    await SosService.fillPlaceName(alert);
 
     // STEP 3: Emergency Dispatch (WhatsApp with the SOS location as a Google Maps link, no live tracking).
     // Wait for Meta's answer (bounded by the service timeout) so the phone learns who was NOT reached.

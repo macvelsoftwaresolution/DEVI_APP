@@ -1,7 +1,17 @@
+const CACHE_LIMIT = 10000;
+
 // Reverse geocoding: GPS coordinates -> human-readable place name (cached)
 export const GeocodeService = {
   // In-memory reverse geocoding cache
   geocodeCache: new Map(),
+
+  // Oldest entry goes first, so a long-running server cannot grow without limit
+  remember(key, place) {
+    if (this.geocodeCache.size >= CACHE_LIMIT) {
+      this.geocodeCache.delete(this.geocodeCache.keys().next().value);
+    }
+    this.geocodeCache.set(key, place);
+  },
 
   // Reverse Geocode GPS coordinates to human-readable address name (e.g. Sivakasi, Tamil Nadu)
   async reverseGeocode(lat, lng) {
@@ -23,7 +33,7 @@ export const GeocodeService = {
           if (gData.status === 'OK' && gData.results && gData.results.length > 0) {
             const formatted = gData.results[0].formatted_address;
             if (formatted) {
-              this.geocodeCache.set(cacheKey, formatted);
+              this.remember(cacheKey, formatted);
               return formatted;
             }
           }
@@ -47,7 +57,7 @@ export const GeocodeService = {
           const parts = [road, town, state].filter(Boolean);
           const result = parts.length > 0 ? parts.join(', ') : data.display_name?.split(',').slice(0, 3).join(', ');
           if (result) {
-            this.geocodeCache.set(cacheKey, result);
+            this.remember(cacheKey, result);
             return result;
           }
         }
@@ -63,11 +73,11 @@ export const GeocodeService = {
         const bdcData = await bdcRes.json();
         const locality = bdcData.locality || bdcData.city || bdcData.principalSubdivision || '';
         const district = bdcData.localityInfo?.administrative?.[2]?.name || bdcData.principalSubdivision || '';
-        const state = bdcData.principalSubdivision || 'Tamil Nadu';
+        const state = bdcData.principalSubdivision || '';
         const parts = Array.from(new Set([locality, district, state].filter(Boolean)));
         if (parts.length > 0) {
           const result = parts.join(', ');
-          this.geocodeCache.set(cacheKey, result);
+          this.remember(cacheKey, result);
           return result;
         }
       }

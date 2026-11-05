@@ -1,0 +1,481 @@
+# DEVI: Performance, Scalability, Reliability and Security Analysis
+
+**Goal:** host DEVI in 10+ countries, with a path to 100+, without losing a single SOS.
+**Date:** 5 Nov 2026. **Code checked:** commit `8c549fc`.
+
+---
+
+## 1. Summary
+
+**DEVI is not ready for 10+ countries yet, mainly because SOS messages can still be lost.** The security base and the retry queue are good starting points. But today there are 13 ways an alert can fail to reach a guardian, and 4 of them are critical. Most fail silently.
+
+The most urgent finding is a bug. Most WhatsApp errors are treated as "token expired" and are never retried, so the retry queue does not cover them.
+
+**What matters most:**
+
+1. **Fix the 4 critical message-loss paths first** (section 3). None needs new infrastructure. This is 1 to 2 weeks of work.
+2. **Treat "sent" and "delivered" as different things.** Today a job is finished when Meta or the call provider accepts it, not when a guardian gets it.
+3. **Build a delivery engine that never gives up silently** (section 7). Every alert ends either confirmed by a person or in front of a person.
+4. **Then scale.** One server in one place is fine for today's testing. It is not fine for an emergency product.
+
+**An honest limit:** no system can promise a message reaches a phone that is switched off. What we can promise is stronger and testable: **no alert is ever dropped silently.** This needs a person on call 24x7 at the end of the chain, which DEVI does not have today. That is a business decision (section 13).
+
+### Fix status (5 Nov 2026, in code, not committed or deployed)
+
+- **L1:** done. WhatsApp errors are classified by code.
+- **L7:** partly done. Token, template and provider-setting failures now keep retrying. SMS is still missing.
+- **P1, P2:** done for the send path. The alert is saved first, and the send waits at most 1 second for a place name.
+- **`'Tamil Nadu'` fallback and geocode cache limit (part of P4):** done.
+- **Also fixed from the senior's assessment:** the duplicate alert race (R7), and retry decisions now use the saved status (P0-10, worker part).
+
+All other findings remain open.
+
+### How to read the evidence
+
+Each finding says how we know it:
+
+- **Code:** read directly in the source.
+- **Tested:** run locally with fake providers and no database.
+- **Notes:** from project notes up to 4 Nov 2026, not rechecked today.
+- **Assumption:** a planning estimate, not a measurement.
+
+**No load test has ever been run.** This report has no production traffic numbers, and capacity figures are calculated.
+
+---
+
+## 2. Current State
+
+### How it works today
+
+```mermaid
+flowchart LR
+    App["Flutter app"] -->|"HTTPS"| Nginx["NGINX"]
+    Web["Admin dashboard"] -->|"HTTPS + WebSocket"| Nginx
+    Nginx --> Node["One Node.js process<br/>API + WebSocket + retry worker"]
+    Node --> DB[("Supabase Postgres<br/>tables + sos_notify queue")]
+    Node --> Geo["Google / OSM / BigDataCloud<br/>place names"]
+    Node --> Meta["WhatsApp (Meta)"]
+    Node --> Calls["Plivo (+91) / Twilio (others)"]
+```
+
+An SOS runs in this order (**Code**, `backend/src/routes/sos.routes.js`):
+
+1. Look up the user and check for a duplicate.
+2. Look up the place name, if not cached.
+3. Save the alert in Supabase.
+4. Tell the dashboard.
+5. For each guardian, send WhatsApp and IVR, and save a retry job at the same time.
+
+### What is already good
+
+- **Retry queue:** jobs survive a server crash, and retries stop when the user is safe.
+- **Idempotency:** a repeated SOS does not create a second alert.
+- **Two call providers:** Plivo and Twilio back each other up.
+- **Encryption is not a bottleneck:** about 92,000 encrypts and 147,000 decrypts per second on a development laptop (**Tested**).
+- **Honest app behaviour:** the app tells the user when an alert did not get through, retries, and calls the first guardian if the server cannot be reached.
+- **Clean queue boundary:** only `queue.service.js` knows where jobs are stored.
+- **Phone numbers:** E.164 everywhere, so the data model is already international.
+- **Security base:** OTP login, field encryption, row-level security, signed WhatsApp webhooks, private evidence and rate limits.
+
+### Hosting today (**Notes**)
+
+One process (`devi-backend`) under pm2 on a Hostinger VPS, shared with other apps. One API hostname. One Supabase project, shared by the development team and production. Twilio is on a Trial account, so its backup calls reach only verified numbers. Plivo is prepaid.
+
+---
+
+## 3. Where an SOS Can Be Lost Today
+
+Ordered by severity. Each one below is a real path, not a theory.
+
+### Critical
+
+**L1. Most WhatsApp errors are never retried.**
+- **What happens:** `classifyMetaError` checks `error.type === 'OAuthException'` first and returns `TOKEN_EXPIRED`. Meta's own error example uses that type. `TOKEN_EXPIRED` counts as permanent, so the retry job is deleted.
+- **Proof (Tested):** with Meta's documented error shape, rate limit `130429`, pair limit `131056`, unknown error `131000` and not-on-WhatsApp `131026` all came back as `TOKEN_EXPIRED` with no retry. Not yet confirmed against a live Meta failure.
+- **Effect:** in a rate limit or Meta incident, alerts are dropped at once. The app, dashboard and logs show the wrong reason. Only network errors and timeouts are really retried.
+- **Fix:** check specific codes first. Treat `OAuthException` as a token problem only for code `190`.
+
+**L2. If the database is down, the server sends nothing.**
+- **What happens:** the user lookup and alert insert must succeed before any send (**Code**). The queue lives in the same database, so it fails at the same moment.
+- **Effect:** in a Supabase outage, no server WhatsApp or IVR goes out. The app retries and calls one guardian. A guest with no guardian has nothing.
+- **Fix:** if the database fails, send anyway from the request data and write the alert to a local journal, then replay it later. Section 7 adds a second durable store.
+
+**L3. A crash at the wrong moment silently cancels an alert.**
+- **What happens:** the alert is saved first, and the retry job is created later. If the server dies between them, the alert exists with no job. The app retries with the same key, the server finds the alert, answers "duplicate" and skips sending (**Code**, step 1 of `/sos/trigger`).
+- **Effect:** the app reports success and guardians get nothing.
+- **Fix:** save the alert and its delivery rows in one database transaction. On a duplicate, finish unfinished sends instead of skipping.
+
+**L4. "Accepted" is treated as "delivered".**
+- **What happens:** the job is deleted when Meta accepts the message. The webhook logs delivery statuses and throws them away, so a later `failed` is ignored (**Code**, `server.js`).
+- **Effect:** a message Meta accepts but cannot deliver is lost with no retry, and the dashboard shows it as sent.
+- **Fix:** record webhook statuses against each send and act on them.
+
+### High
+
+**L5. An unanswered call is the end of the story.**
+A busy, unanswered or voicemail call counts as success, because the provider accepted it (**Code**). Plivo's hangup status is only logged, and Twilio has no status callback at all. The press-1 result is saved but drives nothing.
+**Fix:** use call status and press 1 to retry and move to the next guardian.
+
+**L6. The system gives up after about 6 minutes, and only tells a log file.**
+Retries are fixed at 60 seconds, 5 times (**Code**). A Meta or Plivo incident longer than that exhausts every job. The `GAVE UP` line goes to a log nobody watches.
+**Fix:** retry for much longer with growing gaps, and page a person.
+
+**L7. There is no third channel.**
+The code has no server SMS (**Code**). If both WhatsApp and calls fail, for example with an expired token and an empty balance, nothing else is tried. Token and template failures also delete the job, though a person could fix them in minutes.
+**Fix:** add SMS, and keep jobs alive for fixable failures.
+
+**L8. The SOS rate limit can refuse a real emergency.**
+`/sos/trigger` allows 10 calls a minute per IP (**Code**). Mobile networks put many users behind one IP, and the app's own retries count too. A busy event or disaster in one city is exactly when this fires.
+**Fix:** limit by device or account. Never limit by IP alone on this route.
+
+**L9. The app's retry stops when the app closes.**
+The retry loop and its key live in memory and need the screen alive (**Code**, `sos_screen.dart`). If the phone kills the app, or the user closes it, an undelivered SOS stops trying.
+**Fix:** save pending alerts to disk and retry from a background worker.
+
+**L10. One server, one hostname.**
+A VPS failure, bad deploy or DNS problem stops all alerts. The app knows only one API address (**Code**).
+**Fix:** several instances, and a second API address built into the app.
+
+**L11. An SOS with no guardian may reach nobody.**
+With no guardian and no `ADMIN_WHATSAPP`, only the dashboard is told, and it is a view-only panel with no one on duty (**Code**, **Notes**).
+**Fix:** require a guardian, or staff a control room (section 13).
+
+### Medium
+
+**L12. Limits we chose can block a real alert.**
+Unverified numbers get 3 alerts an hour, and guests cannot alert foreign numbers (**Code**). These stop paid abuse, and the app is told. But each is still a guardian not reached.
+**Fix:** verify guardians with a one-time confirmation, so real ones have no limit.
+
+**L13. A second press does not resend.**
+For 15 minutes after an SOS, the same user is treated as a duplicate even if earlier sends failed or the guardian list changed (**Code**).
+**Fix:** a repeat press should send to anyone not yet confirmed.
+
+---
+
+## 4. Performance
+
+**P1. Place-name lookup delays the emergency.**
+The app always sends a Maps link, so an uncached SOS looks up a place name before saving or sending. Three services are tried in turn, for up to 10.5 seconds (3.5 + 4 + 3) (**Code**).
+**Fix:** send first and look up the place name afterwards. The WhatsApp link uses coordinates anyway. The first IVR call can use the name if it arrives within about a second.
+
+**P2. A slow SOS can outlast the app's timeout.**
+In the worst case, place lookup (10.5s) plus the WhatsApp wait (5s) is over 15.5 seconds, but the app waits only 12 (**Code**). The app then reports failure while the server is still sending.
+**Fix:** answer the app as soon as the alert is safely stored. The target is under 2 seconds. P1 removes most of the wait.
+
+**P3. The dashboard can freeze SOS handling.**
+Each dashboard request loads whole tables and decrypts every row, in the same process that handles SOS (**Code**). At 20,000 rows per table that is about 180,000 decrypts, or about 1.2 seconds of blocked server on a laptop (**Tested** speed, calculated total). Every new SOS makes open dashboards refresh, so load peaks during an incident.
+**Fix:** run the dashboard API separately, with database paging and summary tables.
+
+**P4. Memory grows without limit.**
+`liveTrackSessions` and the geocode cache are never cleaned (**Code**). Each SOS scans all sessions, so it slows down over time.
+**Fix:** look up by key, and expire old entries. This is also needed before running several instances.
+
+**P5. Evidence uploads sit in server memory (Phase 2).**
+Each upload holds up to 60 MB in RAM (**Code**). A few at once could crash the SOS server.
+**Fix:** upload directly from the phone to storage before Phase 2 goes live.
+
+---
+
+## 5. Scalability
+
+**S1. The app cannot run as two instances yet.**
+These live in one process's memory (**Code**), so a second instance would break or weaken them:
+- Rate limit counters and the per-number recipient limit.
+- The foreign OTP daily count.
+- WebSocket rooms, so dashboards on another instance miss alerts.
+- Open alert sessions, including WhatsApp results shown on the dashboard.
+
+**Fix:** move these to Redis.
+
+**S2. The retry worker is slow by design.**
+It handles 10 jobs every 15 seconds, one at a time, so at most 40 jobs a minute. In an outage with 5-second timeouts, one pass takes about 50 seconds, so about 10 jobs a minute. For scale, 100 alerts with 3 guardians make 600 jobs (2 channels each): 15 to 60 minutes to clear (calculated).
+**Fix:** a separate worker process with concurrent sends per provider.
+
+**S3. Provider limits will hit before server limits.**
+- **WhatsApp daily limit:** a new business portfolio can message 250 unique users in 24 hours, shared across its numbers. It rises through 2,000, 10,000 and 100,000 to unlimited. OTP messages count too. **Our tier is unknown, so check it first.**
+- **WhatsApp speed:** 80 messages a second per number by default. This is fine for now.
+- **Twilio calls:** 1 call a second by default, and extra calls wait in a queue. 300 calls would take 5 minutes. Twilio pages disagree on the self-serve limit (5 or 30), so check the console.
+- **Plivo:** limits not confirmed. Check with Plivo.
+
+**S4. Dashboard data stops at 20,000 rows.**
+`fetchAll` cuts off silently, so totals become wrong with no warning (**Code**).
+**Fix:** same as P3.
+
+**S5. The queue archive grows forever.**
+No code cleans `a_sos_notify` (**Code**).
+**Fix:** a retention rule, which is also a legal need.
+
+---
+
+## 6. Reliability and Operations
+
+**REL1. No monitoring.** Failures live only in pm2 logs. The health check does not test the database, queue or providers (**Code**).
+
+**REL2. Silent provider failure.** Nothing watches Plivo balance, Twilio status, WhatsApp token validity or template status (**Code**). Any of these can end alerts for all users.
+
+**REL3. Deploys interrupt alerts.** There is no graceful shutdown (**Code**). A restart cuts sends in progress. Other apps also share this box and pm2, so they compete for its resources (**Notes**).
+
+**REL4. Backups are unconfirmed.** Our Supabase plan is not known. Free has no automatic backups and pauses after a week idle. Pro keeps 7 days of daily backups, and Point-in-Time Recovery is a paid add-on.
+
+**REL5. Development and production share a database (Notes).** One mistake or test can damage real alerts. A full data wipe has already happened twice in testing, which is fine now but not after launch.
+
+**REL6. Worker errors are not caught.** `startWorker` has no `catch` and the process has no rejection handler (**Code**). An unexpected error would stop the process. I did not find a realistic trigger today, but this is cheap to close.
+
+**REL7. Retries all fire together.** A fixed 60 seconds with no randomness means a recovering provider gets every retry at once.
+
+---
+
+## 7. Target Design: No Silent Loss
+
+### The rules
+
+1. **Store before anything else, in one transaction.** The alert and one delivery row per guardian per channel commit together.
+2. **Send never depends on one system.** If the database fails, send anyway and journal it.
+3. **Accepted is not done.** A delivery is finished only by proof: delivered, read, answered, or press 1.
+4. **Every alert has a deadline.** A watchdog checks for unfinished ones.
+5. **Giving up means telling a person.** There is no silent end state.
+6. **Sending twice is acceptable. Sending zero times is not.**
+7. **Only three things stop an alert:** a guardian confirms, the user says they are safe, or a person closes it.
+
+### Delivery flow
+
+```mermaid
+flowchart TD
+    A["Phone: save SOS to disk, then send<br/>(retries in background, 2+ API addresses)"] --> B["API: one transaction<br/>alert + delivery rows"]
+    B -->|"Database down"| J["Send anyway<br/>write to journal, replay later"]
+    B --> C["Reply to phone in under 2s"]
+    B --> D["Workers: WhatsApp + IVR at once"]
+    D --> E{"Proof within<br/>the deadline?"}
+    E -->|"Delivered, answered, press 1"| F["Confirmed"]
+    E -->|"No"| G["Escalate: SMS, repeat call,<br/>backup provider"]
+    G --> H{"A guardian<br/>confirmed?"}
+    H -->|"Yes"| F
+    H -->|"No, after 5 min"| I["Page on-call person<br/>red alert on dashboard"]
+    W["Watchdog every 30s"] -.-> E
+    W -.-> H
+```
+
+### State of each delivery
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending
+    Pending --> Sending
+    Sending --> Accepted: provider took it
+    Sending --> Waiting: temporary failure
+    Waiting --> Sending: backoff over
+    Accepted --> Confirmed: delivered, read, answered, press 1
+    Accepted --> Waiting: failed or no proof by deadline
+    Waiting --> Escalated: retries used up
+    Sending --> Escalated: number invalid on this channel
+    Escalated --> HumanOwned: paged
+    Confirmed --> [*]
+    HumanOwned --> [*]: person closes it
+```
+
+### Proposed escalation timeline
+
+These timings are proposals, for the product team to confirm.
+
+- **0 seconds:** WhatsApp and a voice call to all guardians.
+- **60 seconds:** SMS to anyone with no delivery proof. Failed calls go to the backup provider.
+- **2 minutes:** call again anyone with no answer.
+- **5 minutes, no guardian confirmed:** page the on-call person and raise a red alert.
+- **Until closed:** keep trying with growing gaps (1, 2, 5, 10 minutes), up to a set limit such as 2 hours, while the person handles it.
+
+### The building blocks
+
+**Delivery table (outbox).** A new `sos_deliveries` table holds one row per guardian and channel, with state, attempts, next try, provider, provider message ID and deadline. It replaces "is there a job left?" with a full record of each alert. Keep it in Postgres so it commits with the alert, which is the key advantage of a database queue.
+
+**Provider status webhooks.** Match Meta statuses and Plivo and Twilio call statuses to delivery rows by message ID. Verify all signatures, which also closes a pending security item.
+
+**Separate workers.** They run apart from the API, use `FOR UPDATE SKIP LOCKED` or pgmq to share work, and apply per-provider speed limits and circuit breakers.
+
+**Watchdog.** It runs separately and alarms if it stops running itself.
+
+**Emergency journal.** For L2. Start with a local disk journal on each instance. At Phase 2 use a managed queue on another provider, such as Amazon SQS, so a Supabase outage has a durable place to write.
+
+**Device outbox.** The phone saves the SOS before sending and retries in the background with Android WorkManager, including after a restart. It keeps the direct phone call. Sending SMS directly from the phone would need a restricted Play permission, so check Google's policy first. Opening the SMS app with the text filled in is the safe option.
+
+---
+
+## 8. Scaling Path
+
+### Why region count is not the first problem
+
+For one SOS, network distance adds a fraction of a second. Provider sends take seconds. So **10+ countries do not need servers in 10+ countries**, unless a country's law says so. Reliability in one well-run region matters far more.
+
+### Stage A: up to about 10 to 15 countries
+
+- **Region:** one main cloud region across 2 or more availability zones.
+- **API:** at least 3 stateless containers behind a load balancer, on a managed service such as AWS ECS or Google Cloud Run. Move away from the shared VPS.
+- **Workers:** a separate service, at least 2 instances.
+- **Dashboard API:** separate from the SOS API.
+- **Redis:** managed, for shared limits and WebSocket messages. This matches the earlier decision to add Redis at 2+ servers.
+- **Database:** Supabase on a paid plan with Point-in-Time Recovery, sized by load tests. Separate development and production.
+- **Queue:** keep Postgres (`sos_deliveries` plus pgmq). Kafka is not needed.
+- **Edge:** CDN and DDoS protection in front of the API.
+- **Standby:** a tested restore procedure into a second region.
+
+### Stage B: about 15 to 50 countries
+
+- **Warm standby region** with a database replica and a practised failover.
+- **Country configuration in the database,** not code: provider order, template, voice, language, time zone, limits, legal notes.
+- **Second WhatsApp route** through a Business Solution Provider, plus two SMS vendors.
+- **Regional data storage** where law requires it.
+
+### Stage C: 100+ countries
+
+- **Regional cells.** Separate full stacks, for example India, EU, Americas, Middle East and Asia-Pacific. An outage in one cell does not touch the others, and data stays in its legal zone.
+- **Thin global router.** Sends each user to their cell and holds no personal data.
+- **Managed event stream.** Consider Kafka or similar here, when volume across cells needs it. Move through `queue.service.js`, keeping the outbox.
+- **Local providers.** No single vendor is best everywhere. Build a per-country routing table with automatic health-based switching.
+- **Round-the-clock operations.** Regional on-call and a country launch checklist.
+
+---
+
+## 9. Country Readiness
+
+**Hardcoded for India today (Code):**
+
+- **Time:** WhatsApp alert time is always `Asia/Kolkata`. A guardian in Dubai would see the wrong time in an emergency. The dashboard is the same.
+- **Location bug:** the geocoder falls back to `'Tamil Nadu'` when a region is missing, so a foreign SOS could name the wrong place. Remove this now.
+- **Language:** WhatsApp is `en_US`, voice is `en-IN`, and the app has no translations. A guardian who does not read English may not understand an emergency.
+- **Numbers:** `+91` is assumed for 10-digit numbers in some paths.
+- **WhatsApp-only OTP:** a user without WhatsApp cannot sign up. WhatsApp is weak or blocked in some markets, so SMS OTP is needed.
+
+**Needed per country before launch:**
+
+- Delivery tested on real local numbers, on all channels.
+- Sender rules met (India DLT, US 10DLC, and others).
+- Approved WhatsApp templates in the local language.
+- Local voice and SMS text.
+- Costs known, with a spend alert.
+- Legal review, with terms and privacy text.
+- An honest statement of what DEVI is. It is not an emergency service.
+
+Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already supports this.
+
+---
+
+## 10. Security
+
+**Already pending, and required before launch:**
+
+- **Token revoke:** a leaked token cannot be cancelled, and `/auth/refresh` keeps renewing it.
+- **Per-operator admin accounts with 2FA:** today one shared login.
+- **Separate development and production secrets:** the team shares the production `.env` (**Notes**).
+- **IVR webhook signatures:** answer, gather and status routes are public.
+- **Names in call URLs:** look details up by alert ID instead.
+- **Support email, account deletion and data retention.**
+
+**New for multi-country:**
+
+- **Privacy law.** GDPR (EU), DPDP (India), LGPD (Brazil) and others apply differently. Get legal advice for each market.
+- **Guardian consent.** Guardians are third parties whose numbers we store. Guardian verification solves this and L12 together.
+- **Data location.** Some countries restrict moving personal data abroad. This decides which cells are needed. Location data sent through Meta, Plivo and Twilio needs data processing agreements.
+- **Audit log.** There is no record of who viewed which alert (**Code**). This is essential for sensitive location data.
+- **Key management.** Move `ENCRYPTION_KEY` from `.env` to a key service, with a key per region at Stage C.
+- **Paid abuse.** Add a daily spend cap per country, alongside current limits. Foreign rates can be much higher, and Instant SOS needs no login.
+- **Retention.** Queue archives and delivery rows contain encrypted phone numbers, so they need deletion rules.
+- **Security testing.** An independent penetration test before launch, and a tested incident response plan including breach notification times.
+- **Evidence recording (Phase 2).** Recording laws differ by country. Review before enabling outside India.
+
+---
+
+## 11. Roadmap
+
+Durations are rough, assuming 2 engineers (**Assumption**).
+
+### Phase 0: Stop the known losses (1 to 2 weeks)
+
+No new infrastructure. **Do this before opening any new country.**
+
+- [ ] Fix WhatsApp error classification (L1), with tests using Meta's real error shapes.
+- [ ] Keep jobs alive for token, template and balance failures, and page someone (L7).
+- [ ] On a duplicate SOS, finish unfinished sends (L3, L13).
+- [ ] Send even if the database fails, with a local journal (L2).
+- [ ] Move place lookup after the send (P1, P2). Remove `'Tamil Nadu'`.
+- [ ] Remove the IP-only SOS limit (L8).
+- [ ] Longer retries with growing gaps and randomness (L6, REL7).
+- [ ] Alerts for `GAVE UP`, queue depth, balances and token health (REL1, REL2).
+- [ ] Deep health check, graceful shutdown, worker error handling (REL1, REL3, REL6).
+- [ ] Upgrade Twilio, confirm the Supabase plan and backups, and check the WhatsApp tier.
+- [ ] Separate development and production (REL5).
+
+**Done when:** a test kills the server mid-SOS, and the database for a few minutes, and every test alert still reaches a guardian.
+
+### Phase 1: Foolproof delivery (4 to 6 weeks)
+
+- [ ] `sos_deliveries` outbox with one-transaction writes.
+- [ ] WhatsApp and call status webhooks, with signature checks.
+- [ ] Escalation timeline and watchdog.
+- [ ] SMS channel with a backup vendor.
+- [ ] Device outbox with background retry and a second API address.
+- [ ] Dashboard shows true state per guardian, plus an escalation view.
+- [ ] Decide and staff the on-call person.
+
+**Done when:** every alert in a test run ends confirmed or with a person, with no exceptions.
+
+### Phase 2: Infrastructure for 10+ countries (4 to 6 weeks, can overlap)
+
+- [ ] Containers across availability zones, separate workers and dashboard API.
+- [ ] Redis for shared state.
+- [ ] Monitoring, dashboards and on-call rota.
+- [ ] Load, failure and recovery tests (section 12).
+- [ ] Country configuration, translations, per-country time.
+- [ ] Legal review, audit log, admin accounts, token revoke, spend caps.
+- [ ] Penetration test.
+
+**Done when:** targets in section 12 are met under test, and the first country's checklist passes.
+
+### Phase 3: Beyond 15 countries
+
+Warm standby region, second WhatsApp route, regional storage where needed.
+
+### Phase 4: 100+ countries
+
+Regional cells, global router, local provider routing, regional operations.
+
+---
+
+## 12. Proving It Works
+
+### Proposed targets
+
+These are proposals to agree on, not current numbers.
+
+- **API accepts SOS:** 99.99% of the time, under 2 seconds.
+- **First send attempt:** within 5 seconds.
+- **Alerts lost silently:** zero. This is the one number that must never move.
+- **Alert with no proof reaches a person:** within 5 minutes.
+- **Data lost on failure:** none for accepted alerts.
+- **Recovery after a regional failure:** under 15 minutes (Stage B).
+
+### Tests to run
+
+- **Load test:** real SOS flow with fake providers, in a production-like setup. Find the breaking point, then plan for a burst of several times normal peak, such as a disaster in one city.
+- **Failure tests:** kill the server mid-send, stop the database, make each provider time out or return every error, expire a token, drain a balance. Each is run before launch, then repeated.
+- **Canary SOS:** a real test alert to test numbers in every live country, every few minutes, on every channel. A failure pages someone. This is the best way to find a broken provider or template before a user does.
+- **Provider tests:** check real responses to confirm error handling, starting with L1.
+- **Reconciliation:** a daily count showing alerts created equals alerts confirmed plus alerts handled by a person.
+
+---
+
+## 13. Decisions Needed
+
+1. **Who is the person at the end of the chain?** A 24x7 control room, a partner helpline, or something else? Without this, "foolproof" cannot be met. It affects cost, law and what we promise users.
+2. **Which countries first?** This drives providers, law, languages and regions. This report assumes they are not yet chosen.
+3. **How long should we keep alerting,** and when should the user or guardian stop it?
+4. **Are guardians required, and must they confirm?** This affects L11, L12 and consent, but it adds a step before someone can use DEVI.
+5. **What is the budget for standby capacity,** and the monthly spend cap per country? Cost estimates need the country list first.
+6. **How much traffic do we expect?** Users per country and expected peak will size everything in Stage A.
+
+---
+
+## 14. Sources
+
+- Meta: [Error codes](https://developers.facebook.com/documentation/business-messaging/whatsapp/support/error-codes), [Messaging limits](https://developers.facebook.com/documentation/business-messaging/whatsapp/messaging-limits), [Throughput](https://developers.facebook.com/documentation/business-messaging/whatsapp/throughput/)
+- Supabase: [Backups](https://supabase.com/docs/guides/platform/backups), [Point-in-Time Recovery](https://supabase.com/docs/guides/platform/manage-your-usage/point-in-time-recovery), [Pricing](https://supabase.com/pricing), [Compute and disk](https://supabase.com/docs/guides/platform/compute-and-disk)
+- Twilio: [Call resource](https://www.twilio.com/docs/voice/api/call-resource), [How fast can I place calls](https://support.twilio.com/hc/en-us/articles/223180028-How-Fast-Can-I-Place-or-Receive-Phone-Calls-with-Twilio)
+- Local tests were run on 5 Nov 2026 with fake providers. They used no live database, and sent no real messages or calls.
