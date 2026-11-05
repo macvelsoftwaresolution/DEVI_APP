@@ -18,6 +18,11 @@ import { maskPhone } from '../utils/logMask.js';
  * The SOS is never slower for it, and the worker skips alerts already marked safe.
  * A send whose job was deleted too late can go out twice: better than not at all.
  *
+ * A call the provider accepted can still fail or go unanswered, which only the call's status
+ * webhook reports. Active calls are kept in memory until then (callEnded): a failed call goes back
+ * in the queue and tries the other provider first; busy or unanswered is redialled MAX_REDIALS
+ * times. A restart forgets active calls, so a call failing right then is not retried.
+ *
  * pgmq_public cannot change a queued job's delay, so a retry is a new delayed job. It is added
  * before the old one is deleted: a crash between the two sends twice, never zero times.
  *
@@ -29,6 +34,9 @@ export const RETRY_AFTER_SECONDS = 60;
 // Wait after retry 1, 2, 3, then the last gap for every later retry
 export const RETRY_GAPS_SECONDS = [60, 120, 300, 600];
 export const MAX_ATTEMPTS = 15;
+export const MAX_REDIALS = 3;
+const CALL_MEMORY_MS = 30 * 60 * 1000;
+const UNANSWERED_STATUSES = new Set(['busy', 'no-answer', 'timeout']);
 const POLL_MS = 15_000;
 const BATCH = 10;
 const FIELD = 'pgmq.sos_notify';
@@ -48,6 +56,7 @@ const defaultSenders = {
       victimName: job.victimName,
       locationText: job.location?.location || '',
       sosId: job.alertId,
+      avoidProvider: job.avoidProvider,
     }).catch((e) => ({ success: false, error: e.message })),
 };
 
@@ -63,18 +72,29 @@ export const createSosNotify = ({ queue = QueueService, senders = defaultSenders
   let workerTimer = null;
   let workerPass = null;
   const sending = new Set(); // dispatches still running, so a shutdown can wait for them
+  const activeCalls = new Map(); // call id -> { job, attempt, at }, until its status webhook
 
   // Within 20% either way
   const varied = (seconds) => Math.round(seconds * (0.8 + random() * 0.4));
 
-  const enqueue = async (kind, job) => {
+  const enqueue = async (kind, job, { attempt, delay = RETRY_AFTER_SECONDS } = {}) => {
     try {
       const data = Encryption.encrypt(JSON.stringify(job), FIELD, job.alertId);
-      return await queue.send(SOS_NOTIFY_QUEUE, { kind, alertId: job.alertId, data }, varied(RETRY_AFTER_SECONDS));
+      const message = { kind, alertId: job.alertId, data, ...(attempt && { attempt }) };
+      return await queue.send(SOS_NOTIFY_QUEUE, message, varied(delay));
     } catch (e) {
       console.error(`⚠️ [SOS QUEUE] ${kind} for alert ${job.alertId} not queued, so no retry if this send fails:`, e.message);
       return null;
     }
+  };
+
+  const rememberCall = (kind, job, out, attempt) => {
+    if (kind !== 'ivr' || !out?.success || !out.callId) return;
+    const now = Date.now();
+    for (const [id, call] of activeCalls) {
+      if (now - call.at > CALL_MEMORY_MS) activeCalls.delete(id);
+    }
+    activeCalls.set(out.callId, { job, attempt, at: now, provider: out.provider });
   };
 
   const drop = (id, how = 'delete') =>
@@ -121,6 +141,7 @@ export const createSosNotify = ({ queue = QueueService, senders = defaultSenders
       if (out?.success) {
         console.log(`✅ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} got through on retry ${attempt}`);
         await drop(id);
+        rememberCall(kind, job, out, attempt);
       } else if (isPermanent(kind, out)) {
         console.warn(`⚠️ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} failed for good (${out?.reason || out?.error}), archived`);
         await drop(id, 'archive');
@@ -146,6 +167,7 @@ export const createSosNotify = ({ queue = QueueService, senders = defaultSenders
       const run = (async () => {
         const [jobId, out] = await Promise.all([enqueue(kind, job), senders[kind](job)]);
         if (jobId != null && (out?.success || isPermanent(kind, out))) await drop(jobId);
+        rememberCall(kind, job, out, 0);
         return out;
       })();
       sending.add(run);
@@ -184,6 +206,35 @@ export const createSosNotify = ({ queue = QueueService, senders = defaultSenders
       workerTimer.unref();
       console.log(`🔁 [SOS QUEUE] Retry worker started (every ${POLL_MS / 1000}s, up to ${MAX_ATTEMPTS} retries)`);
       return workerTimer;
+    },
+
+    /**
+     * A provider reported the end of a call. status: its lower-case call status.
+     * answered: someone picked up. Unknown call ids are ignored, so this webhook being public
+     * cannot place calls. Returns what was done, for the log.
+     */
+    async callEnded({ callId, status, answered }) {
+      const call = activeCalls.get(callId);
+      if (!call) return 'unknown';
+      activeCalls.delete(callId);
+      if (answered) return 'answered';
+
+      const { job, attempt, provider } = call;
+      if ((await getAlertStatus(job.alertId)) === 'RESOLVED') return 'resolved';
+
+      const unanswered = UNANSWERED_STATUSES.has(status);
+      const redials = (job.redials || 0) + (unanswered ? 1 : 0);
+      if (redials > MAX_REDIALS || attempt >= MAX_ATTEMPTS) {
+        console.error(`🚨 [SOS CALL GAVE UP] Alert ${job.alertId} to ${maskPhone(job.phone)}: last status ${status}`);
+        return 'gave-up';
+      }
+
+      const next = attempt + 1;
+      const retry = { ...job, redials, avoidProvider: unanswered ? job.avoidProvider : provider };
+      const delay = retryGapSeconds(next);
+      await enqueue('ivr', retry, { attempt: next, delay });
+      console.warn(`⚠️ [SOS CALL] Alert ${job.alertId} to ${maskPhone(job.phone)} ended ${status}, trying again in about ${delay}s`);
+      return 'retry';
     },
 
     // For a shutdown: no new worker passes, then waits for the pass and the sends still running

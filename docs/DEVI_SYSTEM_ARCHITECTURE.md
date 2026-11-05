@@ -280,7 +280,7 @@ All routes are under `/api`.
 |---|---|---|
 | ANY | `/ivr/plivo/answer`, `/ivr/twilio/answer` | Returns the XML the call speaks |
 | ANY | `/ivr/plivo/gather`, `/ivr/twilio/gather` | Guardian pressed a key. Press 1 is saved with the call's ack token |
-| ANY | `/ivr/plivo/status` | Call ended (logged) |
+| ANY | `/ivr/plivo/status`, `/ivr/twilio/status` | Call ended: logged, and retried if it failed or nobody answered |
 
 #### Others
 | Method | Route | Purpose |
@@ -384,6 +384,7 @@ A crash needs no recovery step: **a job comes back by itself until something del
 
 ### Good to know
 - **Encrypted:** The phone number, name and location in a job are encrypted, bound to the alert ID. The queue is closed to the `anon` and `authenticated` roles.
+- **Call status:** A call accepted by the provider can still fail. The status webhook sends a failed call back to the queue, trying the other provider first, and redials busy or unanswered calls 3 times. Active calls are in memory, so a restart forgets them.
 - **Queue down:** The first send still goes out, only the retry is lost. An error is logged.
 - **Duplicates:** A send can go out twice if its job is deleted too late. This is accepted: better twice than not at all.
 - **An empty `q_sos_notify` is normal:** Successful jobs are deleted within moments.

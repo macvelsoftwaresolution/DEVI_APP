@@ -76,8 +76,10 @@ class IvrService {
   // Indian numbers go through Plivo (cheaper in India), every other country through Twilio.
   // If the preferred provider is not configured or the call fails, the other one is tried:
   // an SOS call costing more is better than no call.
-  providerOrder(to) {
-    return to.startsWith('+91') ? ['plivo', 'twilio'] : ['twilio', 'plivo'];
+  // avoid: the provider whose last call failed, tried last this time
+  providerOrder(to, avoid = null) {
+    const order = to.startsWith('+91') ? ['plivo', 'twilio'] : ['twilio', 'plivo'];
+    return avoid === order[0] ? [...order].reverse() : order;
   }
 
   answerQuery({ victimName, locationText, sosId, ack }) {
@@ -96,6 +98,9 @@ class IvrService {
       url: `${publicBaseUrl()}/api/ivr/twilio/answer?${this.answerQuery(details)}`,
       to,
       from: fromNumber,
+      statusCallback: `${publicBaseUrl()}/api/ivr/twilio/status`,
+      statusCallbackEvent: ['completed'],
+      statusCallbackMethod: 'POST',
     });
     return call.sid;
   }
@@ -117,7 +122,7 @@ class IvrService {
   /**
    * Dispatches emergency IVR call: Plivo for +91 numbers, Twilio for the rest (with fallback)
    */
-  async triggerEmergencyCall({ recipientPhone, victimName = 'A user', locationText = '', sosId = '' }) {
+  async triggerEmergencyCall({ recipientPhone, victimName = 'A user', locationText = '', sosId = '', avoidProvider = null }) {
     if (!this.twilioClient && !this.plivoClient) {
       this.initClients();
     }
@@ -128,7 +133,7 @@ class IvrService {
     const details = { victimName, locationText: spokenPlace(locationText), sosId, ack: sosId ? ackToken(to, sosId) : '' };
     let lastError = 'No telephony provider configured in .env';
 
-    for (const provider of this.providerOrder(to)) {
+    for (const provider of this.providerOrder(to, avoidProvider)) {
       const client = provider === 'plivo' ? this.plivoClient : this.twilioClient;
       if (!client) continue;
       try {

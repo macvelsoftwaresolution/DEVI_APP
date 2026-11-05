@@ -27,7 +27,8 @@ The most urgent finding is a bug. Most WhatsApp errors are treated as "token exp
 - **P1, P2:** done for the send path. The alert is saved first, and the send waits at most 1 second for a place name.
 - **`'Tamil Nadu'` fallback and geocode cache limit (part of P4):** done.
 - **L6, REL7 (code, deploy pending):** retries last about 2 hours with growing, varied gaps.
-- **L8 (commit 0b2765b, deploy unconfirmed):** the SOS route no longer refuses by IP.
+- **L8 (0b2765b):** the SOS route no longer refuses by IP.
+- **L5 part (code, deploy pending):** a failed call retries on the other provider; busy or unanswered is redialled 3 times. Found live on 5 Nov: Airtel returned a temporary failure and nothing retried. Escalation to the next guardian is still T11.
 - **Also fixed from the senior's assessment:** the duplicate alert race (R7), and retry decisions now use the saved status (P0-10, worker part).
 
 All other findings remain open.

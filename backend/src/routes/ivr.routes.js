@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { maskPhone } from '../utils/logMask.js';
 import { publicBaseUrl, readAckToken } from '../services/ivr.service.js';
 import { SosService } from '../services/sos.service.js';
+import { sosNotify } from '../services/sosNotify.service.js';
 
 const router = Router();
 
@@ -83,17 +84,47 @@ router.all('/plivo/gather', async (req, res) => {
   res.send(responseXml);
 });
 
+// Answered once it counts any talk time or has an answer time, whatever the final status says
+export const callEndFromPlivo = (p = {}) => ({
+  callId: p.CallUUID || p.RequestUUID,
+  status: String(p.CallStatus || '').toLowerCase(),
+  answered: !!p.AnswerTime || Number(p.Duration) > 0,
+  to: p.To,
+  duration: p.Duration || '0',
+  cause: p.HangupCauseName || p.HangupCause || '',
+});
+
+export const callEndFromTwilio = (p = {}) => ({
+  callId: p.CallSid,
+  status: String(p.CallStatus || '').toLowerCase(),
+  answered: String(p.CallStatus || '').toLowerCase() === 'completed',
+  to: p.To,
+  duration: p.CallDuration || '0',
+  cause: p.ErrorCode || '',
+});
+
+const handleCallEnd = async (end, provider, res) => {
+  // The provider only needs an answer; a failure here must not make it resend the event
+  res.status(200).send('OK');
+  console.log(`📋 [${provider} IVR Status] Call to ${maskPhone(end.to)} ended. Status: ${end.status}, Duration: ${end.duration}s${end.cause ? `, Cause: ${end.cause}` : ''}`);
+  try {
+    await sosNotify.callEnded(end);
+  } catch (e) {
+    console.error(`🚨 [${provider} IVR Status] Could not act on the end of call ${end.callId}:`, e);
+  }
+};
+
 /**
  * Plivo Call Status Webhook (Hangup / Completed / Failed)
  */
-router.all('/plivo/status', (req, res) => {
-  const callStatus = req.body?.CallStatus || req.query?.CallStatus;
-  const callDuration = req.body?.CallDuration || req.query?.CallDuration || '0';
-  const to = req.body?.To || req.query?.To;
+router.all('/plivo/status', (req, res) =>
+  handleCallEnd(callEndFromPlivo({ ...req.query, ...req.body }), 'Plivo', res));
 
-  console.log(`📋 [Plivo IVR Status] Call to ${maskPhone(to)} ended. Status: ${callStatus}, Duration: ${callDuration}s`);
-  res.status(200).send('OK');
-});
+/**
+ * Twilio Call Status Webhook
+ */
+router.all('/twilio/status', (req, res) =>
+  handleCallEnd(callEndFromTwilio({ ...req.query, ...req.body }), 'Twilio', res));
 
 /**
  * Twilio Answer Webhook
