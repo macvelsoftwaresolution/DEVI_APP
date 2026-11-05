@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSosNotify, MAX_ATTEMPTS } from '../src/services/sosNotify.service.js';
+import { createSosNotify, MAX_ATTEMPTS, RETRY_GAPS_SECONDS, retryGapSeconds } from '../src/services/sosNotify.service.js';
 
 // In-memory stand-in for Supabase Queues: jobs hidden until read, read_ct counts reads
 const fakeQueue = () => {
@@ -9,7 +9,9 @@ const fakeQueue = () => {
   return {
     jobs,
     archived: [],
-    async send(_q, message) {
+    sentDelays: [],
+    async send(_q, message, delay) {
+      this.sentDelays.push(delay);
       jobs.set(next, { msg_id: next, read_ct: 0, message });
       return next++;
     },
@@ -94,6 +96,75 @@ test(`gives up after ${MAX_ATTEMPTS} retries and archives the job`, async () => 
   assert.equal(calls, 1 + MAX_ATTEMPTS);
   assert.equal(queue.jobs.size, 0);
   assert.equal(queue.archived.length, 1);
+});
+
+test('each failed retry waits longer, up to the last gap', () => {
+  assert.equal(retryGapSeconds(1), 60);
+  assert.equal(retryGapSeconds(2), 120);
+  assert.equal(retryGapSeconds(3), 300);
+  assert.equal(retryGapSeconds(4), 600);
+  assert.equal(retryGapSeconds(MAX_ATTEMPTS), 600);
+});
+
+test('all retries cover about 2 hours, long enough to outlast a provider outage', () => {
+  let seconds = RETRY_GAPS_SECONDS.at(0);
+  for (let attempt = 1; attempt < MAX_ATTEMPTS; attempt += 1) seconds += retryGapSeconds(attempt);
+  assert.ok(seconds >= 110 * 60 && seconds <= 130 * 60, `${seconds}s`);
+});
+
+test('a failed retry queues a later job with its count, then removes the old one', async () => {
+  const queue = fakeQueue();
+  const notify = createSosNotify({
+    queue,
+    random: () => 0.5, // no variation
+    senders: { ivr: async () => ({ success: false, error: 'provider down' }) },
+    getAlertStatus: async () => 'ACTIVE',
+  });
+  await notify.dispatch('ivr', job);
+  await notify.processBatch();
+  await notify.processBatch();
+
+  assert.deepEqual(queue.sentDelays, [60, 60, 120]);
+  assert.equal(queue.jobs.size, 1);
+  assert.equal([...queue.jobs.values()][0].message.attempt, 3);
+});
+
+test('retry gaps vary so retries do not all land at once', async () => {
+  const delayWith = async (random) => {
+    const queue = fakeQueue();
+    const notify = createSosNotify({ queue, random, senders: { ivr: async () => ({ success: false, error: 'down' }) } });
+    await notify.dispatch('ivr', job);
+    return queue.sentDelays.at(0);
+  };
+  assert.equal(await delayWith(() => 0), 48);
+  assert.equal(await delayWith(() => 0.99), 72);
+});
+
+test('next retry cannot be queued: the old job stays, so nothing is lost', async () => {
+  const queue = fakeQueue();
+  const notify = createSosNotify({
+    queue,
+    senders: { ivr: async () => ({ success: false, error: 'provider down' }) },
+    getAlertStatus: async () => 'ACTIVE',
+  });
+  await notify.dispatch('ivr', job);
+  queue.send = async () => { throw new Error('queue down'); };
+  await notify.processBatch();
+  assert.equal(queue.jobs.size, 1);
+  assert.equal(queue.archived.length, 0);
+});
+
+test('a job queued by older code, with no count, continues from its read count', async () => {
+  const queue = fakeQueue();
+  const notify = createSosNotify({
+    queue,
+    senders: { ivr: async () => ({ success: false, error: 'provider down' }) },
+    getAlertStatus: async () => 'ACTIVE',
+  });
+  await notify.dispatch('ivr', job);
+  [...queue.jobs.values()][0].read_ct = 5;
+  await notify.processBatch();
+  assert.equal([...queue.jobs.values()][0].message.attempt, 7);
 });
 
 test('queue down: the alert is still sent once', async () => {

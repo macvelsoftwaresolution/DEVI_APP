@@ -26,6 +26,8 @@ The most urgent finding is a bug. Most WhatsApp errors are treated as "token exp
 - **L7:** partly done. Token, template and provider-setting failures now keep retrying. SMS is still missing.
 - **P1, P2:** done for the send path. The alert is saved first, and the send waits at most 1 second for a place name.
 - **`'Tamil Nadu'` fallback and geocode cache limit (part of P4):** done.
+- **L6, REL7 (code, deploy pending):** retries last about 2 hours with growing, varied gaps.
+- **L8 (commit 0b2765b, deploy unconfirmed):** the SOS route no longer refuses by IP.
 - **Also fixed from the senior's assessment:** the duplicate alert race (R7), and retry decisions now use the saved status (P0-10, worker part).
 
 All other findings remain open.
@@ -146,9 +148,9 @@ With no guardian and no `ADMIN_WHATSAPP`, only the dashboard is told, and it is 
 Unverified numbers get 3 alerts an hour, and guests cannot alert foreign numbers (**Code**). These stop paid abuse, and the app is told. But each is still a guardian not reached.
 **Fix:** verify guardians with a one-time confirmation, so real ones have no limit.
 
-**L13. A second press does not resend.**
-For 15 minutes after an SOS, the same user is treated as a duplicate even if earlier sends failed or the guardian list changed (**Code**).
-**Fix:** a repeat press should send to anyone not yet confirmed.
+**L13. After an app restart, the active SOS is forgotten.**
+In normal use a second press cannot happen: the button stays "I Am Safe". But active SOS state lives in memory, so after the app is killed the user loses "I Am Safe", and a new press within 15 minutes is treated as a duplicate and sends nothing (**Code**).
+**Fix:** save the active alert and control token on the phone (with T13), and let a repeat press after a restart send to anyone not yet confirmed.
 
 ---
 

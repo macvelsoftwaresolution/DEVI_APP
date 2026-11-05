@@ -8,20 +8,27 @@ import { maskPhone } from '../utils/logMask.js';
 /**
  * SOS WhatsApp alerts and IVR calls with retry (Supabase Queues, db/sos-queue.sql).
  *
- * Each send is queued as a job hidden for RETRY_AFTER_SECONDS and sent at once in parallel:
+ * Each send is queued as a job hidden for about RETRY_AFTER_SECONDS and sent at once in parallel:
  * - sent (or failed for good, e.g. number not on WhatsApp) → job deleted
  * - failed for a reason that can pass (timeout, rate limit, provider down), or the server died
- *   mid-send → the job shows up after RETRY_AFTER_SECONDS and the worker sends it again,
- *   up to MAX_ATTEMPTS times, then archives it and logs that the alert never got through
+ *   mid-send → the job shows up and the worker sends it again, waiting longer each time
+ *   (RETRY_GAPS_SECONDS, about 2 hours in all, so a long provider outage does not use up the
+ *   retries), up to MAX_ATTEMPTS times, then archives it and logs that the alert never got through
+ * Gaps vary by 20%, so a recovering provider does not get every retry at the same moment.
  * The SOS is never slower for it, and the worker skips alerts already marked safe.
  * A send whose job was deleted too late can go out twice: better than not at all.
+ *
+ * pgmq_public cannot change a queued job's delay, so a retry is a new delayed job. It is added
+ * before the old one is deleted: a crash between the two sends twice, never zero times.
  *
  * The phone number, name and location in a job are encrypted like the database columns.
  */
 
 export const SOS_NOTIFY_QUEUE = 'sos_notify';
 export const RETRY_AFTER_SECONDS = 60;
-export const MAX_ATTEMPTS = 5;
+// Wait after retry 1, 2, 3, then the last gap for every later retry
+export const RETRY_GAPS_SECONDS = [60, 120, 300, 600];
+export const MAX_ATTEMPTS = 15;
 const POLL_MS = 15_000;
 const BATCH = 10;
 const FIELD = 'pgmq.sos_notify';
@@ -47,15 +54,20 @@ const defaultSenders = {
 const isPermanent = (kind, out) =>
   kind === 'whatsapp' ? PERMANENT_WHATSAPP.has(out?.reason) : PERMANENT_IVR.has(out?.error);
 
+export const retryGapSeconds = (attempt) => RETRY_GAPS_SECONDS.at(Math.min(attempt, RETRY_GAPS_SECONDS.length) - 1);
+
 const alertStatus = (alertId) => SosService.getSavedAlertStatus(alertId);
 
-export const createSosNotify = ({ queue = QueueService, senders = defaultSenders, getAlertStatus = alertStatus } = {}) => {
+export const createSosNotify = ({ queue = QueueService, senders = defaultSenders, getAlertStatus = alertStatus, random = Math.random } = {}) => {
   let missingQueueLogged = false;
+
+  // Within 20% either way
+  const varied = (seconds) => Math.round(seconds * (0.8 + random() * 0.4));
 
   const enqueue = async (kind, job) => {
     try {
       const data = Encryption.encrypt(JSON.stringify(job), FIELD, job.alertId);
-      return await queue.send(SOS_NOTIFY_QUEUE, { kind, alertId: job.alertId, data }, RETRY_AFTER_SECONDS);
+      return await queue.send(SOS_NOTIFY_QUEUE, { kind, alertId: job.alertId, data }, varied(RETRY_AFTER_SECONDS));
     } catch (e) {
       console.error(`⚠️ [SOS QUEUE] ${kind} for alert ${job.alertId} not queued, so no retry if this send fails:`, e.message);
       return null;
@@ -64,6 +76,19 @@ export const createSosNotify = ({ queue = QueueService, senders = defaultSenders
 
   const drop = (id, how = 'delete') =>
     queue[how](SOS_NOTIFY_QUEUE, id).catch((e) => console.warn(`⚠️ [SOS QUEUE] ${how} job ${id} failed:`, e.message));
+
+  // If this fails the old job is left alone and comes back on its own after the read's hide time
+  const retryLater = async (id, message, attempt) => {
+    const gap = varied(retryGapSeconds(attempt));
+    try {
+      await queue.send(SOS_NOTIFY_QUEUE, { ...message, attempt: attempt + 1 }, gap);
+    } catch (e) {
+      console.warn(`⚠️ [SOS QUEUE] Next retry of job ${id} not queued, it comes back by itself:`, e.message);
+      return RETRY_AFTER_SECONDS;
+    }
+    await drop(id);
+    return gap;
+  };
 
   return {
     /**
@@ -93,7 +118,9 @@ export const createSosNotify = ({ queue = QueueService, senders = defaultSenders
       }
       missingQueueLogged = false;
 
-      for (const { msg_id: id, read_ct: attempt, message } of jobs) {
+      for (const { msg_id: id, read_ct: timesRead, message } of jobs) {
+        // A first retry has no count yet. Queued jobs from older code go by their read count.
+        const attempt = message?.attempt ?? timesRead;
         const kind = message?.kind;
         const alertId = message?.alertId;
         const plain = Encryption.decrypt(message?.data, FIELD, alertId);
@@ -122,7 +149,8 @@ export const createSosNotify = ({ queue = QueueService, senders = defaultSenders
           console.warn(`⚠️ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} failed for good (${out?.reason || out?.error}), archived`);
           await drop(id, 'archive');
         } else {
-          console.warn(`⚠️ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} retry ${attempt}/${MAX_ATTEMPTS} failed (${out?.reason || out?.error}), next in ${RETRY_AFTER_SECONDS}s`);
+          const gap = await retryLater(id, message, attempt);
+          console.warn(`⚠️ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} retry ${attempt}/${MAX_ATTEMPTS} failed (${out?.reason || out?.error}), next in ${gap}s`);
         }
       }
       return jobs.length;

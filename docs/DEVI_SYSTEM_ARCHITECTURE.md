@@ -347,9 +347,10 @@ The queue makes sure a failed WhatsApp or IVR call is sent again, even if the ba
 | Queue name | `sos_notify` |
 | Job table / archive table | `pgmq.q_sos_notify` / `pgmq.a_sos_notify` |
 | Setup | `backend/db/sos-queue.sql` |
-| First retry after | 60 seconds |
+| First retry after | About 60 seconds |
+| Later gaps | 1, 2, 5, then 10 minutes, each varied by 20% |
 | Worker checks every | 15 seconds, up to 10 jobs at a time |
-| Maximum retries | 5 (the last is about 5–6 minutes after the SOS) |
+| Maximum retries | 15 (about 2 hours after the SOS) |
 
 ### How it works
 1. **Dispatch:** For each guardian, the route calls `sosNotify.dispatch()` once for WhatsApp and once for IVR.
@@ -358,11 +359,11 @@ The queue makes sure a failed WhatsApp or IVR call is sent again, even if the ba
    - Success or permanent failure (such as not on WhatsApp): the job is deleted.
    - Temporary failure (timeout, rate limit, provider down): the job is left alone.
    - Server crash: the job is safe in the database.
-4. **Worker:** Jobs whose 60 seconds are over become visible. Reading a job hides it for another 60 seconds and adds 1 to `read_ct`.
+4. **Worker:** Jobs whose 60 seconds are over become visible. Reading a job hides it for 60 seconds, so a crash mid-retry brings it back.
 5. **Each job read:**
    - Alert already resolved: job deleted, nothing sent.
-   - `read_ct` above 5: job archived, `🚨 [SOS QUEUE GAVE UP]` logged.
-   - Otherwise it is sent again. Success deletes it, permanent failure archives it, failure leaves it to come back.
+   - Over 15 retries: job archived, `🚨 [SOS QUEUE GAVE UP]` logged.
+   - Otherwise it is sent again. Success deletes it, permanent failure archives it. A failure adds a new job for the next gap, then deletes the old one, because `pgmq_public` cannot change a job's delay.
 
 ```mermaid
 flowchart TD
@@ -370,16 +371,16 @@ flowchart TD
     A --> C["Send WhatsApp / IVR now"]
     C -->|"Sent or permanent failure"| D["Delete job"]
     C -->|"Temporary failure or crash"| E["Job stays in queue"]
-    E --> F["Worker reads job<br/>(hidden 60s more, read_ct + 1)"]
+    E --> F["Worker reads job<br/>(hidden 60s while it works)"]
     F -->|"Alert resolved"| D
-    F -->|"read_ct above 5"| G["Archive + log"]
+    F -->|"Over 15 retries"| G["Archive + log"]
     F --> H["Send again"]
     H -->|"Sent"| D
     H -->|"Permanent failure"| G
-    H -->|"Failed"| E
+    H -->|"Failed: new job for next gap"| E
 ```
 
-A job needs no "retry" command: **it comes back by itself until something deletes it.**
+A crash needs no recovery step: **a job comes back by itself until something deletes it.**
 
 ### Good to know
 - **Encrypted:** The phone number, name and location in a job are encrypted, bound to the alert ID. The queue is closed to the `anon` and `authenticated` roles.
