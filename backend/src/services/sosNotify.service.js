@@ -60,6 +60,9 @@ const alertStatus = (alertId) => SosService.getSavedAlertStatus(alertId);
 
 export const createSosNotify = ({ queue = QueueService, senders = defaultSenders, getAlertStatus = alertStatus, random = Math.random } = {}) => {
   let missingQueueLogged = false;
+  let workerTimer = null;
+  let workerPass = null;
+  const sending = new Set(); // dispatches still running, so a shutdown can wait for them
 
   // Within 20% either way
   const varied = (seconds) => Math.round(seconds * (0.8 + random() * 0.4));
@@ -90,16 +93,65 @@ export const createSosNotify = ({ queue = QueueService, senders = defaultSenders
     return gap;
   };
 
+  const retryJob = async ({ msg_id: id, read_ct: timesRead, message }) => {
+    // A first retry has no count yet. Queued jobs from older code go by their read count.
+    const attempt = message?.attempt ?? timesRead;
+    const kind = message?.kind;
+    const alertId = message?.alertId;
+    try {
+      const plain = Encryption.decrypt(message?.data, FIELD, alertId);
+      if (!plain || !senders[kind]) {
+        console.error(`🚨 [SOS QUEUE] Job ${id} for alert ${alertId} is unreadable, archived`);
+        await drop(id, 'archive');
+        return;
+      }
+      const job = JSON.parse(plain);
+
+      if (attempt > MAX_ATTEMPTS) {
+        console.error(`🚨 [SOS QUEUE GAVE UP] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} failed ${MAX_ATTEMPTS} retries, archived`);
+        await drop(id, 'archive');
+        return;
+      }
+      if ((await getAlertStatus(alertId)) === 'RESOLVED') {
+        await drop(id);
+        return;
+      }
+
+      const out = await senders[kind](job);
+      if (out?.success) {
+        console.log(`✅ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} got through on retry ${attempt}`);
+        await drop(id);
+      } else if (isPermanent(kind, out)) {
+        console.warn(`⚠️ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} failed for good (${out?.reason || out?.error}), archived`);
+        await drop(id, 'archive');
+      } else {
+        const gap = await retryLater(id, message, attempt);
+        console.warn(`⚠️ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} retry ${attempt}/${MAX_ATTEMPTS} failed (${out?.reason || out?.error}), next in ${gap}s`);
+      }
+    } catch (e) {
+      // One bad job must not stop the others or the server. It comes back after the read's hide
+      // time, and a job that keeps failing here is archived by its read count.
+      console.error(`🚨 [SOS QUEUE] Job ${id} for alert ${alertId} failed unexpectedly:`, e);
+      if (timesRead > MAX_ATTEMPTS) await drop(id, 'archive');
+    }
+  };
+
   return {
     /**
      * Sends one WhatsApp alert or IVR call now, with a queued retry behind it.
      * kind: 'whatsapp' | 'ivr'; job: { alertId, phone, victimName, location: { latitude, longitude, location } }
      * Returns the first attempt's result.
      */
-    async dispatch(kind, job) {
-      const [jobId, out] = await Promise.all([enqueue(kind, job), senders[kind](job)]);
-      if (jobId != null && (out?.success || isPermanent(kind, out))) await drop(jobId);
-      return out;
+    dispatch(kind, job) {
+      const run = (async () => {
+        const [jobId, out] = await Promise.all([enqueue(kind, job), senders[kind](job)]);
+        if (jobId != null && (out?.success || isPermanent(kind, out))) await drop(jobId);
+        return out;
+      })();
+      sending.add(run);
+      const done = () => sending.delete(run);
+      run.then(done, done);
+      return run;
     },
 
     // One worker pass: retries the jobs whose first send did not get through
@@ -118,58 +170,26 @@ export const createSosNotify = ({ queue = QueueService, senders = defaultSenders
       }
       missingQueueLogged = false;
 
-      for (const { msg_id: id, read_ct: timesRead, message } of jobs) {
-        // A first retry has no count yet. Queued jobs from older code go by their read count.
-        const attempt = message?.attempt ?? timesRead;
-        const kind = message?.kind;
-        const alertId = message?.alertId;
-        const plain = Encryption.decrypt(message?.data, FIELD, alertId);
-        if (!plain || !senders[kind]) {
-          console.error(`🚨 [SOS QUEUE] Job ${id} for alert ${alertId} is unreadable, archived`);
-          await drop(id, 'archive');
-          continue;
-        }
-        const job = JSON.parse(plain);
-
-        if (attempt > MAX_ATTEMPTS) {
-          console.error(`🚨 [SOS QUEUE GAVE UP] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} failed ${MAX_ATTEMPTS} retries, archived`);
-          await drop(id, 'archive');
-          continue;
-        }
-        if ((await getAlertStatus(alertId)) === 'RESOLVED') {
-          await drop(id);
-          continue;
-        }
-
-        const out = await senders[kind](job);
-        if (out?.success) {
-          console.log(`✅ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} got through on retry ${attempt}`);
-          await drop(id);
-        } else if (isPermanent(kind, out)) {
-          console.warn(`⚠️ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} failed for good (${out?.reason || out?.error}), archived`);
-          await drop(id, 'archive');
-        } else {
-          const gap = await retryLater(id, message, attempt);
-          console.warn(`⚠️ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} retry ${attempt}/${MAX_ATTEMPTS} failed (${out?.reason || out?.error}), next in ${gap}s`);
-        }
-      }
+      for (const entry of jobs) await retryJob(entry);
       return jobs.length;
     },
 
     startWorker() {
-      let busy = false;
-      const timer = setInterval(async () => {
-        if (busy) return;
-        busy = true;
-        try {
-          await this.processBatch();
-        } finally {
-          busy = false;
-        }
+      workerTimer = setInterval(() => {
+        if (workerPass) return;
+        workerPass = this.processBatch()
+          .catch((e) => console.error('🚨 [SOS QUEUE] Worker pass failed, next pass continues:', e))
+          .finally(() => { workerPass = null; });
       }, POLL_MS);
-      timer.unref();
+      workerTimer.unref();
       console.log(`🔁 [SOS QUEUE] Retry worker started (every ${POLL_MS / 1000}s, up to ${MAX_ATTEMPTS} retries)`);
-      return timer;
+      return workerTimer;
+    },
+
+    // For a shutdown: no new worker passes, then waits for the pass and the sends still running
+    async stop() {
+      clearInterval(workerTimer);
+      await Promise.allSettled([workerPass, ...sending]);
     },
   };
 };

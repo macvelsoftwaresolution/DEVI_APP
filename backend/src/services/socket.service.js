@@ -81,6 +81,13 @@ class SocketService {
     }, 30000);
   }
 
+  // For a shutdown: an open WebSocket would otherwise keep the HTTP server from closing
+  close() {
+    clearInterval(this.heartbeatInterval);
+    this.wss?.clients.forEach((ws) => ws.terminate());
+    this.wss?.close();
+  }
+
   /**
    * Cleans up client from all subscribed rooms
    */

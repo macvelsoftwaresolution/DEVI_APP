@@ -12,6 +12,7 @@ import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
 import { socketService } from './services/socket.service.js';
 import { sosNotify } from './services/sosNotify.service.js';
+import { createShutdown } from './utils/shutdown.js';
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -138,5 +139,14 @@ server.listen(PORT, () => {
   console.log(`📡 Health check available at: http://localhost:${PORT}/api/health`);
   sosNotify.startWorker();
 });
+
+// pm2 restart sends SIGINT, most hosts SIGTERM. pm2's kill_timeout must be longer than the wait
+// here (backend/ecosystem.config.cjs), or it stops the process mid-send.
+const shutdown = createShutdown({ server, socket: socketService, notify: sosNotify });
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// Logged and kept running: one forgotten promise must not take SOS down for everyone
+process.on('unhandledRejection', (reason) => console.error('🚨 [UNHANDLED REJECTION]', reason));
 
 export default app;
