@@ -20,7 +20,7 @@ The most urgent finding is a bug. Most WhatsApp errors are treated as "token exp
 
 **An honest limit:** no system can promise a message reaches a phone that is switched off. What we can promise is stronger and testable: **no alert is ever dropped silently.** This needs a person on call 24x7 at the end of the chain, which DEVI does not have today. That is a business decision (section 13).
 
-### Fix status (5 Nov 2026, in code, not committed or deployed)
+### Fix status (5 Nov 2026, live in commit 3b9a482, real SOS test pending)
 
 - **L1:** done. WhatsApp errors are classified by code.
 - **L7:** partly done. Token, template and provider-setting failures now keep retrying. SMS is still missing.

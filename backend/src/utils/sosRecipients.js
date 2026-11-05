@@ -103,7 +103,8 @@ export const recipientLimiter = new RecipientLimiter();
  * Why this guardian must not be sent to, or null. The caller reports the reason back, so the phone
  * warns the user and shows a Call button instead of implying the guardian was reached.
  */
-export const sendBlockReason = ({ phone, verified }, limiter = recipientLimiter) => {
+export const sendBlockReason = ({ phone, verified }, limiter = recipientLimiter, { overIpLimit = false } = {}) => {
+  if (overIpLimit && !verified) return 'IP_LIMIT';
   const guestCountry = isGuestCountryNumber(phone);
   if (!verified && !guestCountry) return 'FOREIGN_NEEDS_LOGIN';
   if ((!verified || !guestCountry) && !limiter.tryConsume(phone)) return 'RECIPIENT_LIMIT';

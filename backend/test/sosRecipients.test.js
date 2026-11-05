@@ -79,6 +79,15 @@ test('hourly limit: unverified and foreign numbers yes, saved home guardians nev
   assert.equal(sendBlockReason({ phone: '+919000000002', verified: true }, limiter), null);
 });
 
+test('over the IP limit: saved guardians still get the alert, unverified numbers wait', () => {
+  const limiter = new RecipientLimiter();
+  const over = { overIpLimit: true };
+  assert.equal(sendBlockReason({ phone: '+919000000001', verified: true }, limiter, over), null);
+  assert.equal(sendBlockReason({ phone: '+919000000002', verified: false }, limiter, over), 'IP_LIMIT');
+  // A blocked send must not use up that number's hourly limit
+  assert.equal(limiter.sent.has('+919000000002'), false);
+});
+
 test('without a token a phone number in the request is never trusted', () => {
   const guest = 'GUEST_0123456789ABCDEF0123456789ABCDEF';
   assert.equal(sosUserId('+919000000001', '+919000000002'), '+919000000001');

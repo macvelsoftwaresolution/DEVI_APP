@@ -13,6 +13,7 @@ const WHATSAPP_REASON_TEXT = {
   NETWORK: 'server could not reach WhatsApp',
   RECIPIENT_LIMIT: 'this number already got 3 SOS alerts in the last hour (spam protection)',
   FOREIGN_NEEDS_LOGIN: 'number outside India: Instant SOS cannot reach it, the user must be signed in',
+  IP_LIMIT: 'too many SOS from one network in a minute: not sent to this unverified number, call the user',
   CONTROL_ROOM_NOT_CONFIGURED: 'control room WhatsApp number is not set on the server (ADMIN_WHATSAPP)',
 };
 

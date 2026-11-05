@@ -168,7 +168,10 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
           return { phone: '', role: r.role, sent: false, reason: 'CONTROL_ROOM_NOT_CONFIGURED' };
         }
         // The limits on paid sends (the alert still reaches the dashboard)
-        const blocked = r.role === 'guardian' ? sendBlockReason(r) : null;
+        const overIpLimit = !!req.sosOverIpLimit;
+        const blocked = r.role === 'guardian'
+          ? sendBlockReason(r, undefined, { overIpLimit })
+          : (overIpLimit ? 'IP_LIMIT' : null);
         if (blocked) {
           console.warn(`⚠️ [SOS ${blocked}] Alert ${alert.id}: not sent to ${maskPhone(r.phone)}`);
           return { phone: r.phone, role: r.role, sent: false, reason: blocked };

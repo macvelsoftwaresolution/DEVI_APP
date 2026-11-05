@@ -84,13 +84,20 @@ export const evidenceUploadLimiter = rateLimit({
 });
 
 /**
- * SOS Trigger rate limiter: Prevents spamming emergency alerts
- * Max 10 trigger calls per minute per IP
+ * SOS trigger limiter: never refuses an SOS. Mobile networks put many people behind one IP, so an
+ * emergency affecting a whole area could look like spam from one address.
+ * Over 30 trigger calls a minute from one IP the alert is still saved and reaches the dashboard, and
+ * guardians saved on a logged-in account are still sent to. Only unverified numbers wait, because
+ * those are what a script would use to spend the balance. The route reports the reason to the app.
+ * globalLimiter stays in front of this as the hard stop.
  */
 export const sosTriggerLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
-  max: 10,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: rateLimitHandler('Emergency alert rate limit exceeded. Please wait a minute.'),
+  handler: (req, res, next) => {
+    req.sosOverIpLimit = true;
+    next();
+  },
 });

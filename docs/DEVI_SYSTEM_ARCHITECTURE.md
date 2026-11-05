@@ -248,7 +248,7 @@ All routes are under `/api`.
 #### SOS (`/api/sos`)
 | Method | Route | Purpose |
 |---|---|---|
-| POST | `/sos/trigger` | Create alert (idempotent), send WhatsApp + IVR, notify dashboard. Rate-limited: 10 / min |
+| POST | `/sos/trigger` | Create alert (idempotent), send WhatsApp + IVR, notify dashboard. Never refused: over 30 / min per IP, unverified numbers are not sent to |
 | GET | `/sos/location/:alertId?k=` | Saved SOS location for the guardian page (view key or admin). Hidden 24h after resolve |
 | GET | `/sos/evidence/:alertId?k=` | Streams the private evidence file (view key or admin) |
 | POST | `/sos/upload-evidence` | Upload evidence to Cloudinary (control token, Phase 2). Rate-limited: 10 / 10 min |
@@ -325,7 +325,7 @@ Every SOS message and call costs money, and Instant SOS needs no login.
 - **Verified numbers:** saved on the logged-in user's account. No limit inside the Instant SOS countries.
 - **Unverified numbers:** all others. At most 3, each alerted at most 3 times an hour, and only in `GUEST_SOS_COUNTRIES`.
 - **Saved guardians abroad:** verified, but limited to 3 alerts an hour.
-- **Blocked sends:** the reason (`FOREIGN_NEEDS_LOGIN`, `RECIPIENT_LIMIT`) is reported to the app and dashboard. The alert itself is never refused.
+- **Blocked sends:** the reason (`FOREIGN_NEEDS_LOGIN`, `RECIPIENT_LIMIT`, `IP_LIMIT`) is reported to the app and dashboard. The alert itself is never refused.
 - **Who owns an alert:** the token decides. Without one, only a valid guest ID is accepted, otherwise a new guest ID is created.
 
 ### 5.6 OTP (`otp.service.js`)
@@ -504,7 +504,7 @@ sequenceDiagram
 - **JWT auth:** Users can read and update only their own profile and history.
 - **Sign up protection:** A registered number cannot be overwritten without login.
 - **Secure token storage:** Android Keystore / iOS Keychain (`flutter_secure_storage`).
-- **Rate limits:** Global 5000 / 15 min, auth 15 / 15 min, OTP 30 / 15 min, admin login 10 / 15 min, guest sync 30 / 15 min, evidence 10 / 10 min, SOS trigger 10 / min.
+- **Rate limits:** Global 5000 / 15 min, auth 15 / 15 min, OTP 30 / 15 min, admin login 10 / 15 min, guest sync 30 / 15 min, evidence 10 / 10 min. SOS trigger never refuses: over 30 / min per IP only unverified sends stop.
 - **Helmet** security headers on the API. CSP, HSTS and others on the web site through `deploy/nginx/snippets/devi-web-security-headers.conf`.
 - **CORS allow-list:** `devi.macvelsoftware.com`, `devi-api.macvelsoftware.com`, plus `CORS_ORIGINS`. Localhost is allowed only in development.
 - **Production secret check:** The server refuses to start without `JWT_SECRET`, `ADMIN_JWT_SECRET`, `SOS_LINK_SECRET`, `ADMIN_SECRET_KEY`, `ENCRYPTION_KEY` and `ADMIN_PASSWORD_HASH`. One secret per purpose.
