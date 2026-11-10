@@ -63,7 +63,9 @@ export const SosService = {
     return null;
   },
 
-  async createSosAlert({ userPhone, location, latitude, longitude, accuracy, idempotencyKey, capturedAt }) {
+  // notifyPlan: who to send to (sosDispatch.service.js). Saved in the same insert, so a crash right
+  // after it cannot leave an alert that nobody sends (L3).
+  async createSosAlert({ userPhone, location, latitude, longitude, accuracy, idempotencyKey, capturedAt, notifyPlan = null }) {
     let userId = null;
     if (userPhone) {
       let user = await UserService.findUserByPhone(userPhone);
@@ -121,6 +123,10 @@ export const SosService = {
       if (accuracy != null && !isNaN(accuracy)) {
         alertPayload.accuracy = parseFloat(accuracy);
       }
+      if (notifyPlan) {
+        alertPayload.notify_plan = enc(JSON.stringify(notifyPlan), 'sos_history.notify_plan', alertId);
+        alertPayload.dispatch_started_at = new Date().toISOString();
+      }
 
       let alert;
       let { data, error } = await supabase
@@ -135,6 +141,15 @@ export const SosService = {
         console.warn('⚠️ sos_history latitude/longitude are NOT NULL (run db/sos-coords.sql); saving the 0,0 placeholder.');
         alertPayload.latitude = NO_FIX_PLACEHOLDER;
         alertPayload.longitude = NO_FIX_PLACEHOLDER;
+        ({ data, error } = await supabase.from('sos_history').insert([alertPayload]).select().single());
+      }
+
+      // Plan columns not created yet (db/sos-dispatch.sql): send as before, without crash protection.
+      // Before the fallback below, which would also drop the idempotency key.
+      if (error && alertPayload.notify_plan && /notify_plan|dispatch_started_at/.test(error.message || '')) {
+        console.error('❌ [L3] sos_history.notify_plan missing: this SOS is not resumed if the server stops mid-send. Run db/sos-dispatch.sql.');
+        delete alertPayload.notify_plan;
+        delete alertPayload.dispatch_started_at;
         ({ data, error } = await supabase.from('sos_history').insert([alertPayload]).select().single());
       }
 
@@ -195,6 +210,7 @@ export const SosService = {
         lastUpdated: alert.created_at || new Date().toISOString(),
         evidenceUrl: alert.evidence_url || null,
         needsPlaceName: isGenericLocation && hasFix(latitude, longitude),
+        planSaved: !!alertPayload.notify_plan,
       };
 
       liveTrackSessions.set(alert.id.toString(), sessionData);
@@ -448,6 +464,93 @@ export const SosService = {
     } catch (e) {
       console.error('Error saving guardian acknowledgement:', e);
       return false;
+    }
+  },
+
+  // Every send of this alert has its retry job queued: the queue owns them now (L3)
+  async markDispatched(alertId) {
+    try {
+      const { error } = await supabase.from('sos_history').update({ dispatched_at: new Date().toISOString() }).eq('id', alertId);
+      if (error) console.warn(`⚠️ [L3] Alert ${alertId} not marked as sent, so it may be sent again:`, error.message);
+    } catch (e) {
+      console.warn(`⚠️ [L3] Alert ${alertId} not marked as sent, so it may be sent again:`, e.message);
+    }
+  },
+
+  // Takes on sending one alert whose sending was cut off: ACTIVE, with a plan, not marked as sent,
+  // and not taken on by anyone within leaseMs. The update is the lock, so two servers cannot both
+  // take it. Returns { alert, plan } or null.
+  async claimDispatch(alertId, leaseMs) {
+    try {
+      const now = Date.now();
+      const { data, error } = await supabase
+        .from('sos_history')
+        .update({ dispatch_started_at: new Date(now).toISOString() })
+        .eq('id', alertId)
+        .eq('status', 'ACTIVE')
+        .is('dispatched_at', null)
+        .not('notify_plan', 'is', null)
+        .lt('dispatch_started_at', new Date(now - leaseMs).toISOString())
+        .select('*');
+      if (error || !data?.length) return null;
+
+      const row = data[0];
+      const id = String(row.id);
+      let plan = null;
+      try {
+        plan = JSON.parse(dec(row.notify_plan, 'sos_history.notify_plan', id) || 'null');
+      } catch (_) { /* unreadable, handled below */ }
+      if (!plan?.recipients) {
+        console.error(`🚨 [L3] Alert ${id}: send plan unreadable, cannot resume it`);
+        await this.markDispatched(id);
+        return null;
+      }
+
+      const coords = readCoords(row);
+      return {
+        alert: {
+          id,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          location: dec(row.location_address, 'sos_history.location_address', id) || NO_LOCATION_TEXT,
+          timestamp: row.created_at,
+        },
+        plan,
+      };
+    } catch (e) {
+      console.warn(`⚠️ [L3] Alert ${alertId} not taken on:`, e.message);
+      return null;
+    }
+  },
+
+  // Alerts whose sending was cut off more than leaseMs ago, created within maxAgeMs, taken on
+  async claimStaleDispatches({ leaseMs, maxAgeMs, limit = 10 }) {
+    try {
+      const now = Date.now();
+      const { data, error } = await supabase
+        .from('sos_history')
+        .select('id')
+        .eq('status', 'ACTIVE')
+        .is('dispatched_at', null)
+        .not('notify_plan', 'is', null)
+        .lt('dispatch_started_at', new Date(now - leaseMs).toISOString())
+        .gt('created_at', new Date(now - maxAgeMs).toISOString())
+        .order('created_at', { ascending: true })
+        .limit(limit);
+      if (error) {
+        // Column missing until db/sos-dispatch.sql is run: createSosAlert already says so
+        if (error.code !== '42703') console.warn('⚠️ [L3] Unfinished alerts not read:', error.message);
+        return [];
+      }
+      const claimed = [];
+      for (const row of data || []) {
+        const one = await this.claimDispatch(row.id, leaseMs);
+        if (one) claimed.push(one);
+      }
+      return claimed;
+    } catch (e) {
+      console.warn('⚠️ [L3] Unfinished alerts not read:', e.message);
+      return [];
     }
   },
 

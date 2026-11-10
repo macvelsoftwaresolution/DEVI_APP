@@ -7,7 +7,7 @@ import { uploadMediaToCloudinary, evidenceDeliveryUrl } from '../config/cloudina
 import { toEvidenceRef, parseEvidenceRef, evidenceLink, withEvidenceLink } from '../utils/evidence.js';
 import { sosTriggerLimiter, evidenceUploadLimiter } from '../middlewares/rateLimiter.js';
 import { maskPhone } from '../utils/logMask.js';
-import { pickSosRecipients, sanitizeVictimName, sendBlockReason, sosUserId } from '../utils/sosRecipients.js';
+import { sanitizeVictimName, sosUserId } from '../utils/sosRecipients.js';
 import { canonicalPhone } from '../utils/phone.js';
 import {
   verifyAdmin,
@@ -23,8 +23,7 @@ import {
   isTrackingLinkExpired,
 } from '../middlewares/auth.middleware.js';
 import { socketService } from '../services/socket.service.js';
-import { sosNotify } from '../services/sosNotify.service.js';
-import { pager } from '../services/pager.service.js';
+import { sosDispatch, buildNotifyPlan } from '../services/sosDispatch.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -58,7 +57,7 @@ const hasViewAccess = (req, alertId) =>
 // The stored evidence reference becomes the protected link, or null without view access.
 const publicSession = (session, { includeEvidence = true } = {}) => {
   if (!session) return session;
-  const { idempotencyKey, userPhone, userId, needsPlaceName, ...rest } = session;
+  const { idempotencyKey, userPhone, userId, needsPlaceName, planSaved, ...rest } = session;
   return { ...rest, evidenceUrl: includeEvidence ? evidenceLink(rest.id, rest.evidenceUrl) : null };
 };
 
@@ -79,6 +78,9 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     const replyDuplicate = (existingSession) => {
       // The idempotency key is not logged: with it, /trigger hands back the alert's control token
       console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${maskPhone(userPhone)}. 🛑 Skipping duplicate SMS broadcast.`);
+      // If the first request was cut off before its sends were queued, they go out now (L3).
+      // Not awaited, and only takes it on when its sending stopped over 30 seconds ago.
+      sosDispatch.resume(existingSession.id);
 
       // Hand the control token back only to the original device (same idempotency key)
       // or the logged-in owner, never to someone who only knows the phone number
@@ -104,6 +106,19 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
 
     if (existingSession) return replyDuplicate(existingSession);
 
+    // Name shown in the WhatsApp: the account's own name, else the request's name stripped of links.
+    // An unverified request never gets a registered user's name from the database.
+    const victimName = account?.name || sanitizeVictimName(reqData.userName);
+
+    // Who it goes to, decided before saving so the plan is saved with the alert (L3).
+    // Numbers saved on the account are verified; any other number is limited (R6).
+    const plan = buildNotifyPlan({
+      account,
+      requestContacts: reqData.emergencyContacts || reqData.contactsAlerted,
+      victimName,
+      overIpLimit: !!req.sosOverIpLimit,
+    });
+
     // STEP 2: Fresh SOS - Create session and persist to database
     const alert = await SosService.createSosAlert({
       userPhone,
@@ -113,16 +128,16 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       accuracy,
       idempotencyKey: finalIdempotencyKey,
       capturedAt: captured_at,
+      notifyPlan: plan,
     });
 
     // Lost a race with a request using the same key: that request sends the alerts
     if (alert.duplicate) return replyDuplicate(alert);
 
     console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${maskPhone(userPhone)}`);
-
-    // Name shown in the WhatsApp: the account's own name, else the request's name stripped of links.
-    // An unverified request never gets a registered user's name from the database.
-    const victimName = account?.name || sanitizeVictimName(reqData.userName);
+    const verifiedCount = plan.recipients.filter((r) => r.verified).length;
+    const guardianCount = plan.controlRoomOnly ? 0 : plan.recipients.length;
+    console.log(`📨 [SOS RECIPIENTS] Alert ${alert.id}: ${verifiedCount} verified, ${guardianCount - verifiedCount} unverified`);
 
     // Dashboard first: operators see the alert immediately, before WhatsApp finishes
     socketService.broadcastNewSosAlert({
@@ -140,63 +155,9 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
 
     // STEP 3: Emergency Dispatch (WhatsApp with the SOS location as a Google Maps link, no live tracking).
     // Wait for Meta's answer (bounded by the service timeout) so the phone learns who was NOT reached.
-    // Recipients: numbers saved on the account are verified; any other number is limited (R6)
-    const picked = pickSosRecipients({
-      account,
-      requestContacts: reqData.emergencyContacts || reqData.contactsAlerted,
-    });
-    const verifiedCount = picked.filter((r) => r.verified).length;
-    console.log(`📨 [SOS RECIPIENTS] Alert ${alert.id}: ${verifiedCount} verified, ${picked.length - verifiedCount} unverified`);
-    const recipients = picked.map((r) => ({ phone: r.phone, verified: r.verified, role: 'guardian' }));
-
-    // Instant SOS / Guest user without personal guardians: alert the Emergency Control / Admin number
-    let isControlRoomOnly = false;
-    if (recipients.length === 0) {
-      // No fallback number: an emergency must never go to an unknown person's phone
-      const emergencyControlPhone = (process.env.ADMIN_WHATSAPP || '').replace(/\D/g, '');
-      if (emergencyControlPhone) {
-        console.log(`📲 [INSTANT SOS WHATSAPP DISPATCH] Alerting Emergency Control Room (+${maskPhone(emergencyControlPhone)})...`);
-      } else {
-        console.error('🚨 [CONTROL ROOM NOT CONFIGURED] ADMIN_WHATSAPP is not set: this SOS has no guardian and no control room WhatsApp. Only the dashboard was alerted.');
-      }
-      recipients.push({ phone: emergencyControlPhone, role: 'control_room' });
-      isControlRoomOnly = true;
-    }
-
-    const results = await Promise.all(
-      recipients.map(async (r) => {
-        if (!r.phone) {
-          // Nobody else is told, so the on-call person gets the SOS itself (not awaited)
-          pager.page({
-            key: `alert:${alert.id}`,
-            reason: 'no guardian and no control room number (ADMIN_WHATSAPP)',
-            alert: { alertId: alert.id, victimName, location: { latitude: alert.latitude, longitude: alert.longitude, location: alert.location } },
-          });
-          return { phone: '', role: r.role, sent: false, reason: 'CONTROL_ROOM_NOT_CONFIGURED' };
-        }
-        // The limits on paid sends (the alert still reaches the dashboard)
-        const overIpLimit = !!req.sosOverIpLimit;
-        const blocked = r.role === 'guardian'
-          ? sendBlockReason(r, undefined, { overIpLimit })
-          : (overIpLimit ? 'IP_LIMIT' : null);
-        if (blocked) {
-          console.warn(`⚠️ [SOS ${blocked}] Alert ${alert.id}: not sent to ${maskPhone(r.phone)}`);
-          return { phone: r.phone, role: r.role, sent: false, reason: blocked };
-        }
-        // Sent now; a failed WhatsApp or IVR call is retried by the queue worker (sosNotify.service.js)
-        const job = {
-          alertId: alert.id,
-          phone: r.phone,
-          victimName: isControlRoomOnly ? `${victimName} (Instant SOS)` : victimName,
-          location: { latitude: alert.latitude, longitude: alert.longitude, location: alert.location },
-        };
-        // IVR call in parallel, not awaited: the phone only waits for WhatsApp's answer
-        sosNotify.dispatch('ivr', job);
-
-        const out = await sosNotify.dispatch('whatsapp', job);
-        return { phone: r.phone, role: r.role, sent: !!out?.success, reason: out?.success ? null : (out?.reason || 'UNKNOWN') };
-      })
-    );
+    // Once every send is queued the alert is marked sent; if this request dies before that, the
+    // resumer sends the saved plan (sosDispatch.service.js)
+    const results = await sosDispatch.dispatchAlert(alert, plan, { markWhenQueued: alert.planSaved });
 
     const sentCount = results.filter((r) => r.sent).length;
     const whatsapp = {

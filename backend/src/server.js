@@ -12,6 +12,7 @@ import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { globalLimiter } from './middlewares/rateLimiter.js';
 import { socketService } from './services/socket.service.js';
 import { sosNotify } from './services/sosNotify.service.js';
+import { sosDispatch } from './services/sosDispatch.service.js';
 import { createShutdown } from './utils/shutdown.js';
 
 const app = express();
@@ -138,6 +139,7 @@ server.listen(PORT, () => {
   console.log(`🛡️ Security enabled: Helmet, Rate Limiter, and JWT Auth active`);
   console.log(`📡 Health check available at: http://localhost:${PORT}/api/health`);
   sosNotify.startWorker();
+  sosDispatch.start();
   if (!process.env.ONCALL_PHONE) {
     console.error('🚨 [PAGER] ONCALL_PHONE is not set: failed SOS deliveries and provider failures page nobody.');
   }
@@ -145,7 +147,9 @@ server.listen(PORT, () => {
 
 // pm2 restart sends SIGINT, most hosts SIGTERM. pm2's kill_timeout must be longer than the wait
 // here (backend/ecosystem.config.cjs), or it stops the process mid-send.
-const shutdown = createShutdown({ server, socket: socketService, notify: sosNotify });
+// The resumer stops first, so it starts no new sends while the running ones finish
+const notify = { stop: async () => { await sosDispatch.stop(); await sosNotify.stop(); } };
+const shutdown = createShutdown({ server, socket: socketService, notify });
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 

@@ -252,10 +252,13 @@ export const createSosNotify = ({
      * Sends one WhatsApp alert or IVR call now, with a queued retry behind it.
      * kind: 'whatsapp' | 'ivr'; job: { alertId, phone, victimName, location: { latitude, longitude, location } }
      * Returns the first attempt's result.
+     * onQueued(jobId): called once the retry job is saved (jobId null if it could not be), which can
+     * be long before the send finishes. From then on a crash cannot lose this send.
      */
-    dispatch(kind, job) {
+    dispatch(kind, job, { onQueued } = {}) {
       const run = (async () => {
-        const [jobId, out] = await Promise.all([enqueue(kind, job), senders[kind](job)]);
+        const queued = enqueue(kind, job).then((id) => { onQueued?.(id); return id; });
+        const [jobId, out] = await Promise.all([queued, senders[kind](job)]);
         await watchCall(kind, job, out, 0);
         pageSystemFailure(kind, out);
         if (jobId != null && (out?.success || isPermanent(kind, out))) await drop(jobId);
