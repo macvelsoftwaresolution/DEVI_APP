@@ -8,6 +8,9 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  // Operator accounts need the 6-digit code from their authenticator app; the server says when
+  const [needCode, setNeedCode] = useState(false);
+  const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -27,18 +30,27 @@ export default function LoginPage() {
       setError('Please enter username and password');
       return;
     }
+    if (needCode && !/^\d{6}$/.test(code.trim())) {
+      setError('Enter the 6-digit code from your authenticator app');
+      return;
+    }
 
     setIsLoading(true);
     try {
       const res = await fetch(apiUrl('/api/admin/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify({ username: username.trim(), password, ...(needCode && { code: code.trim() }) }),
       });
       const data = await res.json();
       if (res.ok && data.success && data.token) {
         setAdminToken(data.token);
         navigate('/dashboard', { replace: true });
+      } else if (data.needCode) {
+        // First ask for the code is not an error; a wrong code is
+        if (needCode) setError(data.message || 'Wrong or expired code');
+        setNeedCode(true);
+        setCode('');
       } else {
         setError(data.message || 'Login failed');
       }
@@ -85,6 +97,26 @@ export default function LoginPage() {
           />
         </div>
 
+        {needCode && (
+          <div className="adm-field">
+            <label htmlFor="admin-code">Authenticator code</label>
+            <input
+              id="admin-code"
+              className="adm-input"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="\d{6}"
+              maxLength={6}
+              placeholder="6-digit code"
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            />
+            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>From the authenticator app on your phone. It changes every 30 seconds.</div>
+          </div>
+        )}
+
         {error && (
           <div role="alert" className="adm-alert red" style={{ marginBottom: 16 }}>
             {error}
@@ -93,7 +125,7 @@ export default function LoginPage() {
 
         <button type="submit" disabled={isLoading} className="adm-btn primary block" style={{ height: 42, cursor: isLoading ? 'wait' : 'pointer' }}>
           <LogIn size={16} />
-          {isLoading ? 'Signing in...' : 'Sign In'}
+          {isLoading ? 'Signing in...' : needCode ? 'Verify and sign in' : 'Sign In'}
         </button>
       </form>
     </div>

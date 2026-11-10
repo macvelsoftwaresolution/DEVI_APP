@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { UserService } from '../services/user.service.js';
 import { OtpService } from '../services/otp.service.js';
-import { verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
+import { verifyToken, issueUserToken } from '../middlewares/auth.middleware.js';
 import { otpLimiter } from '../middlewares/rateLimiter.js';
 import { normalizePhone } from '../utils/phone.js';
+import { sessions } from '../services/sessions.service.js';
 
 const router = Router();
 
@@ -91,7 +92,7 @@ router.post('/login', otpLimiter, async (req, res, next) => {
     }
 
     // Generate real, cryptographically signed JWT token (valid for 30 days)
-    const token = signUserToken(user, cleanPhone);
+    const token = await issueUserToken(user, cleanPhone);
 
     res.status(200).json({
       success: true,
@@ -114,7 +115,20 @@ router.post('/refresh', verifyToken, async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ success: false, message: 'Please sign in again.' });
     }
-    res.status(200).json({ success: true, data: { token: signUserToken(user, req.user.phone) } });
+    res.status(200).json({ success: true, data: { token: await issueUserToken(user, req.user.phone) } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/logout-all - Signs this user out on every phone, this one included. For a lost
+// phone or a leaked token: every token made before this stops working, and cannot be refreshed.
+router.post('/logout-all', verifyToken, async (req, res, next) => {
+  try {
+    const version = await sessions.revokeUser(req.user.id);
+    if (version == null) return res.status(404).json({ success: false, message: 'Account not found.' });
+    console.log(`🔒 [SIGNED OUT EVERYWHERE] User ${req.user.id}`);
+    res.status(200).json({ success: true, message: 'Signed out on every device.' });
   } catch (err) {
     next(err);
   }

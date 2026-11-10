@@ -12,6 +12,7 @@
     "migrate:evidence": "node scripts/make-evidence-private.js",
     "migrate:rekey": "node scripts/reencrypt-legacy-keys.js",
     "admin:hash": "node scripts/admin-hash.js",
+    "admin:user": "node scripts/admin-user.js",
     "migrate:aad": "node scripts/reencrypt.js",
     "rotate:key": "node scripts/reencrypt.js",
     "migrate:phone": "node scripts/phone-e164.js"

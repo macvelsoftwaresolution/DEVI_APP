@@ -15,6 +15,7 @@ import { sosNotify } from './services/sosNotify.service.js';
 import { sosDispatch } from './services/sosDispatch.service.js';
 import { sosOffline } from './services/sosOffline.service.js';
 import { health } from './services/health.service.js';
+import { sessions } from './services/sessions.service.js';
 import { WhatsAppStatus, parseStatusEvents } from './services/whatsappStatus.service.js';
 import { createShutdown } from './utils/shutdown.js';
 
@@ -153,6 +154,7 @@ server.listen(PORT, () => {
   console.log(`📡 Health check available at: http://localhost:${PORT}/api/health`);
   sosNotify.startWorker();
   sosDispatch.start();
+  sessions.startAdminRefresh();
   sosOffline.start();
   health.start();
   if (!process.env.ONCALL_PHONE) {

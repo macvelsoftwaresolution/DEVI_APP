@@ -4,7 +4,7 @@ import { UserService } from '../services/user.service.js';
 import { OtpService } from '../services/otp.service.js';
 import { MAX_GUARDIANS } from '../utils/sosRecipients.js';
 import { guestSyncLimiter } from '../middlewares/rateLimiter.js';
-import { optionalToken, verifyToken, signUserToken } from '../middlewares/auth.middleware.js';
+import { optionalToken, verifyToken, issueUserToken } from '../middlewares/auth.middleware.js';
 import { normalizePhone, allowedCountries, guestCountries, isValidGuestId } from '../utils/phone.js';
 
 const router = Router();
@@ -153,7 +153,7 @@ router.put('/profile', optionalToken, async (req, res, next) => {
       message: 'Profile updated successfully in database',
       data: updatedUser,
       // New sign ups get a session token so they stay logged in
-      ...(isNewSignup && { token: signUserToken(updatedUser, cleanPhone) }),
+      ...(isNewSignup && { token: await issueUserToken(updatedUser, cleanPhone) }),
     });
   } catch (err) {
     next(err);

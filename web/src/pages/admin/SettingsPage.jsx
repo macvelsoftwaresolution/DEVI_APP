@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { LogOut, Moon, Sun } from 'lucide-react';
-import { API_BASE_URL, getAdminToken, logoutAdmin } from '../../config/api';
+import { API_BASE_URL, adminFetch, getAdminToken, logoutAdmin } from '../../config/api';
 import { applyTheme, getSavedTheme } from '../../utils/theme';
 import { useAdminData, PageHead, Avatar } from '../../components/admin/ui';
 
@@ -39,10 +39,17 @@ export default function SettingsPage() {
               <Avatar name={data?.username || 'Admin'} large />
               <div>
                 <div style={{ fontWeight: 600, fontSize: 15 }}>{data?.username || '…'}</div>
-                <div className="muted">Administrator</div>
+                <div className="muted">{data ? (data.twoFactor ? 'Operator account' : 'Shared admin login') : 'Administrator'}</div>
               </div>
             </div>
+            {data && !data.twoFactor && (
+              <div className="adm-alert" style={{ marginBottom: 16 }}>
+                This is the shared login from the server settings, without 2FA. Ask for your own operator account
+                (npm run admin:user -- create &lt;name&gt;), then the shared login can be turned off.
+              </div>
+            )}
             <dl className="adm-dl">
+              <dt>Two-factor sign in</dt><dd>{data ? (data.twoFactor ? 'On (authenticator app)' : 'Off') : '–'}</dd>
               <dt>Session expires</dt><dd>{sessionExpiry() || '–'} (IST)</dd>
               <dt>API server</dt><dd className="mono">{API_BASE_URL}</dd>
             </dl>
@@ -84,6 +91,28 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+
+        {data?.twoFactor && (
+          <div className="adm-card">
+            <div className="adm-card-head">
+              <div>
+                <h2>Sign out everywhere</h2>
+                <div className="sub">End your sessions on every browser, this one included. Use it if a device was lost or shared.</div>
+              </div>
+              <button
+                className="adm-btn"
+                onClick={async () => {
+                  if (!window.confirm('Sign out of the admin panel on every browser?')) return;
+                  const res = await adminFetch('/api/admin/logout-all', { method: 'POST' });
+                  if (res.ok) logoutAdmin();
+                  else window.alert('Could not sign out everywhere. Please try again.');
+                }}
+              >
+                <LogOut size={16} /> Sign out everywhere
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

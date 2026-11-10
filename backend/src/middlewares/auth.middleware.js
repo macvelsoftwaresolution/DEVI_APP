@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET, ADMIN_JWT_SECRET, SOS_LINK_SECRET, ADMIN_SECRET_KEY, ADMIN_TOKEN_EXPIRY, ADMIN_PASSWORD_VERSION } from '../config/security.js';
 import { canonicalPhone } from '../utils/phone.js';
+import { sessions } from '../services/sessions.service.js';
 
 // Tokens signed before numbers moved to E.164 carry 10 digits and stay valid for 30 days
 const decodeUserToken = (token) => {
@@ -10,24 +11,37 @@ const decodeUserToken = (token) => {
 };
 
 /**
- * Signs a 30-day JWT for an app user (used by login & first-time sign up)
+ * Signs a 30-day JWT for an app user (used by login & first-time sign up).
+ * tv: the user's token version (sessions.service.js); raising it signs this token out.
  */
-export const signUserToken = (user, phone) =>
+export const signUserToken = (user, phone, tv = 0) =>
   jwt.sign(
     {
       id: user.id,
       phone,
       name: user.name || '',
       isGuest: !!user.isGuest,
+      tv,
     },
     JWT_SECRET,
     { expiresIn: '30d' }
   );
 
+// A token at the user's current version (login, sign up, refresh)
+export const issueUserToken = async (user, phone) =>
+  signUserToken(user, phone, (await sessions.userTokenVersion(user.id)) ?? 0);
+
+// False only when the user was signed out after this token was made. Unknown (database down)
+// counts as still good. Tokens from before versions carry none, which is version 0.
+const tokenStillValid = async (decoded) => {
+  const current = await sessions.userTokenVersion(decoded.id);
+  return current == null || (Number(decoded.tv) || 0) === current;
+};
+
 /**
  * Middleware: Verify user JWT token for protected API routes
  */
-export const verifyToken = (req, res, next) => {
+export const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -39,27 +53,38 @@ export const verifyToken = (req, res, next) => {
 
   const token = authHeader.split(' ')[1];
 
+  let decoded;
   try {
-    req.user = decodeUserToken(token);
-    next();
+    decoded = decodeUserToken(token);
   } catch (err) {
     return res.status(403).json({
       success: false,
       message: 'Invalid or expired token. Please log in again.',
     });
   }
+  if (!(await tokenStillValid(decoded))) {
+    return res.status(403).json({
+      success: false,
+      code: 'SIGNED_OUT',
+      message: 'This device was signed out. Please log in again.',
+    });
+  }
+  req.user = decoded;
+  next();
 };
 
 /**
- * Middleware: Optional token verification (attaches user if token exists, but doesn't block)
+ * Middleware: Optional token verification (attaches user if token exists, but doesn't block).
+ * A signed-out token is treated as no token: the request (an SOS) still goes through as a guest.
  */
-export const optionalToken = (req, res, next) => {
+export const optionalToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.split(' ')[1];
     try {
-      req.user = decodeUserToken(token);
+      const decoded = decodeUserToken(token);
+      if (await tokenStillValid(decoded)) req.user = decoded;
     } catch {
       // Proceed as unauthenticated guest without error
     }
@@ -177,12 +202,24 @@ export const isTrackingLinkExpired = (session, now = Date.now()) => {
   return now - endedAt > TRACKING_LINK_GRACE_MS;
 };
 
+// The shared .env admin (ADMIN_USERNAME) signs in without 2FA. ADMIN_ENV_LOGIN=off turns it off,
+// and its open sessions with it, once every operator has an account (npm run admin:user).
+export const envAdminLoginEnabled = () => String(process.env.ADMIN_ENV_LOGIN || 'on').trim().toLowerCase() !== 'off';
+
 /**
  * Signs a short-lived JWT for the admin dashboard.
- * `pv` ties it to the current admin password: after a password change every old token is refused.
+ * Operator account (admin_users): `sub` is its id and `av` its token version, so disabling the
+ * account or "sign out everywhere" ends the token.
+ * Shared .env admin: `pv` ties it to the current admin password, so a password change ends it.
  */
-export const signAdminToken = (username) =>
-  jwt.sign({ role: 'admin', username, pv: ADMIN_PASSWORD_VERSION }, ADMIN_JWT_SECRET, { expiresIn: ADMIN_TOKEN_EXPIRY });
+export const signAdminToken = (username, account = null) =>
+  jwt.sign(
+    account
+      ? { role: 'admin', username, sub: account.id, av: Number(account.token_version) || 0 }
+      : { role: 'admin', username, pv: ADMIN_PASSWORD_VERSION },
+    ADMIN_JWT_SECRET,
+    { expiresIn: ADMIN_TOKEN_EXPIRY }
+  );
 
 /**
  * Returns the decoded admin payload if the token is a valid admin JWT, otherwise null
@@ -191,7 +228,9 @@ export const decodeAdminToken = (token) => {
   if (!token) return null;
   try {
     const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
-    return decoded.role === 'admin' && decoded.pv === ADMIN_PASSWORD_VERSION ? decoded : null;
+    if (decoded.role !== 'admin') return null;
+    if (decoded.sub) return sessions.adminTokenValid(decoded.sub, decoded.av) === false ? null : decoded;
+    return decoded.pv === ADMIN_PASSWORD_VERSION && envAdminLoginEnabled() ? decoded : null;
   } catch {
     return null;
   }

@@ -19,6 +19,7 @@ import {
 } from '../src/middlewares/auth.middleware.js';
 import jwt from 'jsonwebtoken';
 import { ADMIN_SECRET_KEY, ADMIN_JWT_SECRET } from '../src/config/security.js';
+import { sessions } from '../src/services/sessions.service.js';
 
 // Minimal Express req/res doubles
 const mockReq = (headers = {}) => ({ headers, get: (name) => headers[name.toLowerCase()] });
@@ -32,6 +33,15 @@ const runMiddleware = (middleware, req) => {
   const res = mockRes();
   let nextCalled = false;
   middleware(req, res, () => { nextCalled = true; });
+  return { res, nextCalled };
+};
+
+// For middleware that checks the token version (async). No database in tests: every user is at version 0.
+sessions.userTokenVersion = async () => 0;
+const runAsync = async (middleware, req) => {
+  const res = mockRes();
+  let nextCalled = false;
+  await middleware(req, res, () => { nextCalled = true; });
   return { res, nextCalled };
 };
 
@@ -78,14 +88,14 @@ test('verifyAdmin accepts admin token or x-admin-key, rejects others', () => {
   assert.equal(runMiddleware(verifyAdmin, mockReq()).nextCalled, false);
 });
 
-test('verifyToken attaches the user and rejects missing or bad tokens', () => {
+test('verifyToken attaches the user and rejects missing or bad tokens', async () => {
   const req = mockReq({ authorization: `Bearer ${signUserToken({ id: 7, name: 'Priya' }, '9876543210')}` });
-  const ok = runMiddleware(verifyToken, req);
+  const ok = await runAsync(verifyToken, req);
   assert.equal(ok.nextCalled, true);
   assert.equal(req.user.phone, '+919876543210');
 
-  assert.equal(runMiddleware(verifyToken, mockReq()).res.statusCode, 401);
-  assert.equal(runMiddleware(verifyToken, mockReq({ authorization: 'Bearer junk' })).res.statusCode, 403);
+  assert.equal((await runAsync(verifyToken, mockReq())).res.statusCode, 401);
+  assert.equal((await runAsync(verifyToken, mockReq({ authorization: 'Bearer junk' }))).res.statusCode, 403);
 });
 
 test('canResolveSos: only the creating device, an admin or the logged-in owner can resolve', () => {
@@ -136,11 +146,11 @@ test('isTrackingLinkExpired: guardian links expire 24h after resolve, never whil
   assert.equal(TRACKING_LINK_GRACE_MS, 24 * 60 * 60 * 1000);
 });
 
-test('R8: admin and user tokens are signed with different secrets', () => {
+test('R8: admin and user tokens are signed with different secrets', async () => {
   const adminToken = signAdminToken('admin');
   const userToken = signUserToken({ id: 1 }, '9876543210');
   // An admin token is not a user login, and a user token is not an admin login
-  assert.equal(runMiddleware(verifyToken, mockReq({ authorization: `Bearer ${adminToken}` })).res.statusCode, 403);
+  assert.equal((await runAsync(verifyToken, mockReq({ authorization: `Bearer ${adminToken}` }))).res.statusCode, 403);
   assert.equal(decodeAdminToken(userToken), null);
   assert.ok(decodeAdminToken(adminToken));
 });

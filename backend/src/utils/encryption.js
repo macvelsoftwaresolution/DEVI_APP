@@ -42,6 +42,7 @@ export const ENCRYPTED_COLUMNS = {
   guardians: ['name', 'mobile_number'],
   sos_history: ['location_address', 'operator_notes', 'coords'],
   sos_guardian_acks: ['phone'],
+  admin_users: ['totp_secret'],
 };
 
 // Guardians are bound to their user (rows are deleted and re-inserted on every save);

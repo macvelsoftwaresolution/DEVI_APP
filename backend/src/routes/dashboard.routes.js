@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { DashboardService } from '../services/dashboard.service.js';
 import { SosService } from '../services/sos.service.js';
 import { socketService } from '../services/socket.service.js';
+import { sessions } from '../services/sessions.service.js';
 
 const router = Router();
 
@@ -67,6 +68,19 @@ router.get('/users/:userId', async (req, res, next) => {
     const user = await DashboardService.getUser(req.params.userId);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
     res.json({ success: true, user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST sign a user out on every phone (lost phone, leaked token). Their next SOS still goes out.
+router.post('/users/:userId/revoke-sessions', async (req, res, next) => {
+  try {
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.userId)) return res.status(404).json({ success: false, message: 'User not found' });
+    const version = await sessions.revokeUser(req.params.userId);
+    if (version == null) return res.status(404).json({ success: false, message: 'User not found' });
+    console.log(`🔒 [SIGNED OUT EVERYWHERE] User ${req.params.userId} by admin ${req.admin?.username}`);
+    res.json({ success: true, message: 'The user is signed out on every device.' });
   } catch (err) {
     next(err);
   }

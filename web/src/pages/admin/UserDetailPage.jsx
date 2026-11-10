@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ChevronRight, Phone, Siren } from 'lucide-react';
+import { ChevronRight, LogOut, Phone, Siren } from 'lucide-react';
+import { adminFetch } from '../../config/api';
 import { useAdminData, StatusBadge, UserTypeBadge, Avatar, Empty, shortId } from '../../components/admin/ui';
 
 export default function UserDetailPage() {
@@ -39,6 +40,17 @@ export default function UserDetailPage() {
           {user.phone && (
             <a href={`tel:${user.phone}`} className="adm-btn"><Phone size={16} /> Call</a>
           )}
+          <button
+            className="adm-btn"
+            title="For a lost phone or a leaked login. Their SOS still works; they log in again with a code."
+            onClick={async () => {
+              if (!window.confirm(`Sign ${user.name} out on every phone? Their SOS keeps working, and they log in again with a WhatsApp code.`)) return;
+              const res = await adminFetch(`/api/dashboard/users/${encodeURIComponent(user.id)}/revoke-sessions`, { method: 'POST' });
+              window.alert(res.ok ? 'Signed out on every phone.' : 'Could not sign out. Please try again.');
+            }}
+          >
+            <LogOut size={16} /> Sign out devices
+          </button>
         </div>
       </div>
 
