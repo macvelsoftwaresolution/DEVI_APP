@@ -35,7 +35,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 - **REL6:** the worker catches errors in each pass and each job, and the process logs unhandled rejections instead of stopping.
 - **From the senior's assessment:** the duplicate alert race (R7), and retry decisions use the saved status (P0-10, worker part).
 
-**Done on 10 Nov 2026 (not deployed yet, 195 backend tests pass):**
+**Done on 10 Nov 2026 (not deployed yet, 209 backend tests pass):**
 
 - **P4:** `liveTrackSessions` (`src/services/live-sessions.js`) finds an SOS through an index, not by scanning every session. Sessions not touched for 24 hours are dropped, and at most 50,000 are kept. Every reader falls back to the database. A dropped session loses only the WhatsApp result shown on the dashboard.
 - **L5, restart part:** an accepted call also leaves a "watch" job in the queue for about 5 minutes. The status webhook deletes it. If the webhook never arrives, for example because the server restarted and forgot the call, the watch job comes back. A guardian who pressed 1 is then left alone, and anyone else is redialled. This counts as a redial, so the 3-redial limit still applies.
@@ -46,19 +46,22 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 
 - **L3:** the send plan (who gets the SOS, and which sends the limits stopped) is saved encrypted in the same insert as the alert, with `dispatch_started_at`. Once every send has its retry job queued, the alert gets `dispatched_at`. An ACTIVE alert with no `dispatched_at` 30 seconds after it was taken on was cut off by a crash, restart or error. A resumer (`src/services/sosDispatch.service.js`, every 15 seconds, and at once when the app sends the SOS again) takes it on with a conditional update, so only one server sends it, and sends the saved plan. A crash after some sends were queued sends those twice, never zero times. Alerts older than 2 hours are not resumed. **Run `backend/db/sos-dispatch.sql` in Supabase before deploying.** Until then SOS works as before, without this protection, and every SOS logs an error.
 
+- **L2:** when saving the alert fails, the SOS is sent anyway from the request (`src/services/sosOffline.service.js`). It is kept in memory, so the app's retry is a duplicate, and written to an encrypted journal file on the server's disk (`src/services/sosJournal.js`, `SOS_JOURNAL_DIR`, default `backend/data/sos-journal`), with the result of each send. The app gets a normal 201 with `degraded: true`, and the on-call person is paged. For a logged-in user the numbers the app sent count as saved guardians, because the account cannot be read. Every 30 seconds, and at start, the journal is replayed. Each alert is saved under the id its messages already used, at its real time, and only the sends that did not get through are sent again, now with retry jobs. An alert closed during the outage is saved closed. One older than 2 hours is saved but not sent again.
+  - Known limits: during the outage there is no retry queue, so a send that fails waits for the database. Press 1 and "I am safe" cannot be saved during the outage, and "I am safe" is lost if the server also restarts. The journal is per server and must survive a deploy, so do not delete `backend/data/`. Journal lines are encrypted with the field key, so a key rotation must keep the old key until the journal is empty.
+
 **Partly done (2):**
 
 - **L13:** the server part is covered by L3: a repeat press after a cut-off send now sends. Still open: the app forgets the active SOS after a restart (T13, app side).
 
 - **L7:** still open: SMS. Planned for the next phase with MSG91. The committed code has no SMS today.
 
-**Still open:** everything else. The critical ones left are **L2 and L4**. See the tracker below.
+**Still open:** everything else. The critical one left is **L4**. See the tracker below.
 
 ### Status tracker
 
 | Area | Done | Partly done | Open |
 |---|---|---|---|
-| Message loss (section 3) | L1, L3, L5, L6, L8 | L7 (SMS), L11 (paged, not staffed), L13 (app side) | **L2, L4**, L9, L10, L12 |
+| Message loss (section 3) | L1, L2, L3, L5, L6, L8 | L7 (SMS), L11 (paged, not staffed), L13 (app side) | **L4**, L9, L10, L12 |
 | Performance (section 4) | P1, P2, P4 | | P3, P5 |
 | Scalability (section 5) | | | S1, S2, S3, S4, S5 |
 | Reliability (section 6) | REL3, REL6, REL7 | REL2 (WhatsApp and call failures page) | REL1, REL4, REL5 |
@@ -432,7 +435,7 @@ Status as of 10 Nov 2026:
 - [x] Fix WhatsApp error classification (L1), with tests using Meta's documented error shapes. A check against a live Meta failure is still pending.
 - [x] Keep jobs alive for token, template and balance failures, and page someone (L7). *Paging is done in code. Set `ONCALL_PHONE` on the live server.*
 - [x] On a duplicate SOS, finish unfinished sends (L3, L13). *Saved send plan plus a resumer. Needs `db/sos-dispatch.sql`. L13's app part is still open.*
-- [ ] Send even if the database fails, with a local journal (L2).
+- [x] Send even if the database fails, with a local journal (L2).
 - [x] Move place lookup after the send (P1, P2). Remove `'Tamil Nadu'`.
 - [x] Remove the IP-only SOS limit (L8).
 - [x] Longer retries with growing gaps and randomness (L6, REL7).

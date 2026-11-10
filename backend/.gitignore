@@ -4,3 +4,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .DS_Store
+
+# SOS journal (L2): alerts taken while the database was down, encrypted
+data/

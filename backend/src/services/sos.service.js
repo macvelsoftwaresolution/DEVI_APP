@@ -65,7 +65,9 @@ export const SosService = {
 
   // notifyPlan: who to send to (sosDispatch.service.js). Saved in the same insert, so a crash right
   // after it cannot leave an alert that nobody sends (L3).
-  async createSosAlert({ userPhone, location, latitude, longitude, accuracy, idempotencyKey, capturedAt, notifyPlan = null }) {
+  // alertId, createdAt: only for an alert first taken while the database was down (sosJournal.js),
+  // saved later under the id its messages already used, at the time it was really sent.
+  async createSosAlert({ userPhone, location, latitude, longitude, accuracy, idempotencyKey, capturedAt, notifyPlan = null, alertId: givenId = null, createdAt = null }) {
     let userId = null;
     if (userPhone) {
       let user = await UserService.findUserByPhone(userPhone);
@@ -104,9 +106,10 @@ export const SosService = {
 
     try {
       // Id made here, not by the database, so the location can be encrypted bound to this alert (E6)
-      const alertId = crypto.randomUUID();
+      const alertId = givenId || crypto.randomUUID();
       const alertPayload = {
         id: alertId,
+        ...(createdAt && { created_at: createdAt }),
         // GPS fix only encrypted in coords (E5); plain columns stay empty
         latitude: null,
         longitude: null,

@@ -68,9 +68,11 @@ export const createSosDispatch = ({
    * Sends WhatsApp and a call to each recipient in the plan. Waits for the WhatsApp answers, so the
    * phone learns who was not reached; calls are not waited for.
    * markWhenQueued: mark the alert dispatched once every retry job is queued.
+   * onSent(kind, phone, out): each send's first result, calls included (sosJournal.js)
+   * skip(kind, phone): true for a send that must not go out again (a replay after an outage)
    * Returns one { phone, role, sent, reason } per recipient.
    */
-  const dispatchAlert = async (alert, plan, { markWhenQueued = true } = {}) => {
+  const dispatchAlert = async (alert, plan, { markWhenQueued = true, onSent, skip } = {}) => {
     const queued = [];
     const whenQueued = () => {
       let done;
@@ -101,8 +103,14 @@ export const createSosDispatch = ({
 
         // Sent now; a failed WhatsApp or call is retried by the queue worker (sosNotify.service.js)
         const job = { alertId: alert.id, phone: r.phone, victimName: plan.sendName || plan.victimName, location };
-        notify.dispatch('ivr', job, { onQueued: whenQueued() });
-        const out = await notify.dispatch('whatsapp', job, { onQueued: whenQueued() });
+        const send = (kind) => {
+          if (skip?.(kind, r.phone)) return Promise.resolve({ success: true, skipped: true });
+          const run = notify.dispatch(kind, job, { onQueued: whenQueued() });
+          if (onSent) run.then((out) => onSent(kind, r.phone, out), () => {});
+          return run;
+        };
+        send('ivr');
+        const out = await send('whatsapp');
         return { phone: r.phone, role: r.role, sent: !!out?.success, reason: out?.success ? null : (out?.reason || 'UNKNOWN') };
       })
     );

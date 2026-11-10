@@ -24,6 +24,7 @@ import {
 } from '../middlewares/auth.middleware.js';
 import { socketService } from '../services/socket.service.js';
 import { sosDispatch, buildNotifyPlan } from '../services/sosDispatch.service.js';
+import { sosOffline } from '../services/sosOffline.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -119,45 +120,79 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       overIpLimit: !!req.sosOverIpLimit,
     });
 
-    // STEP 2: Fresh SOS - Create session and persist to database
-    const alert = await SosService.createSosAlert({
-      userPhone,
-      location,
-      latitude,
-      longitude,
-      accuracy,
-      idempotencyKey: finalIdempotencyKey,
-      capturedAt: captured_at,
-      notifyPlan: plan,
-    });
-
-    // Lost a race with a request using the same key: that request sends the alerts
-    if (alert.duplicate) return replyDuplicate(alert);
-
-    console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${maskPhone(userPhone)}`);
-    const verifiedCount = plan.recipients.filter((r) => r.verified).length;
-    const guardianCount = plan.controlRoomOnly ? 0 : plan.recipients.length;
-    console.log(`📨 [SOS RECIPIENTS] Alert ${alert.id}: ${verifiedCount} verified, ${guardianCount - verifiedCount} unverified`);
-
     // Dashboard first: operators see the alert immediately, before WhatsApp finishes
-    socketService.broadcastNewSosAlert({
-      id: alert.id,
+    const announce = (a) => socketService.broadcastNewSosAlert({
+      id: a.id,
       userPhone,
       userName: victimName,
-      latitude: alert.latitude,
-      longitude: alert.longitude,
-      location: alert.location,
-      timestamp: alert.timestamp || new Date().toISOString(),
+      latitude: a.latitude,
+      longitude: a.longitude,
+      location: a.location,
+      timestamp: a.timestamp || new Date().toISOString(),
       status: 'ACTIVE',
     });
 
-    await SosService.fillPlaceName(alert);
+    // STEP 2: Fresh SOS - Create session and persist to database
+    let alert;
+    let results;
+    let saveError = null;
+    try {
+      alert = await SosService.createSosAlert({
+        userPhone,
+        location,
+        latitude,
+        longitude,
+        accuracy,
+        idempotencyKey: finalIdempotencyKey,
+        capturedAt: captured_at,
+        notifyPlan: plan,
+      });
+    } catch (err) {
+      saveError = err;
+    }
 
-    // STEP 3: Emergency Dispatch (WhatsApp with the SOS location as a Google Maps link, no live tracking).
-    // Wait for Meta's answer (bounded by the service timeout) so the phone learns who was NOT reached.
-    // Once every send is queued the alert is marked sent; if this request dies before that, the
-    // resumer sends the saved plan (sosDispatch.service.js)
-    const results = await sosDispatch.dispatchAlert(alert, plan, { markWhenQueued: alert.planSaved });
+    if (saveError) {
+      // L2: the database failed. Send anyway from the request and journal it (sosOffline.service.js).
+      // A logged-in user's account could not be read either, so the numbers the app sent stand in
+      // for the saved guardians: the token proves who she is, and an SOS must not wait for the
+      // database to tell us her guardians.
+      const offlinePlan = !account && req.user?.phone && !req.user.isGuest
+        ? buildNotifyPlan({
+          account: { guardians: (reqData.emergencyContacts || reqData.contactsAlerted || []).map((c) => ({ phone: c?.phone || c?.number || c })) },
+          requestContacts: [],
+          victimName,
+          overIpLimit: !!req.sosOverIpLimit,
+        })
+        : plan;
+      ({ session: alert, results } = await sosOffline.accept({
+        userPhone,
+        idempotencyKey: finalIdempotencyKey,
+        latitude,
+        longitude,
+        accuracy,
+        location,
+        plan: offlinePlan,
+        cause: saveError.code || saveError.message || 'unknown',
+        onSession: announce,
+      }));
+    } else {
+      // Lost a race with a request using the same key: that request sends the alerts
+      if (alert.duplicate) return replyDuplicate(alert);
+
+      console.log(`🚨 [NEW EMERGENCY SOS LOGGED] ID: ${alert.id}, User: ${maskPhone(userPhone)}`);
+      const verifiedCount = plan.recipients.filter((r) => r.verified).length;
+      const guardianCount = plan.controlRoomOnly ? 0 : plan.recipients.length;
+      console.log(`📨 [SOS RECIPIENTS] Alert ${alert.id}: ${verifiedCount} verified, ${guardianCount - verifiedCount} unverified`);
+
+      announce(alert);
+      await SosService.fillPlaceName(alert);
+
+      // STEP 3: Emergency Dispatch (WhatsApp with the SOS location as a Google Maps link, no live tracking).
+      // Wait for Meta's answer (bounded by the service timeout) so the phone learns who was NOT reached.
+      // Once every send is queued the alert is marked sent; if this request dies before that, the
+      // resumer sends the saved plan (sosDispatch.service.js)
+      results = await sosDispatch.dispatchAlert(alert, plan, { markWhenQueued: alert.planSaved });
+    }
 
     const sentCount = results.filter((r) => r.sent).length;
     const whatsapp = {
@@ -177,7 +212,9 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     res.status(201).json({
       success: true,
       duplicate: false,
-      message: 'Emergency SOS alert recorded',
+      // degraded: sent, but the database was down, so it is saved later (and not yet retried)
+      ...(saveError && { degraded: true }),
+      message: saveError ? 'Emergency SOS alert sent; it will be saved when the server database is back' : 'Emergency SOS alert recorded',
       data: {
         ...publicSession(liveSession || alert),
         status: 'ACTIVE',
