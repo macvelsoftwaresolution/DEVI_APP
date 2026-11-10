@@ -35,7 +35,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 - **REL6:** the worker catches errors in each pass and each job, and the process logs unhandled rejections instead of stopping.
 - **From the senior's assessment:** the duplicate alert race (R7), and retry decisions use the saved status (P0-10, worker part).
 
-**Done on 10 Nov 2026 (not deployed yet, 259 backend tests pass):**
+**Done on 10 Nov 2026 (not deployed yet, 279 backend tests pass):**
 
 - **P4:** `liveTrackSessions` (`src/services/live-sessions.js`) finds an SOS through an index, not by scanning every session. Sessions not touched for 24 hours are dropped, and at most 50,000 are kept. Every reader falls back to the database. A dropped session loses only the WhatsApp result shown on the dashboard.
 - **L5, restart part:** an accepted call also leaves a "watch" job in the queue for about 5 minutes. The status webhook deletes it. If the webhook never arrives, for example because the server restarted and forgot the call, the watch job comes back. A guardian who pressed 1 is then left alone, and anyone else is redialled. This counts as a redial, so the 3-redial limit still applies.
@@ -55,6 +55,9 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 - **REL1, REL2:** `GET /api/health/deep` (`src/services/health.service.js`) checks the database, the retry queue's backlog (`db/sos-health.sql`), that the retry worker is running, the L2 journal, the WhatsApp token, the Plivo balance, and the Twilio account (active, not trial, balance), plus whether `ONCALL_PHONE` is set. It answers 503 when a check fails, so an uptime monitor can alert on the status code. It needs the `X-Health-Key` header (`HEALTH_CHECK_KEY`) or an admin login, because it shows balances. A monitor runs it every 5 minutes and pages the on-call person for each failing check. The public `/api/health` stays shallow. **Run `backend/db/sos-health.sql` in Supabase.**
   - Not covered yet: WhatsApp template approval status (needs the WhatsApp Business Account id) and the messaging tier, which are checked by hand in Meta.
 
+- **P3, S4:** the dashboard (`src/services/dashboard.service.js`) no longer loads whole tables. Lists are counted, filtered (status, IST dates, user) and paged by the database, and only the rows on the page and their users are decrypted. The home page numbers come from `dashboard_stats` (`db/dashboard.sql`), with no decryption. Without that function they are counted with separate queries. A detail page loads one record. Search has to read decrypted names, numbers and places, so it scans the newest 10,000 rows in batches of 1,000 and gives way to other requests between batches. A whole alert id is looked up directly. The 20,000-row cut-off is gone. **Run `backend/db/dashboard.sql` in Supabase** (function and indexes).
+  - Known limits: search covers the newest 10,000 SOS and users, and says `searchLimited` when there are more (the web page does not show this yet). The dashboard still runs in the SOS process. Running it as a separate service is part of Stage A.
+
 **Partly done (2):**
 
 - **L13:** the server part is covered by L3: a repeat press after a cut-off send now sends. Still open: the app forgets the active SOS after a restart (T13, app side).
@@ -68,8 +71,8 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 | Area | Done | Partly done | Open |
 |---|---|---|---|
 | Message loss (section 3) | L1, L2, L3, L4, L5, L6, L8 | L7 (SMS), L11 (paged, not staffed), L13 (app side) | L9, L10, L12 |
-| Performance (section 4) | P1, P2, P4 | | P3, P5 |
-| Scalability (section 5) | | | S1, S2, S3, S4, S5 |
+| Performance (section 4) | P1, P2, P3, P4 | | P5 |
+| Scalability (section 5) | S4 | | S1, S2, S3, S5 |
 | Reliability (section 6) | REL1, REL2, REL3, REL6, REL7 | | REL4, REL5 |
 | Target design (section 7) | | | All building blocks |
 | Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
