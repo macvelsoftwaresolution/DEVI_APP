@@ -40,7 +40,7 @@ export const CURRENT_KEY_ID = CURRENT.id;
 export const ENCRYPTED_COLUMNS = {
   users: ['mobile_number', 'full_name', 'address_1', 'address_2'],
   guardians: ['name', 'mobile_number'],
-  sos_history: ['location_address', 'operator_notes', 'coords'],
+  sos_history: ['location_address', 'operator_notes', 'coords', 'notify_plan'],
   sos_guardian_acks: ['phone'],
   admin_users: ['totp_secret'],
 };
