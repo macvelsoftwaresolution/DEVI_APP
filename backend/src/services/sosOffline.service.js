@@ -173,6 +173,13 @@ export const createSosOffline = ({
       return saved;
     },
 
+    // For the health check: alerts in the journal not yet saved to the database
+    async pendingCount() {
+      const records = await journal.readAll();
+      const done = new Set(records.filter((r) => r.type === 'replayed').map((r) => r.alertId));
+      return records.filter((r) => r.type === 'alert' && !done.has(r.alertId)).length;
+    },
+
     start() {
       const run = () => {
         if (pass) return;

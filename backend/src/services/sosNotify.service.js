@@ -119,6 +119,7 @@ export const createSosNotify = ({
   let missingQueueLogged = false;
   let workerTimer = null;
   let workerPass = null;
+  let lastPassAt = null; // when a worker pass last finished, for the health check
   const sending = new Set(); // dispatches still running, so a shutdown can wait for them
   const activeCalls = new Map(); // call id -> { job, attempt, at, provider, watchId }, until its status webhook
   const activeMessages = new Map(); // WhatsApp message id -> { job, attempt, at, watchId }, until delivered or failed
@@ -368,7 +369,7 @@ export const createSosNotify = ({
         if (workerPass) return;
         workerPass = this.processBatch()
           .catch((e) => console.error('🚨 [SOS QUEUE] Worker pass failed, next pass continues:', e))
-          .finally(() => { workerPass = null; });
+          .finally(() => { workerPass = null; lastPassAt = Date.now(); });
       }, POLL_MS);
       workerTimer.unref();
       console.log(`🔁 [SOS QUEUE] Retry worker started (every ${POLL_MS / 1000}s, up to ${MAX_ATTEMPTS} retries)`);
@@ -418,6 +419,17 @@ export const createSosNotify = ({
       if (answered && (await hasAck(job.alertId, job.phone)) === true) return done('acknowledged');
       if ((await getAlertStatus(job.alertId)) === 'RESOLVED') return done('resolved');
       return done(await redial({ job, attempt, status: answered ? 'answered-no-press-1' : status, provider }));
+    },
+
+    // For the health check: is the worker running, and what is being watched in memory
+    status() {
+      return {
+        workerStarted: workerTimer != null,
+        lastPassAt,
+        watchedCalls: activeCalls.size,
+        watchedMessages: activeMessages.size,
+        sending: sending.size,
+      };
     },
 
     // For a shutdown: no new worker passes, then waits for the pass and the sends still running

@@ -35,7 +35,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 - **REL6:** the worker catches errors in each pass and each job, and the process logs unhandled rejections instead of stopping.
 - **From the senior's assessment:** the duplicate alert race (R7), and retry decisions use the saved status (P0-10, worker part).
 
-**Done on 10 Nov 2026 (not deployed yet, 229 backend tests pass):**
+**Done on 10 Nov 2026 (not deployed yet, 243 backend tests pass):**
 
 - **P4:** `liveTrackSessions` (`src/services/live-sessions.js`) finds an SOS through an index, not by scanning every session. Sessions not touched for 24 hours are dropped, and at most 50,000 are kept. Every reader falls back to the database. A dropped session loses only the WhatsApp result shown on the dashboard.
 - **L5, restart part:** an accepted call also leaves a "watch" job in the queue for about 5 minutes. The status webhook deletes it. If the webhook never arrives, for example because the server restarted and forgot the call, the watch job comes back. A guardian who pressed 1 is then left alone, and anyone else is redialled. This counts as a redial, so the 3-redial limit still applies.
@@ -52,6 +52,9 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 - **L4:** a WhatsApp Meta accepted is watched like a call. The webhook now reads each status (sent, delivered, read, failed) and saves it by message id in `whatsapp_statuses` (`db/whatsapp-status.sql`, no phone number stored). Delivered or read ends it. Failed is sent again with the usual gaps, unless the number is not on WhatsApp, in which case the call still goes. A template failure also pages. A watch job (about 5 minutes) covers a restart by reading the saved status. "Sent" but never delivered means the phone is off, so it is left to the call. No status at all means the webhook is not reaching the server, so it pages instead of sending every WhatsApp again. **Run `backend/db/whatsapp-status.sql` in Supabase, and check that the Meta webhook is subscribed to `messages`.**
   - Known limits: the dashboard still shows "sent" from the first answer and does not yet show delivered or failed. Statuses for OTP messages are saved too, and the table needs a retention rule (S5).
 
+- **REL1, REL2:** `GET /api/health/deep` (`src/services/health.service.js`) checks the database, the retry queue's backlog (`db/sos-health.sql`), that the retry worker is running, the L2 journal, the WhatsApp token, the Plivo balance, and the Twilio account (active, not trial, balance), plus whether `ONCALL_PHONE` is set. It answers 503 when a check fails, so an uptime monitor can alert on the status code. It needs the `X-Health-Key` header (`HEALTH_CHECK_KEY`) or an admin login, because it shows balances. A monitor runs it every 5 minutes and pages the on-call person for each failing check. The public `/api/health` stays shallow. **Run `backend/db/sos-health.sql` in Supabase.**
+  - Not covered yet: WhatsApp template approval status (needs the WhatsApp Business Account id) and the messaging tier, which are checked by hand in Meta.
+
 **Partly done (2):**
 
 - **L13:** the server part is covered by L3: a repeat press after a cut-off send now sends. Still open: the app forgets the active SOS after a restart (T13, app side).
@@ -67,7 +70,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 | Message loss (section 3) | L1, L2, L3, L4, L5, L6, L8 | L7 (SMS), L11 (paged, not staffed), L13 (app side) | L9, L10, L12 |
 | Performance (section 4) | P1, P2, P4 | | P3, P5 |
 | Scalability (section 5) | | | S1, S2, S3, S4, S5 |
-| Reliability (section 6) | REL3, REL6, REL7 | REL2 (WhatsApp and call failures page) | REL1, REL4, REL5 |
+| Reliability (section 6) | REL1, REL2, REL3, REL6, REL7 | | REL4, REL5 |
 | Target design (section 7) | | | All building blocks |
 | Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
 | Security (section 10) | | | All items |
@@ -442,8 +445,8 @@ Status as of 10 Nov 2026:
 - [x] Move place lookup after the send (P1, P2). Remove `'Tamil Nadu'`.
 - [x] Remove the IP-only SOS limit (L8).
 - [x] Longer retries with growing gaps and randomness (L6, REL7).
-- [ ] Alerts for `GAVE UP`, queue depth, balances and token health (REL1, REL2). *`GAVE UP` and token failures page. Queue depth and balances are still open.*
-- [ ] Deep health check, graceful shutdown, worker error handling (REL1, REL3, REL6). *Graceful shutdown and worker error handling are done. The health check still does not test the database, queue or providers.*
+- [x] Alerts for `GAVE UP`, queue depth, balances and token health (REL1, REL2).
+- [x] Deep health check, graceful shutdown, worker error handling (REL1, REL3, REL6).
 - [ ] Upgrade Twilio, confirm the Supabase plan and backups, and check the WhatsApp tier.
 - [ ] Separate development and production (REL5).
 - [x] Call status drives retries and escalation (L5). *Redial, provider switch, restart-safe watch jobs, press 1 per guardian and paging.*
