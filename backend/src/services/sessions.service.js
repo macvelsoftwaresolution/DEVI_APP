@@ -65,11 +65,20 @@ export const createSessions = ({ db = supabase, now = Date.now } = {}) => {
 
     // --- Admin accounts ---
 
+    // The operator account with this username, or null. When admin_users cannot be read (missing,
+    // no privilege, database down) it is null too, so the .env admin can still sign in.
     async findAdmin(username) {
-      const { data, error } = await db.from('admin_users').select('*').eq('username', String(username).trim().toLowerCase()).maybeSingle();
+      let data;
+      let error;
+      try {
+        ({ data, error } = await db.from('admin_users').select('*').eq('username', String(username).trim().toLowerCase()).maybeSingle());
+      } catch (e) {
+        error = { code: undefined, message: e.message };
+      }
       if (error) {
-        if (MISSING.has(error.code)) { logMissing(error); return null; }
-        throw Object.assign(new Error(error.message), { code: error.code });
+        if (MISSING.has(error.code)) logMissing(error);
+        else console.error(`🚨 [SESSIONS] Operator accounts cannot be read (${error.code || 'error'}: ${error.message}): only the .env admin can sign in.${error.code === '42501' ? ' Run db/grants.sql.' : ''}`);
+        return null;
       }
       if (!data) return null;
       return { ...data, totpSecret: dec(data.totp_secret, 'admin_users.totp_secret', data.id) };

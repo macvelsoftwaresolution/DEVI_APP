@@ -283,3 +283,11 @@ test('sign-ins are in the audit log, failed ones too, and never with a password'
   assert.equal(JSON.stringify(auditEvents).includes('wrong password'), false);
   assert.equal(JSON.stringify(auditEvents).includes('correct horse'), false);
 });
+
+test('admin_users unreadable (no privilege, database down): no operator, the .env admin can still sign in', async () => {
+  const denied = Object.assign(new Error('permission denied for table admin_users'), { code: '42501' });
+  const s = createSessions({ db: fakeDb({ admin_users: denied }) });
+  assert.equal(await s.findAdmin('ravi'), null);
+  const down = createSessions({ db: { from: () => { throw new Error('fetch failed'); } } });
+  assert.equal(await down.findAdmin('ravi'), null);
+});
