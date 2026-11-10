@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase.js';
 import { sosNotify } from './sosNotify.service.js';
 import { sosOffline } from './sosOffline.service.js';
 import { pager } from './pager.service.js';
+import { retention } from './retention.service.js';
 
 /**
  * Deep health check (REL1) and the monitor that pages on it (REL2).
@@ -45,7 +46,7 @@ const getJson = async (fetchImpl, url, headers) => {
 
 const basic = (user, pass) => `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}`;
 
-export const defaultChecks = ({ db = supabase, notify = sosNotify, offline = sosOffline, env = process.env, fetchImpl = fetch, startedAt = Date.now(), now = Date.now } = {}) => ({
+export const defaultChecks = ({ db = supabase, notify = sosNotify, offline = sosOffline, retain = retention, env = process.env, fetchImpl = fetch, startedAt = Date.now(), now = Date.now } = {}) => ({
   async database() {
     const { error } = await db.from('sos_history').select('id').limit(1);
     return error ? fail(`cannot read sos_history (${error.code || error.message})`) : ok('reachable');
@@ -126,6 +127,16 @@ export const defaultChecks = ({ db = supabase, notify = sosNotify, offline = sos
 
   async oncall() {
     return env.ONCALL_PHONE ? ok('set') : warn('ONCALL_PHONE not set: failures page nobody');
+  },
+
+  // A failing clean-up never stops an SOS, so it only warns
+  async retention() {
+    const { last, days } = retain.status();
+    const sos = days.p_sos_days ? `SOS kept ${days.p_sos_days} days` : 'SOS kept forever';
+    if (!last) return ok(`not run yet since start (${sos})`);
+    if (!last.ok) return warn(last.missing ? 'run_retention missing: run db/retention.sql' : `last run failed: ${last.error}`);
+    if (now() - last.at > 26 * 60 * 60 * 1000) return warn('has not run for over a day');
+    return ok(`last run ${Math.round((now() - last.at) / 60000)} min ago (${sos})`);
   },
 });
 

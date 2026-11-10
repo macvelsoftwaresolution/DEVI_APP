@@ -35,7 +35,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 - **REL6:** the worker catches errors in each pass and each job, and the process logs unhandled rejections instead of stopping.
 - **From the senior's assessment:** the duplicate alert race (R7), and retry decisions use the saved status (P0-10, worker part).
 
-**Done on 10 Nov 2026 (not deployed yet, 297 backend tests pass):**
+**Done on 10 Nov 2026 (not deployed yet, 304 backend tests pass):**
 
 - **P4:** `liveTrackSessions` (`src/services/live-sessions.js`) finds an SOS through an index, not by scanning every session. Sessions not touched for 24 hours are dropped, and at most 50,000 are kept. Every reader falls back to the database. A dropped session loses only the WhatsApp result shown on the dashboard.
 - **L5, restart part:** an accepted call also leaves a "watch" job in the queue for about 5 minutes. The status webhook deletes it. If the webhook never arrives, for example because the server restarted and forgot the call, the watch job comes back. A guardian who pressed 1 is then left alone, and anyone else is redialled. This counts as a redial, so the 3-redial limit still applies.
@@ -58,6 +58,8 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 - **P3, S4:** the dashboard (`src/services/dashboard.service.js`) no longer loads whole tables. Lists are counted, filtered (status, IST dates, user) and paged by the database, and only the rows on the page and their users are decrypted. The home page numbers come from `dashboard_stats` (`db/dashboard.sql`), with no decryption. Without that function they are counted with separate queries. A detail page loads one record. Search has to read decrypted names, numbers and places, so it scans the newest 10,000 rows in batches of 1,000 and gives way to other requests between batches. A whole alert id is looked up directly. The 20,000-row cut-off is gone. **Run `backend/db/dashboard.sql` in Supabase** (function and indexes).
   - Known limits: search covers the newest 10,000 SOS and users, and says `searchLimited` when there are more (the web page does not show this yet). The dashboard still runs in the SOS process. Running it as a separate service is part of Stage A.
 
+- **S5:** daily retention (`db/retention.sql`). Ended retry jobs and WhatsApp statuses go after 30 days, sign-in code rows after 7, and SOS send plans are cleared after 7. SOS history is kept until a legal period is set (`RETENTION_SOS_DAYS`). The health check warns when retention is missing or late. **Run `backend/db/retention.sql` in Supabase.**
+
 **Partly done (2):**
 
 - **L13:** the server part is covered by L3: a repeat press after a cut-off send now sends. Still open: the app forgets the active SOS after a restart (T13, app side).
@@ -72,11 +74,11 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 |---|---|---|---|
 | Message loss (section 3) | L1, L2, L3, L4, L5, L6, L8 | L7 (SMS), L11 (paged, not staffed), L13 (app side) | L9, L10, L12 |
 | Performance (section 4) | P1, P2, P3, P4 | | P5 |
-| Scalability (section 5) | S4 | | S1, S2, S3, S5 |
+| Scalability (section 5) | S4, S5 | | S1, S2, S3 |
 | Reliability (section 6) | REL1, REL2, REL3, REL6, REL7 | | REL4, REL5 |
 | Target design (section 7) | | | All building blocks |
 | Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
-| Security (section 10) | Names in call URLs, token revoke, operator accounts with 2FA | IVR signatures (log mode until checked live), shared admin login (until `ADMIN_ENV_LOGIN=off`) | Secrets, retention, audit log, key service, spend caps, pentest |
+| Security (section 10) | Names in call URLs, token revoke, operator accounts with 2FA | IVR signatures (log mode until checked live), shared admin login (until `ADMIN_ENV_LOGIN=off`), retention (SOS history kept until the legal period is decided) | Secrets, audit log, key service, spend caps, pentest |
 
 ### How to read the evidence
 
@@ -252,6 +254,7 @@ It handles 10 jobs every 15 seconds, one at a time, so at most 40 jobs a minute.
 **S5. The queue archive grows forever.**
 No code cleans `a_sos_notify` (**Code**).
 **Fix:** a retention rule, which is also a legal need.
+*Done on 10 Nov 2026: `db/retention.sql` plus `src/services/retention.service.js`, once a day in batches. By default ended retry jobs and WhatsApp statuses are kept 30 days, sign-in code rows 7, and SOS send plans (guardian numbers) are cleared after 7. SOS history itself is kept until `RETENTION_SOS_DAYS` is set, because that period is a legal decision. Evidence files in Cloudinary and pm2 log files are not covered: use a Cloudinary rule and `pm2-logrotate`.*
 
 ---
 

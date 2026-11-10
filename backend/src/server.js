@@ -16,6 +16,7 @@ import { sosDispatch } from './services/sosDispatch.service.js';
 import { sosOffline } from './services/sosOffline.service.js';
 import { health } from './services/health.service.js';
 import { sessions } from './services/sessions.service.js';
+import { retention } from './services/retention.service.js';
 import { WhatsAppStatus, parseStatusEvents } from './services/whatsappStatus.service.js';
 import { createShutdown } from './utils/shutdown.js';
 
@@ -155,6 +156,7 @@ server.listen(PORT, () => {
   sosNotify.startWorker();
   sosDispatch.start();
   sessions.startAdminRefresh();
+  retention.start();
   sosOffline.start();
   health.start();
   if (!process.env.ONCALL_PHONE) {
@@ -165,7 +167,7 @@ server.listen(PORT, () => {
 // pm2 restart sends SIGINT, most hosts SIGTERM. pm2's kill_timeout must be longer than the wait
 // here (backend/ecosystem.config.cjs), or it stops the process mid-send.
 // The resumer and the journal replay stop first, so they start no new sends while the running ones finish
-const notify = { stop: async () => { await Promise.all([sosDispatch.stop(), sosOffline.stop(), health.stop()]); await sosNotify.stop(); } };
+const notify = { stop: async () => { await Promise.all([sosDispatch.stop(), sosOffline.stop(), health.stop(), retention.stop()]); await sosNotify.stop(); } };
 const shutdown = createShutdown({ server, socket: socketService, notify });
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
