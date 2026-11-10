@@ -1,7 +1,7 @@
 # DEVI: Performance, Scalability, Reliability and Security Analysis
 
 **Goal:** host DEVI in 10+ countries, with a path to 100+, without losing a single SOS.
-**Date:** 5 Nov 2026. **Code checked:** commit `8c549fc`.
+**Date:** 5 Nov 2026, status updated 10 Nov 2026. **Code checked:** commit `8c549fc`, then again at `980190f` for the fix status.
 
 ---
 
@@ -20,18 +20,47 @@ The most urgent finding is a bug. Most WhatsApp errors are treated as "token exp
 
 **An honest limit:** no system can promise a message reaches a phone that is switched off. What we can promise is stronger and testable: **no alert is ever dropped silently.** This needs a person on call 24x7 at the end of the chain, which DEVI does not have today. That is a business decision (section 13).
 
-### Fix status (5 Nov 2026, live in commit 3b9a482, real SOS test pending)
+### Fix status (checked against code on 10 Nov 2026, commit `980190f`)
 
-- **L1:** done. WhatsApp errors are classified by code.
-- **L7:** partly done. Token, template and provider-setting failures now keep retrying. SMS is still missing.
-- **P1, P2:** done for the send path. The alert is saved first, and the send waits at most 1 second for a place name.
-- **`'Tamil Nadu'` fallback and geocode cache limit (part of P4):** done.
-- **L6, REL7 (code, deploy pending):** retries last about 2 hours with growing, varied gaps.
-- **L8 (0b2765b):** the SOS route no longer refuses by IP.
-- **L5 part (code, deploy pending):** a failed call retries on the other provider; busy or unanswered is redialled 3 times. Found live on 5 Nov: Airtel returned a temporary failure and nothing retried. Escalation to the next guardian is still T11.
-- **Also fixed from the senior's assessment:** the duplicate alert race (R7), and retry decisions now use the saved status (P0-10, worker part).
+All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on the live server since these fixes.** Check that `980190f` is deployed and that pm2 uses `backend/ecosystem.config.cjs`.
 
-All other findings remain open.
+**Done in code (11):**
+
+- **L1:** WhatsApp errors are classified by code. `OAuthException` means an expired token only with code `190`.
+- **L6, REL7:** up to 15 retries over about 2 hours, with gaps of 1, 2, 5 and 10 minutes, varied by 20%.
+- **L8:** the SOS route no longer refuses by IP. Over the IP limit, saved guardians are still sent to, and only unverified numbers wait.
+- **P1, P2:** the alert is saved first, and the send waits at most 1 second for a place name.
+- **`'Tamil Nadu'` fallback removed (section 9).**
+- **REL3:** graceful shutdown (`src/utils/shutdown.js`). On a restart, sends in progress get up to 10 seconds to finish, and pm2's `kill_timeout` is 12 seconds.
+- **REL6:** the worker catches errors in each pass and each job, and the process logs unhandled rejections instead of stopping.
+- **From the senior's assessment:** the duplicate alert race (R7), and retry decisions use the saved status (P0-10, worker part).
+
+**Done on 10 Nov 2026 (not deployed yet, 180 backend tests pass):**
+
+- **P4:** `liveTrackSessions` (`src/services/live-sessions.js`) finds an SOS through an index, not by scanning every session. Sessions not touched for 24 hours are dropped, and at most 50,000 are kept. Every reader falls back to the database. A dropped session loses only the WhatsApp result shown on the dashboard.
+- **L5, restart part:** an accepted call also leaves a "watch" job in the queue for about 5 minutes. The status webhook deletes it. If the webhook never arrives, for example because the server restarted and forgot the call, the watch job comes back. A guardian who pressed 1 is then left alone, and anyone else is redialled. This counts as a redial, so the 3-redial limit still applies.
+- **Paging (L5, L7, L11 and part of REL2):** a new `pager.service.js` calls the on-call number (`ONCALL_PHONE`) and sends it a WhatsApp. It pages when retries give up, when nobody answers the redials, when a WhatsApp token, template or setting failure stops every alert, when no call provider can place a call, and when an SOS has no guardian and no control room number. An alert page forwards the SOS itself, with the name and map link. The same problem is paged at most once every 15 minutes. An alert page is skipped when the alert is resolved or a guardian pressed 1. **`ONCALL_PHONE` must be set in the live `.env`, or nothing is paged.**
+  - Known limits: the page WhatsApp uses the SOS template, because no ops template is approved yet, so it reads "DEVI system: <problem> has triggered an emergency alert". Pages are kept in memory and are not retried after a restart. If WhatsApp and both call providers are down together, the page cannot get out either. This needs an outside pager such as PagerDuty (T11).
+
+- **L5, press 1:** only press 1 confirms a call, and it stops calls to that guardian only. Every other guardian keeps being called. A call picked up without press 1, or by voicemail, is redialled like an unanswered one, up to the same 3-redial limit. A retry already queued for a guardian who then pressed 1 is dropped. Press 1 does not stop that guardian's WhatsApp retries, because the WhatsApp carries the map link. All guardians are called at once, so "next guardian" means paging, which is done above. **With this, L5 is done.**
+
+**Partly done (1):**
+
+- **L7:** still open: SMS. Planned for the next phase with MSG91. The committed code has no SMS today.
+
+**Still open:** everything else. The critical ones are **L2, L3 and L4**. See the tracker below.
+
+### Status tracker
+
+| Area | Done | Partly done | Open |
+|---|---|---|---|
+| Message loss (section 3) | L1, L5, L6, L8 | L7 (SMS), L11 (paged, not staffed) | **L2, L3, L4**, L9, L10, L12, L13 |
+| Performance (section 4) | P1, P2, P4 | | P3, P5 |
+| Scalability (section 5) | | | S1, S2, S3, S4, S5 |
+| Reliability (section 6) | REL3, REL6, REL7 | REL2 (WhatsApp and call failures page) | REL1, REL4, REL5 |
+| Target design (section 7) | | | All building blocks |
+| Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
+| Security (section 10) | | | All items |
 
 ### How to read the evidence
 
@@ -394,17 +423,21 @@ Durations are rough, assuming 2 engineers (**Assumption**).
 
 No new infrastructure. **Do this before opening any new country.**
 
-- [ ] Fix WhatsApp error classification (L1), with tests using Meta's real error shapes.
-- [ ] Keep jobs alive for token, template and balance failures, and page someone (L7).
+Status as of 10 Nov 2026:
+
+- [x] Fix WhatsApp error classification (L1), with tests using Meta's documented error shapes. A check against a live Meta failure is still pending.
+- [x] Keep jobs alive for token, template and balance failures, and page someone (L7). *Paging is done in code. Set `ONCALL_PHONE` on the live server.*
 - [ ] On a duplicate SOS, finish unfinished sends (L3, L13).
 - [ ] Send even if the database fails, with a local journal (L2).
-- [ ] Move place lookup after the send (P1, P2). Remove `'Tamil Nadu'`.
-- [ ] Remove the IP-only SOS limit (L8).
-- [ ] Longer retries with growing gaps and randomness (L6, REL7).
-- [ ] Alerts for `GAVE UP`, queue depth, balances and token health (REL1, REL2).
-- [ ] Deep health check, graceful shutdown, worker error handling (REL1, REL3, REL6).
+- [x] Move place lookup after the send (P1, P2). Remove `'Tamil Nadu'`.
+- [x] Remove the IP-only SOS limit (L8).
+- [x] Longer retries with growing gaps and randomness (L6, REL7).
+- [ ] Alerts for `GAVE UP`, queue depth, balances and token health (REL1, REL2). *`GAVE UP` and token failures page. Queue depth and balances are still open.*
+- [ ] Deep health check, graceful shutdown, worker error handling (REL1, REL3, REL6). *Graceful shutdown and worker error handling are done. The health check still does not test the database, queue or providers.*
 - [ ] Upgrade Twilio, confirm the Supabase plan and backups, and check the WhatsApp tier.
 - [ ] Separate development and production (REL5).
+- [x] Call status drives retries and escalation (L5). *Redial, provider switch, restart-safe watch jobs, press 1 per guardian and paging.*
+- [ ] Real SOS test on the live server, after deploying `980190f`.
 
 **Done when:** a test kills the server mid-SOS, and the database for a few minutes, and every test alert still reaches a guardian.
 

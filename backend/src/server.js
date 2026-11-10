@@ -138,6 +138,9 @@ server.listen(PORT, () => {
   console.log(`🛡️ Security enabled: Helmet, Rate Limiter, and JWT Auth active`);
   console.log(`📡 Health check available at: http://localhost:${PORT}/api/health`);
   sosNotify.startWorker();
+  if (!process.env.ONCALL_PHONE) {
+    console.error('🚨 [PAGER] ONCALL_PHONE is not set: failed SOS deliveries and provider failures page nobody.');
+  }
 });
 
 // pm2 restart sends SIGINT, most hosts SIGTERM. pm2's kill_timeout must be longer than the wait

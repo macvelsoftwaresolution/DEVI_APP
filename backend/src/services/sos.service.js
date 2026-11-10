@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
-import { encryptField as enc, decryptField as dec, blindIndex } from '../utils/encryption.js';
+import { encryptField as enc, decryptField as dec, blindIndex, blindIndexes } from '../utils/encryption.js';
 import { liveTrackSessions } from './live-sessions.js';
 import { UserService } from './user.service.js';
 import { GeocodeService } from './geocode.service.js';
@@ -15,21 +15,10 @@ export const SosService = {
 
   // Check for existing active SOS session (Idempotency & One Active SOS Rule)
   async findExistingSos({ idempotencyKey, userPhone }) {
-    // 1. Check in-memory active live sessions first
-    for (const session of liveTrackSessions.values()) {
-      if (session.status === 'ACTIVE') {
-        if (idempotencyKey && session.idempotencyKey === idempotencyKey) {
-          return session;
-        }
-        if (userPhone && session.userPhone === userPhone) {
-          const ageMs = Date.now() - new Date(session.timestamp).getTime();
-          // If within the last 15 minutes, consider it an ongoing active session
-          if (ageMs < 15 * 60 * 1000) {
-            return session;
-          }
-        }
-      }
-    }
+    // 1. Check in-memory active live sessions first. The same phone within 15 minutes counts as
+    // the ongoing SOS.
+    const live = liveTrackSessions.findActive({ idempotencyKey, userPhone }, 15 * 60 * 1000);
+    if (live) return live;
 
     // 2. Check Supabase DB by idempotency_key if provided
     if (idempotencyKey) {
@@ -397,6 +386,8 @@ export const SosService = {
         if (session) {
           session.userId = accountId;
           session.userPhone = accountPhone;
+          // Again, so the duplicate check finds it under the account's phone
+          liveTrackSessions.set(String(id), session);
         }
       }
       return claimable.map(String);
@@ -456,6 +447,36 @@ export const SosService = {
       return true;
     } catch (e) {
       console.error('Error saving guardian acknowledgement:', e);
+      return false;
+    }
+  },
+
+  // Whether this guardian pressed 1 for this alert. Null when it cannot be read, which callers
+  // must treat as not acknowledged.
+  async hasGuardianAck(alertId, phone) {
+    try {
+      // Every key's hash, so a press 1 saved before a key rotation still counts
+      const { data, error } = await supabase
+        .from('sos_guardian_acks')
+        .select('id')
+        .eq('alert_id', alertId)
+        .in('phone_hash', blindIndexes(phone))
+        .limit(1);
+      if (error) return null;
+      return (data || []).length > 0;
+    } catch (e) {
+      console.warn(`⚠️ Acknowledgement of alert ${alertId} not read:`, e.message);
+      return null;
+    }
+  },
+
+  // Whether any guardian pressed 1 for this alert. False when it cannot be read, so a page still goes out.
+  async hasAnyGuardianAck(alertId) {
+    try {
+      const { data, error } = await supabase.from('sos_guardian_acks').select('id').eq('alert_id', alertId).limit(1);
+      return !error && (data || []).length > 0;
+    } catch (e) {
+      console.warn(`⚠️ Acknowledgements of alert ${alertId} not read:`, e.message);
       return false;
     }
   },

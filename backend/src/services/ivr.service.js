@@ -86,6 +86,13 @@ class IvrService {
     return `victim=${encodeURIComponent(victimName)}&loc=${encodeURIComponent(locationText)}&sosId=${encodeURIComponent(sosId)}&ack=${encodeURIComponent(ack)}`;
   }
 
+  // A page call speaks a fixed message (ivr.routes.js), so its URL carries no details
+  answerUrl(provider, details) {
+    return details.page
+      ? `${publicBaseUrl()}/api/ivr/${provider}/page`
+      : `${publicBaseUrl()}/api/ivr/${provider}/answer?${this.answerQuery(details)}`;
+  }
+
   async callViaTwilio(to, details) {
     let fromNumber = process.env.TWILIO_CALLER_ID;
     if (!fromNumber) {
@@ -95,7 +102,7 @@ class IvrService {
     if (!fromNumber) throw new Error('No Twilio caller ID available');
 
     const call = await this.twilioClient.calls.create({
-      url: `${publicBaseUrl()}/api/ivr/twilio/answer?${this.answerQuery(details)}`,
+      url: this.answerUrl('twilio', details),
       to,
       from: fromNumber,
       statusCallback: `${publicBaseUrl()}/api/ivr/twilio/status`,
@@ -113,7 +120,7 @@ class IvrService {
     const call = await this.plivoClient.calls.create(
       fromNumber,
       to,
-      `${baseUrl}/api/ivr/plivo/answer?${this.answerQuery(details)}`,
+      this.answerUrl('plivo', details),
       { answerMethod: 'GET', hangupUrl: `${baseUrl}/api/ivr/plivo/status`, hangupMethod: 'POST' }
     );
     return call.requestUuid;
@@ -131,6 +138,23 @@ class IvrService {
     if (!to) return { success: false, error: 'Invalid phone number' };
 
     const details = { victimName, locationText: spokenPlace(locationText), sosId, ack: sosId ? ackToken(to, sosId) : '' };
+    return this.placeCall(to, details, avoidProvider);
+  }
+
+  /**
+   * Calls the on-call person with a fixed "DEVI system alert" message (pager.service.js)
+   */
+  async triggerPageCall({ phone }) {
+    if (!this.twilioClient && !this.plivoClient) {
+      this.initClients();
+    }
+    const to = this.formatPhoneNumber(phone);
+    if (!to) return { success: false, error: 'Invalid phone number' };
+    return this.placeCall(to, { page: true });
+  }
+
+  // Tries each configured provider in order until one accepts the call
+  async placeCall(to, details, avoidProvider = null) {
     let lastError = 'No telephony provider configured in .env';
 
     for (const provider of this.providerOrder(to, avoidProvider)) {

@@ -24,6 +24,7 @@ import {
 } from '../middlewares/auth.middleware.js';
 import { socketService } from '../services/socket.service.js';
 import { sosNotify } from '../services/sosNotify.service.js';
+import { pager } from '../services/pager.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -165,6 +166,12 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
     const results = await Promise.all(
       recipients.map(async (r) => {
         if (!r.phone) {
+          // Nobody else is told, so the on-call person gets the SOS itself (not awaited)
+          pager.page({
+            key: `alert:${alert.id}`,
+            reason: 'no guardian and no control room number (ADMIN_WHATSAPP)',
+            alert: { alertId: alert.id, victimName, location: { latitude: alert.latitude, longitude: alert.longitude, location: alert.location } },
+          });
           return { phone: '', role: r.role, sent: false, reason: 'CONTROL_ROOM_NOT_CONFIGURED' };
         }
         // The limits on paid sends (the alert still reaches the dashboard)

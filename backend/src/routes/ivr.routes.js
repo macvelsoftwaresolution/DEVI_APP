@@ -31,6 +31,26 @@ const saveAck = async (req, provider) => {
   return saved;
 };
 
+// Page call to the on-call person (pager.service.js). Fixed text with no alert details, so this
+// public route gives nothing away. The details are in the WhatsApp page and the server logs.
+const PAGE_MESSAGE = 'DEVI system alert. An SOS could not reach anyone, or a message or call service has failed. Open the DEVI dashboard and the server logs now.';
+
+router.all('/plivo/page', (req, res) => {
+  res.set('Content-Type', 'text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Speak voice="WOMAN" language="en-IN" loop="2">${PAGE_MESSAGE}</Speak>
+</Response>`);
+});
+
+router.all('/twilio/page', (req, res) => {
+  res.set('Content-Type', 'text/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Aditi" language="en-IN" loop="2">${PAGE_MESSAGE}</Say>
+</Response>`);
+});
+
 /**
  * Plivo Answer Webhook
  * Called by Plivo when the recipient answers the phone call.

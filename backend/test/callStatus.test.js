@@ -22,7 +22,7 @@ const plivoCarrierFailure = {
   RequestUUID: 'call-1',
 };
 
-const setup = ({ status = 'ACTIVE', sendReturns = 1 } = {}) => {
+const setup = ({ status = 'ACTIVE', sendReturns = 1, acked = true } = {}) => {
   const sent = [];
   const notify = createSosNotify({
     queue: {
@@ -32,6 +32,7 @@ const setup = ({ status = 'ACTIVE', sendReturns = 1 } = {}) => {
     random: () => 0.5,
     senders: { ivr: async () => ({ success: true, provider: 'plivo', callId: 'call-1' }) },
     getAlertStatus: async () => status,
+    hasAck: async () => acked,
   });
   return { notify, sent };
 };
@@ -70,11 +71,11 @@ test('a call the carrier failed goes back to the queue and avoids that provider'
   assert.equal(queuedJob(sent.at(0)).avoidProvider, 'plivo');
 });
 
-test('an answered call is finished', async () => {
+test('an answered call with press 1 is finished', async () => {
   const { notify, sent } = setup();
   await notify.dispatch('ivr', job);
   sent.length = 0;
-  assert.equal(await notify.callEnded({ callId: 'call-1', status: 'completed', answered: true }), 'answered');
+  assert.equal(await notify.callEnded({ callId: 'call-1', status: 'completed', answered: true }), 'acknowledged');
   assert.equal(sent.length, 0);
 });
 
