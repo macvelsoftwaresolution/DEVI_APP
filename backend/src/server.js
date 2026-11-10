@@ -14,6 +14,7 @@ import { socketService } from './services/socket.service.js';
 import { sosNotify } from './services/sosNotify.service.js';
 import { sosDispatch } from './services/sosDispatch.service.js';
 import { sosOffline } from './services/sosOffline.service.js';
+import { WhatsAppStatus, parseStatusEvents } from './services/whatsappStatus.service.js';
 import { createShutdown } from './utils/shutdown.js';
 
 const app = express();
@@ -93,9 +94,19 @@ app.post(WEBHOOK_PATHS, (req, res) => {
 
   // Events carry recipients' phone numbers: log only what kind of event arrived
   const change = req.body?.entry?.[0]?.changes?.[0];
-  const statuses = (change?.value?.statuses || []).map((s) => s.status).join(',') || '-';
+  const events = parseStatusEvents(req.body);
+  const statuses = events.map((e) => e.status).join(',') || '-';
   console.log(`📩 [WHATSAPP EVENT RECEIVED] field: ${change?.field || 'unknown'}, statuses: ${statuses}`);
-  return res.status(200).send('EVENT_RECEIVED');
+  res.status(200).send('EVENT_RECEIVED');
+
+  // L4: accepted is not delivered. Saved for a server that restarts, and acted on at once here.
+  // After the reply, so Meta never waits for the database and never resends for a slow one.
+  if (events.length) {
+    WhatsAppStatus.save(events);
+    for (const e of events) {
+      sosNotify.messageStatus(e).catch((err) => console.error(`🚨 [WHATSAPP STATUS] Could not act on ${e.status}:`, err));
+    }
+  }
 });
 
 // Favicon handler

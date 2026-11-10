@@ -1,5 +1,6 @@
 import { QueueService } from './queue.service.js';
-import { WhatsAppService } from './whatsapp.service.js';
+import { WhatsAppService, classifyMetaError } from './whatsapp.service.js';
+import { WhatsAppStatus } from './whatsappStatus.service.js';
 import { ivrService } from './ivr.service.js';
 import { SosService } from './sos.service.js';
 import { Encryption } from '../utils/encryption.js';
@@ -31,6 +32,14 @@ import { pager } from './pager.service.js';
  * voicemail) is redialled like an unanswered one, and every other guardian keeps being called.
  * WhatsApp retries are not stopped by press 1, because the WhatsApp carries the map link.
  *
+ * A WhatsApp Meta accepted is watched the same way (L4): Meta's status webhook (messageStatus)
+ * reports delivered, read or failed. Delivered or read ends it. Failed is sent again, unless the
+ * number is not on WhatsApp (the call still goes). The watch job, hidden for MESSAGE_WATCH_SECONDS,
+ * covers a restart: it reads the saved status (whatsappStatus.service.js) and acts on it.
+ * "Sent" but never delivered means the phone is off or offline: sending again would not help, so
+ * it is left to the call. No status at all means the webhook is not reaching us: that pages,
+ * because sending again on no news would repeat every WhatsApp.
+ *
  * pgmq_public cannot change a queued job's delay, so a retry is a new delayed job. It is added
  * before the old one is deleted: a crash between the two sends twice, never zero times.
  *
@@ -45,6 +54,8 @@ export const MAX_ATTEMPTS = 15;
 export const MAX_REDIALS = 3;
 // A call rings for about a minute and the message takes another; the status webhook comes soon after
 export const CALL_WATCH_SECONDS = 300;
+// Meta reports failed or delivered within seconds when the phone is online
+export const MESSAGE_WATCH_SECONDS = 300;
 const CALL_MEMORY_MS = 30 * 60 * 1000;
 // 'no-status': the watch job came back without a status webhook, so nobody knows how it ended.
 // 'answered-no-press-1': picked up (or voicemail) but nobody pressed 1, so not confirmed.
@@ -82,12 +93,14 @@ export const retryGapSeconds = (attempt) => RETRY_GAPS_SECONDS.at(Math.min(attem
 const alertStatus = (alertId) => SosService.getSavedAlertStatus(alertId);
 // Same number format as the press 1 record, which saves the number the call went to
 const guardianAck = (alertId, phone) => SosService.hasGuardianAck(alertId, ivrService.formatPhoneNumber(phone));
+const savedMessageStatus = (messageId) => WhatsAppStatus.latest(messageId);
 
 export const createSosNotify = ({
   queue = QueueService,
   senders = defaultSenders,
   getAlertStatus = alertStatus,
   hasAck = guardianAck,
+  getMessageStatus = savedMessageStatus,
   page = (p) => pager.page(p),
   random = Math.random,
 } = {}) => {
@@ -108,6 +121,7 @@ export const createSosNotify = ({
   let workerPass = null;
   const sending = new Set(); // dispatches still running, so a shutdown can wait for them
   const activeCalls = new Map(); // call id -> { job, attempt, at, provider, watchId }, until its status webhook
+  const activeMessages = new Map(); // WhatsApp message id -> { job, attempt, at, watchId }, until delivered or failed
 
   // Within 20% either way
   const varied = (seconds) => Math.round(seconds * (0.8 + random() * 0.4));
@@ -132,17 +146,76 @@ export const createSosNotify = ({
   const drop = (id, how = 'delete') =>
     queue[how](SOS_NOTIFY_QUEUE, id).catch((e) => console.warn(`⚠️ [SOS QUEUE] ${how} job ${id} failed:`, e.message));
 
-  // An accepted call: kept in memory for its status webhook, and queued as a watch job in case that
-  // webhook never reaches this server. Must run before the call's own job is deleted.
-  const watchCall = async (kind, job, out, attempt) => {
-    if (kind !== 'ivr' || !out?.success || !out.callId) return;
-    const now = Date.now();
-    for (const [id, call] of activeCalls) {
-      if (now - call.at > CALL_MEMORY_MS) activeCalls.delete(id);
+  const forgetOld = (map, now) => {
+    for (const [id, entry] of map) {
+      if (now - entry.at > CALL_MEMORY_MS) map.delete(id);
     }
-    const watched = { ...job, callId: out.callId, provider: out.provider };
-    const watchId = await enqueue('ivr', watched, { attempt, delay: CALL_WATCH_SECONDS, watch: true });
-    activeCalls.set(out.callId, { job, attempt, at: now, provider: out.provider, watchId });
+  };
+
+  // An accepted call or WhatsApp: kept in memory for its status webhook, and queued as a watch job
+  // in case that webhook never reaches this server. Must run before the send's own job is deleted.
+  const watchSend = async (kind, job, out, attempt) => {
+    if (!out?.success) return;
+    const now = Date.now();
+    if (kind === 'ivr' && out.callId) {
+      forgetOld(activeCalls, now);
+      const watched = { ...job, callId: out.callId, provider: out.provider };
+      const watchId = await enqueue('ivr', watched, { attempt, delay: CALL_WATCH_SECONDS, watch: true });
+      activeCalls.set(out.callId, { job, attempt, at: now, provider: out.provider, watchId });
+    } else if (kind === 'whatsapp' && out.messageId) {
+      forgetOld(activeMessages, now);
+      const watched = { ...job, messageId: out.messageId };
+      const watchId = await enqueue('whatsapp', watched, { attempt, delay: MESSAGE_WATCH_SECONDS, watch: true });
+      activeMessages.set(out.messageId, { job, attempt, at: now, watchId });
+    }
+  };
+
+  // Meta reported a WhatsApp it had accepted as failed: queues it again, or stops.
+  // 'not-queued' means the next try could not be saved, so the caller must keep its own job.
+  const messageFailed = async (job, attempt, errorCode) => {
+    const reason = errorCode != null ? classifyMetaError({ code: errorCode }) : 'META_ERROR';
+    const { messageId, ...base } = job;
+    if (PERMANENT_WHATSAPP.has(reason)) {
+      console.warn(`⚠️ [SOS WHATSAPP] Alert ${job.alertId} to ${maskPhone(job.phone)} undeliverable (${errorCode}, ${reason}): not sent again, the call still goes`);
+      return 'permanent';
+    }
+    if (SYSTEM_WHATSAPP.has(reason)) pageSystemFailure('whatsapp', { success: false, reason });
+    if (attempt >= MAX_ATTEMPTS) {
+      console.error(`🚨 [SOS WHATSAPP GAVE UP] Alert ${job.alertId} to ${maskPhone(job.phone)}: Meta reported failed (${errorCode})`);
+      pageAlert(job, `WhatsApp to ${maskPhone(job.phone)} failed ${MAX_ATTEMPTS} times`);
+      return 'gave-up';
+    }
+    const next = attempt + 1;
+    const delay = retryGapSeconds(next);
+    if ((await enqueue('whatsapp', base, { attempt: next, delay })) == null) return 'not-queued';
+    console.warn(`⚠️ [SOS WHATSAPP] Alert ${job.alertId} to ${maskPhone(job.phone)}: accepted, then Meta reported failed (${errorCode}, ${reason}). Sending again in about ${delay}s`);
+    return 'retry';
+  };
+
+  // A WhatsApp watch job came back: act on the status Meta saved for it
+  const checkMessage = async (id, job, attempt) => {
+    activeMessages.delete(job.messageId);
+    let saved;
+    try {
+      saved = await getMessageStatus(job.messageId);
+    } catch (e) {
+      // Unknown: sending again on no news would repeat the WhatsApp, and the call still goes
+      console.warn(`⚠️ [SOS WHATSAPP] Alert ${job.alertId}: status of the WhatsApp not read (${e.message}), left as sent`);
+      await drop(id);
+      return;
+    }
+    if (saved?.status === 'failed') {
+      const result = await messageFailed(job, attempt, saved.errorCode);
+      if (result !== 'not-queued') await drop(id);
+      return;
+    }
+    if (!saved) {
+      console.error(`🚨 [SOS WHATSAPP] Alert ${job.alertId} to ${maskPhone(job.phone)}: no status from Meta after about ${MESSAGE_WATCH_SECONDS}s`);
+      page({ key: 'whatsapp:no-status', reason: 'Meta sends no WhatsApp delivery statuses: check the webhook subscription to "messages" and WHATSAPP_APP_SECRET' });
+    } else if (saved.status === 'sent') {
+      console.warn(`⚠️ [SOS WHATSAPP] Alert ${job.alertId} to ${maskPhone(job.phone)}: not delivered after about ${MESSAGE_WATCH_SECONDS}s (phone off or offline). The call still goes.`);
+    }
+    await drop(id);
   };
 
   // A call that ended without anyone answering: queues the next try, or gives up.
@@ -215,7 +288,7 @@ export const createSosNotify = ({
         return;
       }
       if (message.watch) {
-        await checkCall(id, job, attempt);
+        await (kind === 'whatsapp' ? checkMessage : checkCall)(id, job, attempt);
         return;
       }
       // This guardian pressed 1 on an earlier call: no more calls to them. Other guardians and
@@ -229,7 +302,7 @@ export const createSosNotify = ({
       const out = await senders[kind](job);
       if (out?.success) {
         console.log(`✅ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} got through on retry ${attempt}`);
-        await watchCall(kind, job, out, attempt);
+        await watchSend(kind, job, out, attempt);
         await drop(id);
       } else if (isPermanent(kind, out)) {
         console.warn(`⚠️ [SOS QUEUE] ${kind} for alert ${alertId} to ${maskPhone(job.phone)} failed for good (${out?.reason || out?.error}), archived`);
@@ -259,7 +332,7 @@ export const createSosNotify = ({
       const run = (async () => {
         const queued = enqueue(kind, job).then((id) => { onQueued?.(id); return id; });
         const [jobId, out] = await Promise.all([queued, senders[kind](job)]);
-        await watchCall(kind, job, out, 0);
+        await watchSend(kind, job, out, 0);
         pageSystemFailure(kind, out);
         if (jobId != null && (out?.success || isPermanent(kind, out))) await drop(jobId);
         return out;
@@ -300,6 +373,28 @@ export const createSosNotify = ({
       workerTimer.unref();
       console.log(`🔁 [SOS QUEUE] Retry worker started (every ${POLL_MS / 1000}s, up to ${MAX_ATTEMPTS} retries)`);
       return workerTimer;
+    },
+
+    /**
+     * Meta reported a status for a WhatsApp (webhook in server.js): delivered, read, sent or failed.
+     * Unknown message ids (OTP codes, sends from before a restart) are left to the watch job.
+     * Returns what was done, for the log.
+     */
+    async messageStatus({ messageId, status, errorCode }) {
+      const entry = activeMessages.get(messageId);
+      if (!entry) return 'unknown';
+      if (status === 'sent') return 'sent';
+      activeMessages.delete(messageId);
+
+      const { job, attempt, watchId } = entry;
+      const done = async (result) => {
+        if (watchId != null && result !== 'not-queued') await drop(watchId);
+        return result;
+      };
+      if (status === 'delivered' || status === 'read') return done(status);
+      // failed
+      if ((await getAlertStatus(job.alertId)) === 'RESOLVED') return done('resolved');
+      return done(await messageFailed(job, attempt, errorCode));
     },
 
     /**
