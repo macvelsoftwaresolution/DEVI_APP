@@ -1,10 +1,15 @@
 import { Router } from 'express';
 import { maskPhone } from '../utils/logMask.js';
-import { publicBaseUrl, readAckToken } from '../services/ivr.service.js';
+import { publicBaseUrl, readAckToken, readCallToken } from '../services/ivr.service.js';
 import { SosService } from '../services/sos.service.js';
 import { sosNotify } from '../services/sosNotify.service.js';
+import { verifyIvrSignature } from '../middlewares/ivrSignature.js';
 
 const router = Router();
+
+// Every IVR webhook must be signed by its provider (IVR_SIGNATURE_MODE, ivrSignature.js)
+router.use('/plivo', verifyIvrSignature('plivo'));
+router.use('/twilio', verifyIvrSignature('twilio'));
 
 const ACK_SAVED = 'Thank you. Your acknowledgement has been recorded. Please check your WhatsApp and help immediately.';
 const ACK_NOT_SAVED = 'Thank you. Please check your WhatsApp and help immediately.';
@@ -14,14 +19,29 @@ const NO_RESPONSE = 'No response received. Alert remains active. Please check yo
 const escapeXml = (value) =>
   String(value ?? '').replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
 
-const gatherUrl = (provider, req) =>
-  escapeXml(`${publicBaseUrl()}/api/ivr/${provider}/gather?sosId=${encodeURIComponent(req.query.sosId || '')}&ack=${encodeURIComponent(req.query.ack || '')}`);
+// What this call speaks and who it went to, from its encrypted call token (t=). Calls placed before
+// the token carry the name and place in plain (victim=, loc=) and the number in ack=: still read,
+// so a call in progress during the deploy keeps working. A token that is not ours gives nothing.
+const callDetails = (req) => {
+  const sosId = req.query.sosId || '';
+  if (req.query.t) {
+    const d = readCallToken(req.query.t, sosId);
+    return d || { victimName: '', locationText: '', phone: null };
+  }
+  return { victimName: req.query.victim || '', locationText: req.query.loc || '', phone: readAckToken(req.query.ack, sosId) };
+};
 
-// Saved only with the call's ack token (ivr.service.js). False means nothing was saved,
+// The gather URL carries the same token on, so press 1 knows the guardian
+const gatherUrl = (provider, req) => {
+  const token = req.query.t ? `t=${encodeURIComponent(req.query.t)}` : `ack=${encodeURIComponent(req.query.ack || '')}`;
+  return escapeXml(`${publicBaseUrl()}/api/ivr/${provider}/gather?sosId=${encodeURIComponent(req.query.sosId || '')}&${token}`);
+};
+
+// Saved only with the call's token (ivr.service.js). False means nothing was saved,
 // so the call must not say "recorded".
 const saveAck = async (req, provider) => {
   const sosId = req.query.sosId;
-  const phone = readAckToken(req.query.ack, sosId);
+  const { phone } = sosId ? callDetails(req) : { phone: null };
   if (!phone) {
     console.warn(`⚠️ [IVR ${provider}] Press 1 for SOS ${sosId} ignored: invalid ack token`);
     return false;
@@ -59,8 +79,9 @@ router.all('/twilio/page', (req, res) => {
  * 2. Asks the guardian to press '1' to acknowledge
  */
 router.all('/plivo/answer', (req, res) => {
-  const victimName = escapeXml(req.query.victim || 'a user');
-  const locationText = req.query.loc ? `near ${escapeXml(req.query.loc)}` : '';
+  const details = callDetails(req);
+  const victimName = escapeXml(details.victimName || 'a user');
+  const locationText = details.locationText ? `near ${escapeXml(details.locationText)}` : '';
   const gatherAction = gatherUrl('plivo', req);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -150,8 +171,9 @@ router.all('/twilio/status', (req, res) =>
  * Twilio Answer Webhook
  */
 router.all('/twilio/answer', (req, res) => {
-  const victimName = escapeXml(req.query.victim || 'A user');
-  const locationText = req.query.loc ? ` near ${escapeXml(req.query.loc)}` : '';
+  const details = callDetails(req);
+  const victimName = escapeXml(details.victimName || 'A user');
+  const locationText = details.locationText ? ` near ${escapeXml(details.locationText)}` : '';
   const gatherAction = gatherUrl('twilio', req);
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>

@@ -14,9 +14,31 @@ export const ackToken = (phone, sosId) => Encryption.encrypt(phone, ACK_FIELD, s
 
 // Guardian's phone, or null if the token is not ours. isCurrent comes first: decrypt() returns
 // unencrypted text unchanged, so a plain number in the URL would otherwise pass.
+// Only for calls placed before the call token (below) existed; remove once none can be left.
 export const readAckToken = (token, sosId) => {
   if (!sosId || !Encryption.isCurrent(token)) return null;
   return Encryption.decrypt(token, ACK_FIELD, sosId) || null;
+};
+
+// Everything the call needs, in one token in the answer URL (t=): the name and place it speaks
+// and the guardian's number for press 1. Encrypted and bound to the alert, so the provider's logs
+// and ours hold no name, place or number, and the call works without the database (L2).
+const CALL_FIELD = 'ivr.call';
+export const CALL_TOKEN_TTL_MS = 60 * 60 * 1000;
+
+export const callToken = ({ victimName, locationText, phone }, sosId, now = Date.now()) =>
+  Encryption.encrypt(JSON.stringify({ n: victimName, l: locationText, p: phone, exp: now + CALL_TOKEN_TTL_MS }), CALL_FIELD, sosId || 'no-alert');
+
+// { victimName, locationText, phone }, or null when the token is not ours, not for this alert, or expired
+export const readCallToken = (token, sosId, now = Date.now()) => {
+  if (!Encryption.isCurrent(token)) return null;
+  try {
+    const d = JSON.parse(Encryption.decrypt(token, CALL_FIELD, sosId || 'no-alert') || 'null');
+    if (!d || typeof d.exp !== 'number' || d.exp < now) return null;
+    return { victimName: d.n || '', locationText: d.l || '', phone: d.p || '' };
+  } catch (_) {
+    return null;
+  }
 };
 
 // The stored address made easy to hear: "8G7P+2F, 12/3, 2nd Street, Anna Nagar, Chennai, Tamil Nadu 600040, India"
@@ -82,8 +104,9 @@ class IvrService {
     return avoid === order[0] ? [...order].reverse() : order;
   }
 
-  answerQuery({ victimName, locationText, sosId, ack }) {
-    return `victim=${encodeURIComponent(victimName)}&loc=${encodeURIComponent(locationText)}&sosId=${encodeURIComponent(sosId)}&ack=${encodeURIComponent(ack)}`;
+  // No name, place or number: only the alert id and the encrypted call token
+  answerQuery({ sosId, t }) {
+    return `sosId=${encodeURIComponent(sosId)}&t=${encodeURIComponent(t)}`;
   }
 
   // A page call speaks a fixed message (ivr.routes.js), so its URL carries no details
@@ -137,7 +160,7 @@ class IvrService {
     const to = this.formatPhoneNumber(recipientPhone);
     if (!to) return { success: false, error: 'Invalid phone number' };
 
-    const details = { victimName, locationText: spokenPlace(locationText), sosId, ack: sosId ? ackToken(to, sosId) : '' };
+    const details = { sosId, t: callToken({ victimName, locationText: spokenPlace(locationText), phone: to }, sosId) };
     return this.placeCall(to, details, avoidProvider);
   }
 

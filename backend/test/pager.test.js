@@ -149,5 +149,5 @@ test('a page call URL carries no alert details', async () => {
   const { ivrService } = await import('../src/services/ivr.service.js');
   assert.match(ivrService.answerUrl('plivo', { page: true }), /\/api\/ivr\/plivo\/page$/);
   assert.match(ivrService.answerUrl('twilio', { page: true }), /\/api\/ivr\/twilio\/page$/);
-  assert.match(ivrService.answerUrl('plivo', { victimName: 'P', locationText: '', sosId: 's', ack: 'a' }), /\/answer\?victim=P/);
+  assert.match(ivrService.answerUrl('plivo', { sosId: 's', t: 'tok' }), /\/answer\?sosId=s&t=tok$/);
 });
