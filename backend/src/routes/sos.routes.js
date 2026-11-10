@@ -25,6 +25,7 @@ import {
 import { socketService } from '../services/socket.service.js';
 import { sosDispatch, buildNotifyPlan } from '../services/sosDispatch.service.js';
 import { sosOffline } from '../services/sosOffline.service.js';
+import { audit } from '../services/audit.service.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -45,9 +46,16 @@ const rejectSosControl = (res) =>
     message: 'This device is not allowed to update this SOS alert.',
   });
 
-const hasAdminLogin = (req) => {
+const adminOf = (req) => {
   const auth = req.get('authorization') || '';
-  return !!decodeAdminToken(auth.startsWith('Bearer ') ? auth.slice(7) : null);
+  return decodeAdminToken(auth.startsWith('Bearer ') ? auth.slice(7) : null);
+};
+const hasAdminLogin = (req) => !!adminOf(req);
+
+// Audit log: an admin opening a location or evidence. Guardian links (?k=) are not admins.
+const trackAdminView = (req, action, alertId) => {
+  const admin = adminOf(req);
+  if (admin) audit.record({ admin, action, targetType: 'sos', targetId: alertId, ip: req.ip });
 };
 
 // View access to an alert's evidence: the guardian link key (?k=) or an admin login
@@ -242,6 +250,7 @@ router.get('/location/:alertId', async (req, res, next) => {
       });
     }
 
+    if (isAdmin) trackAdminView(req, 'view_location', alertId);
     const alert = await SosService.getAlertLocation(alertId);
     if (!alert) {
       return res.status(404).json({ success: false, message: 'This SOS alert was not found.' });
@@ -279,6 +288,8 @@ router.get('/evidence/:alertId', async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'This evidence link is not valid.' });
     }
 
+    // A video plays as many range requests: only its first one is recorded
+    if (!req.headers.range || /^bytes=0-/.test(req.headers.range)) trackAdminView(req, 'view_evidence', alertId);
     const ref = parseEvidenceRef(await SosService.getEvidenceRef(alertId));
     if (!ref) {
       return res.status(404).json({ success: false, message: 'No evidence has been uploaded for this alert yet.' });
@@ -493,6 +504,7 @@ router.get('/history/:phone', optionalToken, async (req, res, next) => {
 router.get('/history', verifyAdmin, async (req, res, next) => {
   try {
     const history = await SosService.getSosHistory();
+    audit.record({ admin: req.admin, action: 'export_history', ip: req.ip, detail: { rows: history.length } });
 
     res.status(200).json({
       success: true,

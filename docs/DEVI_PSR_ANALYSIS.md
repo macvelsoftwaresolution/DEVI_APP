@@ -30,7 +30,7 @@ Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5
 | Performance | 3 | **4** | The dashboard still runs in the SOS process. Evidence uploads sit in memory (P5, Phase 2). | Upload evidence straight to storage before Phase 2. |
 | Scalability | 1.5 | **2** | One process on one shared VPS, state in memory (S1), a slow retry worker (S2), provider limits unknown (S3). | Stage A: containers, Redis, a separate worker, a load test. |
 | Reliability and operations | 1.5 | **3** | Health check and monitor are in place, but no one is paged (no on-call person), the database is on the Free plan without backups (REL4), and development shares production (REL5). | Paid Supabase with backups, separate development, a second server. |
-| Security | 3 | **3.5** | Signatures, token revoke, 2FA and retention are in. Shared secrets and database, no audit log, no spend cap, no account deletion or privacy text, no penetration test. | Separate development, audit log, spend cap, turn off the shared admin, deletion and privacy text. |
+| Security | 3 | **3.5** | Signatures, token revoke, 2FA, retention, audit log and a spend cap are in code; most is not yet checked live. Shared secrets and database, the shared admin login still on, no account deletion or privacy text, no penetration test. | Live tests, separate development, `ADMIN_ENV_LOGIN=off`, deletion and privacy text. What is left is mostly business work, not code. |
 | Country readiness | 1.5 | **1.5** | India time zone, English only, `+91` assumed, WhatsApp-only sign-in. | Section 9, per country. |
 | **Overall** | **2** | **3** | Code is ahead of what has been checked live, and the business decisions in section 13 are still open. | Live tests, then the business items above. |
 
@@ -92,7 +92,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 | Reliability (section 6) | REL1, REL2, REL3, REL6, REL7 | | REL4, REL5 |
 | Target design (section 7) | | | All building blocks |
 | Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
-| Security (section 10) | Names in call URLs, token revoke, operator accounts with 2FA | IVR signatures (log mode, verified live), shared admin login (until `ADMIN_ENV_LOGIN=off`), retention (SOS history kept until the legal period is decided) | Separate secrets and database, audit log, spend caps, account deletion and privacy text, key service, pentest |
+| Security (section 10) | Names in call URLs, token revoke, operator accounts with 2FA, audit log, daily spend cap | IVR signatures (log mode, verified live), shared admin login (until `ADMIN_ENV_LOGIN=off`), retention (SOS history kept until the legal period is decided) | Separate secrets and database, account deletion and privacy text, key service, pentest |
 
 ### How to read the evidence
 
@@ -444,6 +444,8 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 | Shared .env admin login (no 2FA) | Still on | Turn off with `ADMIN_ENV_LOGIN=off` once every operator has an account. The username is still `admin`. |
 | **Deep health check behind a key** | Live | `HEALTH_CHECK_KEY`. Shows balances, so it is not public. The key was shared in a chat on 10 Nov: replace it before launch. |
 | **Retention** | Code | `db/retention.sql`, daily. SOS history is kept until a legal period is set (`RETENTION_SOS_DAYS`). Evidence in Cloudinary and pm2 logs are not covered. |
+| **Admin audit log** | Code | `db/audit.sql`, `src/services/audit.service.js`. Sign in and failed sign in, opening an SOS, its location or evidence, opening a user, searches, exports, resolve, notes, signing a user out. Ids only, never a number, name, place or search text. Each line is also in the server log. Read it in the SQL Editor. |
+| **Daily cap on SOS to unverified numbers** | Code | `SOS_UNVERIFIED_DAILY_CAP`, default `IN:1000,*:100` per IST day. Saved guardians are never capped. Reaching it pages and shows in the health check. In memory per server until Redis (S1). |
 
 ### Open, required before launch
 
@@ -451,8 +453,6 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 |---|---|---|
 | Separate development and production (database and secrets) | The team shares the production `.env` and database (REL5). One mistake or a leaked laptop exposes real alerts. | Team, with a new Supabase project |
 | Supabase paid plan and backups | The project is on the Free plan: no automatic backups, and it pauses when idle (REL4). | Business |
-| Audit log | No record of which operator viewed which alert and location. Needed for sensitive data and for DPDP. | Code, about 1 day |
-| Spend cap per country | Instant SOS needs no login, so a script can run up paid calls and messages. Today's per-number limits help, but there is no daily ceiling. | Code, plus a budget figure |
 | Support contact, account deletion, privacy policy | Not in the app or backend today. Play Store and DPDP require them. | Business, then code |
 | An honest statement of what DEVI is | No one monitors SOS today (no on-call person, decision 13.1). The app must say that guardians are alerted, that DEVI is not an emergency service, and to call 112. | Business, then app text |
 | Guardian consent | Guardians are third parties whose numbers we store. Guardian verification solves this and L12 together. | Business, then code |

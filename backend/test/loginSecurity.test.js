@@ -7,6 +7,9 @@ import { createSessions, sessions } from '../src/services/sessions.service.js';
 import { signUserToken, verifyToken, optionalToken, signAdminToken, decodeAdminToken } from '../src/middlewares/auth.middleware.js';
 import adminRoutes, { takeTotpStep } from '../src/routes/admin.routes.js';
 import { hashPassword } from '../src/utils/password.js';
+import { audit } from '../src/services/audit.service.js';
+
+const auditEvents = [];
 
 // Token revoke for app users, and one admin account per operator with 2FA.
 
@@ -208,6 +211,8 @@ before(async () => {
   account = { id: crypto.randomUUID(), username: 'ravi', password_hash: await hashPassword('correct horse battery'), totpSecret: SECRET, disabled: false, token_version: 0 };
   sessions.findAdmin = async (name) => (name.toLowerCase() === 'ravi' ? account : null);
   sessions.adminLoggedIn = async () => {};
+  // No audit row may reach a real database from a test
+  audit.record = async (event) => { auditEvents.push(event); return true; };
   const app = express();
   app.use(express.json());
   app.use('/api/admin', adminRoutes);
@@ -266,4 +271,15 @@ test('operator login: a wrong code or a disabled account is refused', async () =
   } finally {
     account.disabled = false;
   }
+});
+
+test('sign-ins are in the audit log, failed ones too, and never with a password', async () => {
+  auditEvents.length = 0;
+  account.id = crypto.randomUUID();
+  await login({ username: 'ravi', password: 'wrong password here' });
+  await login({ username: 'ravi', password: 'correct horse battery', code: totpCode(SECRET, totpCounter()) });
+  assert.deepEqual(auditEvents.map((e) => e.action), ['login_failed', 'login']);
+  assert.equal(auditEvents[1].admin.sub, account.id);
+  assert.equal(JSON.stringify(auditEvents).includes('wrong password'), false);
+  assert.equal(JSON.stringify(auditEvents).includes('correct horse'), false);
 });

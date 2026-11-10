@@ -3,6 +3,7 @@ import { sosNotify } from './sosNotify.service.js';
 import { sosOffline } from './sosOffline.service.js';
 import { pager } from './pager.service.js';
 import { retention } from './retention.service.js';
+import { dailyCap } from '../utils/sosRecipients.js';
 
 /**
  * Deep health check (REL1) and the monitor that pages on it (REL2).
@@ -47,7 +48,7 @@ const getJson = async (fetchImpl, url, headers) => {
 
 const basic = (user, pass) => `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}`;
 
-export const defaultChecks = ({ db = supabase, notify = sosNotify, offline = sosOffline, retain = retention, env = process.env, fetchImpl = fetch, startedAt = Date.now(), now = Date.now } = {}) => ({
+export const defaultChecks = ({ db = supabase, notify = sosNotify, offline = sosOffline, retain = retention, cap = dailyCap, env = process.env, fetchImpl = fetch, startedAt = Date.now(), now = Date.now } = {}) => ({
   async database() {
     const { error } = await db.from('sos_history').select('id').limit(1);
     return error ? fail(`cannot read sos_history (${error.code || error.message})`) : ok('reachable');
@@ -132,6 +133,16 @@ export const defaultChecks = ({ db = supabase, notify = sosNotify, offline = sos
     if (!phone) return warn('ONCALL_PHONE not set: failures page nobody');
     if (!/^\+?[1-9]\d{9,14}$/.test(phone.replace(/[\s-]/g, ''))) return fail('ONCALL_PHONE is not a phone number (use +91 and 10 digits, no spaces or < >): every page fails');
     return ok('set');
+  },
+
+  // Unverified SOS sends today against the daily cap (sosRecipients.js). Near or at the cap warns:
+  // it protects the budget, but real guests' SOS stop there.
+  async spend() {
+    const usage = cap.usage(now());
+    if (!usage.length) return ok('no unverified SOS sends today');
+    const text = usage.map((u) => `${u.country} ${u.used}/${u.limit || '∞'}`).join(', ');
+    const near = usage.some((u) => u.limit && u.used >= u.limit * 0.8);
+    return near ? warn(`unverified SOS sends near or at the daily cap: ${text}`) : ok(text);
   },
 
   // A failing clean-up never stops an SOS, so it only warns

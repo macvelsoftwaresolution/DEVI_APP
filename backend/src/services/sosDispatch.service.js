@@ -1,5 +1,6 @@
 import { pickSosRecipients, sendBlockReason } from '../utils/sosRecipients.js';
 import { maskPhone } from '../utils/logMask.js';
+import { phoneCountry } from '../utils/phone.js';
 import { sosNotify } from './sosNotify.service.js';
 import { pager } from './pager.service.js';
 import { SosService } from './sos.service.js';
@@ -92,6 +93,12 @@ export const createSosDispatch = ({
             alert: { alertId: alert.id, victimName: plan.victimName, location },
           });
           return { phone: '', role: r.role, sent: false, reason: r.blocked };
+        }
+        if (r.blocked === 'DAILY_CAP') {
+          // Either an abuse run or real growth: someone must look, and raise the cap if it is real
+          console.error(`🚨 [SOS DAILY_CAP] Alert ${alert.id}: today's cap on unverified sends for ${phoneCountry(r.phone) || 'this country'} is reached (SOS_UNVERIFIED_DAILY_CAP). Not sent to ${maskPhone(r.phone)}.`);
+          page({ key: `spend-cap:${phoneCountry(r.phone) || '*'}`, reason: `daily cap on SOS to unverified numbers reached for ${phoneCountry(r.phone) || 'a country'}: possible abuse, or raise SOS_UNVERIFIED_DAILY_CAP` });
+          return { phone: r.phone, role: r.role, sent: false, reason: r.blocked };
         }
         if (r.blocked) {
           console.warn(`⚠️ [SOS ${r.blocked}] Alert ${alert.id}: not sent to ${maskPhone(r.phone)}`);

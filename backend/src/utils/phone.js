@@ -43,6 +43,9 @@ export const normalizePhone = (raw) => {
   return parsed && includesCountry(allowedCountries(), parsed.country) ? parsed.number : null;
 };
 
+// ISO country of a mobile number ("IN"), or null
+export const phoneCountry = (raw) => parseMobile(raw)?.country || null;
+
 // True when no login is needed to send to this number
 export const isGuestCountryNumber = (raw) => {
   const parsed = parseMobile(raw);

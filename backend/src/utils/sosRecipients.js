@@ -1,6 +1,6 @@
 // Who receives an SOS WhatsApp, and what name it shows.
 import crypto from 'crypto';
-import { normalizePhone, isGuestCountryNumber, isValidGuestId } from './phone.js';
+import { normalizePhone, isGuestCountryNumber, isValidGuestId, phoneCountry } from './phone.js';
 
 // The WhatsApp goes out from DEVI's business number, so a request must not be able to send it to
 // any numbers it likes: a flood of fake alerts gets the number reported and banned by Meta, and then
@@ -100,14 +100,76 @@ export class RecipientLimiter {
 export const recipientLimiter = new RecipientLimiter();
 
 /**
+ * Daily ceiling on paid SOS sends to unverified numbers, per country (section 10: paid abuse).
+ * Instant SOS needs no login, so a script could trigger SOS after SOS to fresh numbers: the
+ * per-number limit above does not stop that, this does. Saved guardians of a logged-in user are
+ * never counted or stopped.
+ *
+ * SOS_UNVERIFIED_DAILY_CAP: "IN:1000,*:100" (per country, * for any other; 0 = no cap). A day is
+ * an IST day. In memory: a restart clears the counts, which only ever lets more through; with
+ * several servers each has its own count (S1, Redis).
+ */
+export const DEFAULT_DAILY_CAP = 'IN:1000,*:100';
+
+export const parseDailyCap = (raw = DEFAULT_DAILY_CAP) => {
+  const caps = new Map();
+  for (const part of String(raw || '').split(',')) {
+    const [country, n] = part.split(':').map((x) => x.trim().toUpperCase());
+    const limit = Number(n);
+    if (country && Number.isInteger(limit) && limit >= 0) caps.set(country, limit);
+  }
+  return caps;
+};
+
+const istDay = (now) => new Date(now).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+export class DailyCap {
+  constructor({ caps = parseDailyCap(process.env.SOS_UNVERIFIED_DAILY_CAP ?? DEFAULT_DAILY_CAP), countryOf = phoneCountry } = {}) {
+    this.caps = caps;
+    this.countryOf = countryOf;
+    this.day = null;
+    this.counts = new Map(); // country -> sends today
+  }
+
+  limitFor(country) {
+    return this.caps.has(country) ? this.caps.get(country) : (this.caps.get('*') ?? 0);
+  }
+
+  // Counts one send to `phone` and returns true, or returns false when its country is at the cap
+  tryTake(phone, now = Date.now()) {
+    const day = istDay(now);
+    if (day !== this.day) {
+      this.day = day;
+      this.counts.clear();
+    }
+    const country = this.countryOf(phone) || '*';
+    const limit = this.limitFor(country);
+    if (!limit) return true;
+    const used = this.counts.get(country) || 0;
+    if (used >= limit) return false;
+    this.counts.set(country, used + 1);
+    return true;
+  }
+
+  // For the health check: [{ country, used, limit }] for today
+  usage(now = Date.now()) {
+    if (istDay(now) !== this.day) return [];
+    return [...this.counts].map(([country, used]) => ({ country, used, limit: this.limitFor(country) }));
+  }
+}
+
+export const dailyCap = new DailyCap();
+
+/**
  * Why this guardian must not be sent to, or null. The caller reports the reason back, so the phone
  * warns the user and shows a Call button instead of implying the guardian was reached.
  */
-export const sendBlockReason = ({ phone, verified }, limiter = recipientLimiter, { overIpLimit = false } = {}) => {
+export const sendBlockReason = ({ phone, verified }, limiter = recipientLimiter, { overIpLimit = false, cap = dailyCap } = {}) => {
   if (overIpLimit && !verified) return 'IP_LIMIT';
   const guestCountry = isGuestCountryNumber(phone);
   if (!verified && !guestCountry) return 'FOREIGN_NEEDS_LOGIN';
   if ((!verified || !guestCountry) && !limiter.tryConsume(phone)) return 'RECIPIENT_LIMIT';
+  if (!verified && cap && !cap.tryTake(phone)) return 'DAILY_CAP';
   return null;
 };
 
