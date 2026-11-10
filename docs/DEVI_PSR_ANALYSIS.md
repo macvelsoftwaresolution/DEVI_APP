@@ -446,6 +446,7 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 | **Retention** | Code | `db/retention.sql`, daily. SOS history is kept until a legal period is set (`RETENTION_SOS_DAYS`). Evidence in Cloudinary and pm2 logs are not covered. |
 | **Admin audit log** | Code | `db/audit.sql`, `src/services/audit.service.js`. Sign in and failed sign in, opening an SOS, its location or evidence, opening a user, searches, exports, resolve, notes, signing a user out. Ids only, never a number, name, place or search text. Each line is also in the server log. Read it in the SQL Editor. |
 | **Daily cap on SOS to unverified numbers** | Code | `SOS_UNVERIFIED_DAILY_CAP`, default `IN:1000,*:100` per IST day. Saved guardians are never capped. Reaching it pages and shows in the health check. In memory per server until Redis (S1). |
+| **Tests cannot reach real services** | Code | `test/setup.js` (run by `npm test`) points Supabase at a dead local address and blanks every provider key, whatever the local `.env` says. On 10 Nov the local `.env` pointed at the production project. |
 
 ### Open, required before launch
 
