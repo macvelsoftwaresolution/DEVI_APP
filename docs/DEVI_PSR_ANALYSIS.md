@@ -448,6 +448,7 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 | **Admin audit log** | Code | `db/audit.sql`, `src/services/audit.service.js`. Sign in and failed sign in, opening an SOS, its location or evidence, opening a user, searches, exports, resolve, notes, signing a user out. Ids only, never a number, name, place or search text. Each line is also in the server log. Read it in the SQL Editor. |
 | **Daily cap on SOS to unverified numbers** | Code | `SOS_UNVERIFIED_DAILY_CAP`, default `IN:1000,*:100` per IST day. Saved guardians are never capped. Reaching it pages and shows in the health check. In memory per server until Redis (S1). |
 | **Tests cannot reach real services** | Code | `test/setup.js` (run by `npm test`) points Supabase at a dead local address and blanks every provider key, whatever the local `.env` says. On 10 Nov the local `.env` pointed at the production project. |
+| **Honest about what DEVI is** | Code | 10 Nov, app: the terms (v4, every user accepts again) say no one at DEVI watches SOS alerts, DEVI does not send police or an ambulance, and to call 112 or 181. The SOS screen says the same, with a Call 112 button that uses the SIM. "Control room" and "safety desk" promises removed. To be reviewed by the legal advisor. |
 | **Separate development and production** | Live | Development: Supabase project `devi-dev` and its own secrets in the local `.env`. Production: `devi-app`, `.env` only on the server. |
 | **Production fresh start with new secrets** | Live | 10 Nov: the live server had been started with an `ENCRYPTION_KEY` that was not in its `.env`. Before launch, all production data was deleted (`db/fresh-start-2026-11-10.sql`) and the server restarted with new `JWT_SECRET`, `ADMIN_JWT_SECRET`, `SOS_LINK_SECRET`, `ADMIN_SECRET_KEY`, `ENCRYPTION_KEY` (id 1) and `HEALTH_CHECK_KEY`. The Supabase secret key was kept: it was only on the server. Keep `ENCRYPTION_KEY` in a password manager: without it the data cannot be read. |
 
@@ -457,7 +458,6 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 |---|---|---|
 | Supabase paid plan and backups | The project is on the Free plan: no automatic backups, and it pauses when idle (REL4). | Business |
 | Support contact, account deletion, privacy policy | Not in the app or backend today. Play Store and DPDP require them. | Business, then code |
-| An honest statement of what DEVI is | No one monitors SOS today (no on-call person, decision 13.1). The app must say that guardians are alerted, that DEVI is not an emergency service, and to call 112. | Business, then app text |
 | Guardian consent | Guardians are third parties whose numbers we store. Guardian verification solves this and L12 together. | Business, then code |
 | Penetration test and incident response plan | Independent test before launch, and a plan with breach notification times. | Business |
 | Live provider accounts | Twilio and Plivo are trial accounts. New auth tokens change the IVR signatures, so test again in log mode first. | Business |

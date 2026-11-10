@@ -15,6 +15,7 @@ import '../services/sos_background.dart';
 import '../services/sos_store.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/emergency_number_note.dart';
 import '../widgets/emergency_sound_card.dart';
 import '../widgets/location_prompt_dialog.dart';
 import '../widgets/sign_in_prompt_sheet.dart';
@@ -289,8 +290,8 @@ class _SosScreenState extends State<SosScreen>
           ),
           content: const Text(
             kEvidenceRecordingEnabled
-                ? 'This will finish the emergency evidence and mark your alert as RESOLVED for the safety desk.'
-                : 'This will mark your alert as RESOLVED for the safety desk.',
+                ? 'This will finish the emergency evidence, close your alert and stop the calls to your guardians.'
+                : 'This will close your alert and stop the calls and messages to your guardians.',
             style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.4),
           ),
           actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -817,7 +818,12 @@ class _SosScreenState extends State<SosScreen>
                     ),
                   ),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
+
+              // What SOS does and does not do, and the emergency number
+              EmergencyNumberNote(compact: isShortScreen),
+
+              const SizedBox(height: 10),
 
               // Bottom Emergency Sound Card (Independent Reusable Widget)
               const EmergencySoundCard(),

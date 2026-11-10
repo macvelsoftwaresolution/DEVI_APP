@@ -37,17 +37,20 @@ void main() {
     expect(find.byType(TermsScreen), findsOneWidget);
     expect(find.byType(Checkbox), findsNothing);
     expect(find.textContaining('By tapping Agree & Continue'), findsOneWidget);
-    await tester.tap(find.text('Agree & Continue'));
-    await tester.pumpAndSettle();
 
-    // Prominent disclosure appears before any system permission prompt
+    // Prominent disclosure is on the terms page itself, before any system permission prompt
     expect(find.text('Location, calls & contacts'), findsOneWidget);
     expect(find.textContaining('never uploaded'), findsOneWidget);
     expect(find.textContaining('Only once, no tracking'), findsOneWidget);
     // Evidence recording is off until Phase 2: no camera / microphone line
     expect(find.textContaining('Video and audio'), findsNothing);
+    // Honest about what DEVI is: no one watches alerts, call 112 in danger
+    expect(find.text('DEVI is not an emergency service'), findsOneWidget);
+    expect(find.textContaining('No one at DEVI watches SOS alerts'), findsOneWidget);
     expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
-    await tester.tap(find.text('Continue'));
+
+    // The button is both the agreement and the acceptance of the disclosure
+    await tester.tap(find.text('Agree & Continue'));
     await tester.pumpAndSettle();
     expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isTrue);
 
@@ -56,7 +59,8 @@ void main() {
     await tester.tap(find.text('Save & Continue'));
     await tester.pump();
     expect(find.text('Enter your name'), findsOneWidget);
-    expect(find.text('Enter a 10-digit mobile number'), findsOneWidget);
+    // One message for every country now that numbers outside India are accepted
+    expect(find.text('Enter a valid mobile number'), findsOneWidget);
 
     // Order: your name → guardian mobile → guardian name (filled from contacts)
     final fields = find.byType(TextField);
@@ -114,7 +118,7 @@ void main() {
     expect(await OnboardingService.isSetupDone(), isFalse);
   });
 
-  testWidgets('"Not now" on the disclosure skips permission prompts', (tester) async {
+  testWidgets('no permission is asked before Agree & Continue; the tap asks them, then quick setup', (tester) async {
     var permissionCalls = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('com.devi.app/sms'), (call) async {
@@ -126,13 +130,15 @@ void main() {
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(const MaterialApp(home: TermsScreen(isLoggedIn: false)));
+    await tester.pumpAndSettle();
+    expect(permissionCalls, 0, reason: 'no system prompt before the disclosure is accepted');
+    expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
+
     await tester.tap(find.text('Agree & Continue'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Not now'));
-    await tester.pumpAndSettle();
 
-    expect(permissionCalls, 0, reason: 'no system prompt without accepting the disclosure');
-    expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
+    expect(permissionCalls, greaterThan(0), reason: 'the tap that accepts the disclosure asks for the permissions');
+    expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isTrue);
     expect(find.byType(QuickSetupScreen), findsOneWidget);
   });
 
