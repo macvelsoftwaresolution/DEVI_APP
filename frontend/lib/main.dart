@@ -6,10 +6,13 @@ import 'screens/profile_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/sos_screen.dart';
 import 'screens/splash_screen.dart';
+import 'services/sos_background.dart';
 import 'theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Background sending of an SOS that did not get through (L9). Not awaited: start-up stays fast.
+  SosBackground.init();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

@@ -76,7 +76,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 
 **Partly done (2):**
 
-- **L13:** the server part is covered by L3: a repeat press after a cut-off send now sends. Still open: the app forgets the active SOS after a restart (T13, app side).
+- **L9, L13 (app):** the SOS in progress is saved on the phone in encrypted storage (`frontend/lib/services/sos_store.dart`) before the first send: pending with its request, then active with the alert id and control token. After a restart the app shows "I Am Safe" again and can close the alert, and a pending SOS is sent again with the same idempotency key. On Android a WorkManager task (`sos_background.dart`) sends a pending SOS as soon as there is internet, even when the app is closed or killed, with the location saved at the press. An "I am safe" that could not reach the server is sent on the next start. SOS older than a day are dropped. *Code, 10 Nov; not yet tested on a phone.*
 
 - **L7:** still open: SMS. Planned for the next phase with MSG91. The committed code has no SMS today.
 
@@ -86,7 +86,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 
 | Area | Done | Partly done | Open |
 |---|---|---|---|
-| Message loss (section 3) | L1, L2, L3, L4, L5, L6, L8 | L7 (SMS), L11 (paged, not staffed), L13 (app side) | L9, L10, L12 |
+| Message loss (section 3) | L1, L2, L3, L4, L5, L6, L8, L9 and L13 (app, not yet tested on a phone) | L7 (SMS), L11 (paged, not staffed) | L10, L12 |
 | Performance (section 4) | P1, P2, P3, P4 | | P5 |
 | Scalability (section 5) | S4, S5 | | S1, S2, S3 |
 | Reliability (section 6) | REL1, REL2, REL3, REL5, REL6, REL7 | | REL4 |

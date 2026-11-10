@@ -280,8 +280,14 @@ class ApiService {
     return null;
   }
 
-  // --- SOS: Trigger Emergency ---
-  Future<Map<String, dynamic>?> triggerEmergencyAlert({
+  // A control token kept on the phone (sos_store.dart), back in memory after a restart
+  void rememberControlToken(String alertId, String token) {
+    _sosControlTokens[alertId] = token;
+  }
+
+  // --- SOS: the body of POST /sos/trigger. Saved as is (sos_store.dart) so a resend after a
+  // restart or from the background task is the same request, with the same idempotency key.
+  static Map<String, dynamic> sosPayload({
     required String userPhone,
     String? userName,
     required String location,
@@ -292,9 +298,8 @@ class ApiService {
     DateTime? capturedAt,
     required List<String> contactsAlerted,
     List<String>? emergencyContacts,
-  }) async {
-    try {
-      final payload = <String, dynamic>{
+  }) =>
+      <String, dynamic>{
         'userPhone': userPhone,
         'userName': userName,
         'location': location,
@@ -309,6 +314,35 @@ class ApiService {
         'emergencyContacts': emergencyContacts ?? contactsAlerted,
       };
 
+  // --- SOS: Trigger Emergency ---
+  Future<Map<String, dynamic>?> triggerEmergencyAlert({
+    required String userPhone,
+    String? userName,
+    required String location,
+    double? latitude,
+    double? longitude,
+    double? accuracy,
+    String? idempotencyKey,
+    DateTime? capturedAt,
+    required List<String> contactsAlerted,
+    List<String>? emergencyContacts,
+  }) =>
+      sendSosPayload(sosPayload(
+        userPhone: userPhone,
+        userName: userName,
+        location: location,
+        latitude: latitude,
+        longitude: longitude,
+        accuracy: accuracy,
+        idempotencyKey: idempotencyKey,
+        capturedAt: capturedAt,
+        contactsAlerted: contactsAlerted,
+        emergencyContacts: emergencyContacts,
+      ));
+
+  /// Sends a prepared SOS body. Returns the alert data, or null when the server was not reached.
+  Future<Map<String, dynamic>?> sendSosPayload(Map<String, dynamic> payload) async {
+    try {
       // Sent over HTTPS; sensitive fields are encrypted at rest by the server
       final res = await http
           .post(
