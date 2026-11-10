@@ -212,11 +212,11 @@ export const envAdminLoginEnabled = () => String(process.env.ADMIN_ENV_LOGIN || 
  * account or "sign out everywhere" ends the token.
  * Shared .env admin: `pv` ties it to the current admin password, so a password change ends it.
  */
-export const signAdminToken = (username, account = null) =>
+export const signAdminToken = (username, account = null, { mfa = false } = {}) =>
   jwt.sign(
     account
       ? { role: 'admin', username, sub: account.id, av: Number(account.token_version) || 0 }
-      : { role: 'admin', username, pv: ADMIN_PASSWORD_VERSION },
+      : { role: 'admin', username, pv: ADMIN_PASSWORD_VERSION, ...(mfa && { mfa: true }) },
     ADMIN_JWT_SECRET,
     { expiresIn: ADMIN_TOKEN_EXPIRY }
   );

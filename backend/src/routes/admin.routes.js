@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { ADMIN_USERNAME, ADMIN_PASSWORD_HASH, ADMIN_DEV_PASSWORD, ADMIN_TOKEN_EXPIRY } from '../config/security.js';
+import { ADMIN_USERNAME, ADMIN_PASSWORD_HASH, ADMIN_DEV_PASSWORD, ADMIN_TOKEN_EXPIRY, ADMIN_TOTP_SECRET } from '../config/security.js';
 import { verifyPassword } from '../utils/password.js';
 import { verifyTotp } from '../utils/totp.js';
 import { safeEqual, signAdminToken, verifyAdmin, envAdminLoginEnabled } from '../middlewares/auth.middleware.js';
@@ -75,9 +75,23 @@ router.post('/login', adminLoginLimiter, async (req, res, next) => {
       return refuse(res);
     }
 
-    console.warn(`⚠️ [ADMIN LOGIN] ${ADMIN_USERNAME} (shared .env admin, no 2FA) from IP: ${req.ip}. Create operator accounts with npm run admin:user and set ADMIN_ENV_LOGIN=off.`);
-    audit.record({ admin: ADMIN_USERNAME, action: 'login', ip: req.ip, detail: { twoFactor: false } });
-    res.json({ success: true, token: signAdminToken(ADMIN_USERNAME), expiresIn: ADMIN_TOKEN_EXPIRY, username: ADMIN_USERNAME, twoFactor: false });
+    // 2FA for the .env admin (ADMIN_TOTP_SECRET): asked for only after a right password
+    if (ADMIN_TOTP_SECRET) {
+      if (!code) {
+        return res.status(401).json({ success: false, needCode: true, message: 'Enter the 6-digit code from your authenticator app' });
+      }
+      if (!takeTotpStep('env-admin', verifyTotp(ADMIN_TOTP_SECRET, code))) {
+        console.warn(`⚠️ [ADMIN LOGIN FAILED] ${ADMIN_USERNAME} from IP: ${req.ip} (wrong code)`);
+        loginAudit(req, ADMIN_USERNAME, 'login_failed', { reason: 'code' });
+        return res.status(401).json({ success: false, needCode: true, message: 'Wrong or expired code. Please try again.' });
+      }
+      console.log(`✅ [ADMIN LOGIN] ${ADMIN_USERNAME} (.env admin, 2FA) from IP: ${req.ip}`);
+    } else {
+      console.warn(`⚠️ [ADMIN LOGIN] ${ADMIN_USERNAME} (.env admin, no 2FA) from IP: ${req.ip}. Add 2FA with npm run admin:2fa.`);
+    }
+    const mfa = !!ADMIN_TOTP_SECRET;
+    audit.record({ admin: ADMIN_USERNAME, action: 'login', ip: req.ip, detail: { twoFactor: mfa } });
+    res.json({ success: true, token: signAdminToken(ADMIN_USERNAME, null, { mfa }), expiresIn: ADMIN_TOKEN_EXPIRY, username: ADMIN_USERNAME, twoFactor: mfa });
   } catch (err) {
     next(err);
   }
@@ -85,14 +99,19 @@ router.post('/login', adminLoginLimiter, async (req, res, next) => {
 
 // GET /api/admin/verify - Check that the stored admin token is still valid
 router.get('/verify', verifyAdmin, (req, res) => {
-  res.json({ success: true, username: req.admin.username, twoFactor: !!req.admin.sub });
+  res.json({
+    success: true,
+    username: req.admin.username,
+    twoFactor: !!(req.admin.sub || req.admin.mfa),
+    account: req.admin.sub ? 'operator' : 'env',
+  });
 });
 
 // POST /api/admin/logout-all - Ends every session of this operator account, on every browser
 router.post('/logout-all', verifyAdmin, async (req, res, next) => {
   try {
     if (!req.admin.sub) {
-      return res.status(400).json({ success: false, message: 'The shared .env admin signs out everywhere by changing its password (npm run admin:hash).' });
+      return res.status(400).json({ success: false, message: 'The .env admin signs out everywhere by changing its password (npm run admin:hash) or its 2FA key (npm run admin:2fa).' });
     }
     await sessions.revokeAdmin(req.admin.sub);
     console.log(`🔒 [ADMIN SIGNED OUT EVERYWHERE] ${req.admin.username}`);

@@ -39,13 +39,13 @@ export default function SettingsPage() {
               <Avatar name={data?.username || 'Admin'} large />
               <div>
                 <div style={{ fontWeight: 600, fontSize: 15 }}>{data?.username || '…'}</div>
-                <div className="muted">{data ? (data.twoFactor ? 'Operator account' : 'Shared admin login') : 'Administrator'}</div>
+                <div className="muted">{data ? (data.account === 'operator' ? 'Operator account' : 'Admin login from the server settings') : 'Administrator'}</div>
               </div>
             </div>
             {data && !data.twoFactor && (
               <div className="adm-alert" style={{ marginBottom: 16 }}>
-                This is the shared login from the server settings, without 2FA. Ask for your own operator account
-                (npm run admin:user -- create &lt;name&gt;), then the shared login can be turned off.
+                This login has no 2FA. On the server run npm run admin:2fa, put the key in .env and in an
+                authenticator app, and restart.
               </div>
             )}
             <dl className="adm-dl">
@@ -92,7 +92,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {data?.twoFactor && (
+        {data?.account === 'operator' && (
           <div className="adm-card">
             <div className="adm-card-head">
               <div>

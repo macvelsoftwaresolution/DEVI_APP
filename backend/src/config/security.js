@@ -155,10 +155,23 @@ export const ADMIN_PASSWORD_HASH = adminPasswordHash || null;
 export const ADMIN_DEV_PASSWORD = !isProduction && !adminPasswordHash
   ? process.env.ADMIN_PASSWORD || 'devi_admin_dev_password'
   : null;
-// Changes whenever the password changes: admin tokens carry it, so a new password logs every old session out
+// 2FA for the .env admin: the authenticator setup key from `npm run admin:2fa` (base32).
+// Set: sign in needs the password and a 6-digit code. Empty: password only.
+const adminTotpSecret = (process.env.ADMIN_TOTP_SECRET || '').replace(/[\s-]/g, '').toUpperCase();
+if (adminTotpSecret && !/^[A-Z2-7]{16,}$/.test(adminTotpSecret)) {
+  console.error('❌ [SECURITY] ADMIN_TOTP_SECRET is not a valid setup key. Create one with: npm run admin:2fa. Refusing to start.');
+  process.exit(1);
+}
+if (isProduction && !adminTotpSecret) {
+  console.warn('⚠️ [SECURITY] ADMIN_TOTP_SECRET is not set: the .env admin signs in without 2FA. Add it with: npm run admin:2fa');
+}
+export const ADMIN_TOTP_SECRET = adminTotpSecret || null;
+
+// Changes whenever the password or the 2FA key changes: admin tokens carry it, so either change
+// logs every old session out
 export const ADMIN_PASSWORD_VERSION = crypto
   .createHmac('sha256', process.env.ADMIN_JWT_SECRET || 'devi_dev_admin_jwt_secret_not_for_production')
-  .update(`admin-pw:${ADMIN_USERNAME}:${adminPasswordHash || ADMIN_DEV_PASSWORD}`)
+  .update(`admin-pw:${ADMIN_USERNAME}:${adminPasswordHash || ADMIN_DEV_PASSWORD}:${adminTotpSecret}`)
   .digest('base64url')
   .slice(0, 16);
 export const ADMIN_TOKEN_EXPIRY = '12h';
