@@ -29,8 +29,8 @@ Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5
 | SOS delivery (no silent loss) | 2 | **3.5** | L1 to L5 closed in code, but most of it is not yet tested live. No SMS (L7), the app stops retrying when closed (L9), one API address (L10), no person at the end of the chain (L11). | Pass the live tests, subscribe the webhook, then L9 and L13 in the app. SMS in the next phase. |
 | Performance | 3 | **4** | The dashboard still runs in the SOS process. Evidence uploads sit in memory (P5, Phase 2). | Upload evidence straight to storage before Phase 2. |
 | Scalability | 1.5 | **2** | One process on one shared VPS, state in memory (S1), a slow retry worker (S2), provider limits unknown (S3). | Stage A: containers, Redis, a separate worker, a load test. |
-| Reliability and operations | 1.5 | **3** | Health check and monitor are in place, but no one is paged (no on-call person), the database is on the Free plan without backups (REL4), and development shares production (REL5). | Paid Supabase with backups, separate development, a second server. |
-| Security | 3 | **3.5** | Signatures, token revoke, 2FA, retention, audit log and a spend cap are in code; most is not yet checked live. Shared secrets and database, the shared admin login still on, no account deletion or privacy text, no penetration test. | Live tests, separate development, `ADMIN_ENV_LOGIN=off`, deletion and privacy text. What is left is mostly business work, not code. |
+| Reliability and operations | 1.5 | **3** | Health check and monitor are in place, and development now has its own database (REL5). But no one is paged (no on-call person), production is on the Free plan without backups (REL4), and it runs on one shared VPS. | Paid Supabase with backups, a second server. |
+| Security | 3 | **4** | Signatures, token revoke, 2FA, retention, audit log and a spend cap are in code. Development and production are separate, and production started fresh on 10 Nov with new secrets. Still: the shared admin login is on, no account deletion or privacy text, no penetration test, and most new controls are not yet checked live. | Live tests, `ADMIN_ENV_LOGIN=off`, deletion and privacy text, a penetration test. |
 | Country readiness | 1.5 | **1.5** | India time zone, English only, `+91` assumed, WhatsApp-only sign-in. | Section 9, per country. |
 | **Overall** | **2** | **3** | Code is ahead of what has been checked live, and the business decisions in section 13 are still open. | Live tests, then the business items above. |
 
@@ -89,7 +89,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 | Message loss (section 3) | L1, L2, L3, L4, L5, L6, L8 | L7 (SMS), L11 (paged, not staffed), L13 (app side) | L9, L10, L12 |
 | Performance (section 4) | P1, P2, P3, P4 | | P5 |
 | Scalability (section 5) | S4, S5 | | S1, S2, S3 |
-| Reliability (section 6) | REL1, REL2, REL3, REL6, REL7 | | REL4, REL5 |
+| Reliability (section 6) | REL1, REL2, REL3, REL5, REL6, REL7 | | REL4 |
 | Target design (section 7) | | | All building blocks |
 | Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
 | Security (section 10) | Names in call URLs, token revoke, operator accounts with 2FA, audit log, daily spend cap | IVR signatures (log mode, verified live), shared admin login (until `ADMIN_ENV_LOGIN=off`), retention (SOS history kept until the legal period is decided) | Separate secrets and database, account deletion and privacy text, key service, pentest |
@@ -283,6 +283,7 @@ No code cleans `a_sos_notify` (**Code**).
 **REL4. Backups are unconfirmed.** Our Supabase plan is not known. Free has no automatic backups and pauses after a week idle. Pro keeps 7 days of daily backups, and Point-in-Time Recovery is a paid add-on.
 
 **REL5. Development and production share a database (Notes).** One mistake or test can damage real alerts. A full data wipe has already happened twice in testing, which is fine now but not after launch.
+*Done on 10 Nov 2026: development uses its own Supabase project (`devi-dev`) with its own secrets in the local `.env`. Production keeps the `devi-app` project, with its `.env` only on the server. Tests cannot reach either (`test/setup.js`).*
 
 **REL6. Worker errors are not caught.** `startWorker` has no `catch` and the process has no rejection handler (**Code**). An unexpected error would stop the process. I did not find a realistic trigger today, but this is cheap to close.
 
@@ -447,12 +448,13 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 | **Admin audit log** | Code | `db/audit.sql`, `src/services/audit.service.js`. Sign in and failed sign in, opening an SOS, its location or evidence, opening a user, searches, exports, resolve, notes, signing a user out. Ids only, never a number, name, place or search text. Each line is also in the server log. Read it in the SQL Editor. |
 | **Daily cap on SOS to unverified numbers** | Code | `SOS_UNVERIFIED_DAILY_CAP`, default `IN:1000,*:100` per IST day. Saved guardians are never capped. Reaching it pages and shows in the health check. In memory per server until Redis (S1). |
 | **Tests cannot reach real services** | Code | `test/setup.js` (run by `npm test`) points Supabase at a dead local address and blanks every provider key, whatever the local `.env` says. On 10 Nov the local `.env` pointed at the production project. |
+| **Separate development and production** | Live | Development: Supabase project `devi-dev` and its own secrets in the local `.env`. Production: `devi-app`, `.env` only on the server. |
+| **Production fresh start with new secrets** | Live | 10 Nov: the live server had been started with an `ENCRYPTION_KEY` that was not in its `.env`. Before launch, all production data was deleted (`db/fresh-start-2026-11-10.sql`) and the server restarted with new `JWT_SECRET`, `ADMIN_JWT_SECRET`, `SOS_LINK_SECRET`, `ADMIN_SECRET_KEY`, `ENCRYPTION_KEY` (id 1) and `HEALTH_CHECK_KEY`. The Supabase secret key was kept: it was only on the server. Keep `ENCRYPTION_KEY` in a password manager: without it the data cannot be read. |
 
 ### Open, required before launch
 
 | Item | Why it matters | Who decides |
 |---|---|---|
-| Separate development and production (database and secrets) | The team shares the production `.env` and database (REL5). One mistake or a leaked laptop exposes real alerts. | Team, with a new Supabase project |
 | Supabase paid plan and backups | The project is on the Free plan: no automatic backups, and it pauses when idle (REL4). | Business |
 | Support contact, account deletion, privacy policy | Not in the app or backend today. Play Store and DPDP require them. | Business, then code |
 | An honest statement of what DEVI is | No one monitors SOS today (no on-call person, decision 13.1). The app must say that guardians are alerted, that DEVI is not an emergency service, and to call 112. | Business, then app text |
@@ -489,7 +491,7 @@ Status as of 10 Nov 2026:
 - [x] Alerts for `GAVE UP`, queue depth, balances and token health (REL1, REL2).
 - [x] Deep health check, graceful shutdown, worker error handling (REL1, REL3, REL6).
 - [ ] Upgrade Twilio, confirm the Supabase plan and backups, and check the WhatsApp tier.
-- [ ] Separate development and production (REL5).
+- [x] Separate development and production (REL5).
 - [x] Call status drives retries and escalation (L5). *Redial, provider switch, restart-safe watch jobs, press 1 per guardian and paging.*
 - [ ] Real SOS test on the live server, after deploying `980190f`.
 
