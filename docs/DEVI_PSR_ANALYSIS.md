@@ -20,6 +20,20 @@ The most urgent finding is a bug. Most WhatsApp errors are treated as "token exp
 
 **An honest limit:** no system can promise a message reaches a phone that is switched off. What we can promise is stronger and testable: **no alert is ever dropped silently.** This needs a person on call 24x7 at the end of the chain, which DEVI does not have today. That is a business decision (section 13).
 
+### Scorecard (10 Nov 2026)
+
+Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5 Nov, when this report was written. Live tests on 10 Nov: health check, normal SOS, send marking (L3) and IVR signatures passed. WhatsApp delivery statuses (L4) did not arrive, because the Meta webhook is not subscribed to `messages` yet. The other live tests are still to run.
+
+| Area | Before | Now | What holds it back | To reach 4 or more |
+|---|---|---|---|---|
+| SOS delivery (no silent loss) | 2 | **3.5** | L1 to L5 closed in code, but most of it is not yet tested live. No SMS (L7), the app stops retrying when closed (L9), one API address (L10), no person at the end of the chain (L11). | Pass the live tests, subscribe the webhook, then L9 and L13 in the app. SMS in the next phase. |
+| Performance | 3 | **4** | The dashboard still runs in the SOS process. Evidence uploads sit in memory (P5, Phase 2). | Upload evidence straight to storage before Phase 2. |
+| Scalability | 1.5 | **2** | One process on one shared VPS, state in memory (S1), a slow retry worker (S2), provider limits unknown (S3). | Stage A: containers, Redis, a separate worker, a load test. |
+| Reliability and operations | 1.5 | **3** | Health check and monitor are in place, but no one is paged (no on-call person), the database is on the Free plan without backups (REL4), and development shares production (REL5). | Paid Supabase with backups, separate development, a second server. |
+| Security | 3 | **3.5** | Signatures, token revoke, 2FA and retention are in. Shared secrets and database, no audit log, no spend cap, no account deletion or privacy text, no penetration test. | Separate development, audit log, spend cap, turn off the shared admin, deletion and privacy text. |
+| Country readiness | 1.5 | **1.5** | India time zone, English only, `+91` assumed, WhatsApp-only sign-in. | Section 9, per country. |
+| **Overall** | **2** | **3** | Code is ahead of what has been checked live, and the business decisions in section 13 are still open. | Live tests, then the business items above. |
+
 ### Fix status (checked against code on 10 Nov 2026, commit `980190f`)
 
 All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on the live server since these fixes.** Check that `980190f` is deployed and that pm2 uses `backend/ecosystem.config.cjs`.
@@ -78,7 +92,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 | Reliability (section 6) | REL1, REL2, REL3, REL6, REL7 | | REL4, REL5 |
 | Target design (section 7) | | | All building blocks |
 | Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
-| Security (section 10) | Names in call URLs, token revoke, operator accounts with 2FA | IVR signatures (log mode until checked live), shared admin login (until `ADMIN_ENV_LOGIN=off`), retention (SOS history kept until the legal period is decided) | Secrets, audit log, key service, spend caps, pentest |
+| Security (section 10) | Names in call URLs, token revoke, operator accounts with 2FA | IVR signatures (log mode, verified live), shared admin login (until `ADMIN_ENV_LOGIN=off`), retention (SOS history kept until the legal period is decided) | Separate secrets and database, audit log, spend caps, account deletion and privacy text, key service, pentest |
 
 ### How to read the evidence
 
@@ -411,25 +425,45 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 
 ## 10. Security
 
-**Already pending, and required before launch:**
+*Status as of 10 Nov 2026. "Live" means checked on the production server that day, "Code" means done and unit tested but not yet checked live.*
 
-- **Token revoke:** a leaked token cannot be cancelled, and `/auth/refresh` keeps renewing it. *Done on 10 Nov 2026: tokens carry `users.token_version`, and raising it signs the user out on every phone, within a minute on other servers. Done by the user (`POST /api/auth/logout-all`) or on the dashboard user page. A signed-out token on the SOS route is treated as a guest, so the SOS still goes out. If the database cannot be read, the token is accepted.*
-- **Per-operator admin accounts with 2FA:** today one shared login. *Done on 10 Nov 2026: `admin_users`, created with `npm run admin:user -- create <name>`, which prints a password and an authenticator setup key once. Sign in needs the password and a 6-digit TOTP code, and each code works once. Disabling an account, resetting it, or "sign out everywhere" ends its sessions within a minute. The shared .env login keeps working, without 2FA, until `ADMIN_ENV_LOGIN=off`. Needs `db/login-security.sql`.*
-- **Separate development and production secrets:** the team shares the production `.env` (**Notes**).
-- **IVR webhook signatures:** answer, gather and status routes are public. *Done in code on 10 Nov 2026 (`src/middlewares/ivrSignature.js`). Runs in `IVR_SIGNATURE_MODE=log` until real calls show it passing, then switch to `enforce`.*
-- **Names in call URLs:** look details up by alert ID instead. *Done on 10 Nov 2026: the name, place and number travel in one encrypted call token (`t=`), not in plain text. A lookup by alert ID was not used, so calls still work while the database is down (L2).*
-- **Support email, account deletion and data retention.**
+### In place
 
-**New for multi-country:**
+| Control | Status | Notes |
+|---|---|---|
+| OTP sign-in on WhatsApp, codes stored only as keyed hashes | Live | Before 10 Nov |
+| Field encryption (AES-GCM, bound to the row), key rotation (`rotate:key`) | Live | Before 10 Nov. `admin_users.totp_secret` added to the rotation list. |
+| Row-level security, backend-only tables | Live | Before 10 Nov. New tables (`whatsapp_statuses`, `admin_users`) have RLS on and public roles revoked. |
+| Meta webhook signatures (`WHATSAPP_APP_SECRET`) | Live | Before 10 Nov |
+| Private evidence, per-alert control and view tokens | Live | Before 10 Nov |
+| Rate limits on OTP, admin login and SOS (SOS never refused) | Live | L8 |
+| **IVR webhook signatures** (Plivo V3, Twilio) | Live, in log mode | `src/middlewares/ivrSignature.js`. Verified on real calls on 10 Nov. Switch to `IVR_SIGNATURE_MODE=enforce`. |
+| **No name, place or number in call URLs** | Live | One encrypted, alert-bound, 1-hour call token (`t=`). The call spoke the right name and place on 10 Nov. Works while the database is down. |
+| **Token revoke for app users** | Code | `users.token_version`. Sign out everywhere by the user (`POST /api/auth/logout-all`) or from the dashboard. A signed-out token still sends an SOS, as a guest. |
+| **Operator admin accounts with 2FA** | Code | `npm run admin:user`, password plus TOTP code, each code once, disable/reset/sign out everywhere. |
+| Shared .env admin login (no 2FA) | Still on | Turn off with `ADMIN_ENV_LOGIN=off` once every operator has an account. The username is still `admin`. |
+| **Deep health check behind a key** | Live | `HEALTH_CHECK_KEY`. Shows balances, so it is not public. The key was shared in a chat on 10 Nov: replace it before launch. |
+| **Retention** | Code | `db/retention.sql`, daily. SOS history is kept until a legal period is set (`RETENTION_SOS_DAYS`). Evidence in Cloudinary and pm2 logs are not covered. |
+
+### Open, required before launch
+
+| Item | Why it matters | Who decides |
+|---|---|---|
+| Separate development and production (database and secrets) | The team shares the production `.env` and database (REL5). One mistake or a leaked laptop exposes real alerts. | Team, with a new Supabase project |
+| Supabase paid plan and backups | The project is on the Free plan: no automatic backups, and it pauses when idle (REL4). | Business |
+| Audit log | No record of which operator viewed which alert and location. Needed for sensitive data and for DPDP. | Code, about 1 day |
+| Spend cap per country | Instant SOS needs no login, so a script can run up paid calls and messages. Today's per-number limits help, but there is no daily ceiling. | Code, plus a budget figure |
+| Support contact, account deletion, privacy policy | Not in the app or backend today. Play Store and DPDP require them. | Business, then code |
+| An honest statement of what DEVI is | No one monitors SOS today (no on-call person, decision 13.1). The app must say that guardians are alerted, that DEVI is not an emergency service, and to call 112. | Business, then app text |
+| Guardian consent | Guardians are third parties whose numbers we store. Guardian verification solves this and L12 together. | Business, then code |
+| Penetration test and incident response plan | Independent test before launch, and a plan with breach notification times. | Business |
+| Live provider accounts | Twilio and Plivo are trial accounts. New auth tokens change the IVR signatures, so test again in log mode first. | Business |
+
+### Later, for multi-country
 
 - **Privacy law.** GDPR (EU), DPDP (India), LGPD (Brazil) and others apply differently. Get legal advice for each market.
-- **Guardian consent.** Guardians are third parties whose numbers we store. Guardian verification solves this and L12 together.
 - **Data location.** Some countries restrict moving personal data abroad. This decides which cells are needed. Location data sent through Meta, Plivo and Twilio needs data processing agreements.
-- **Audit log.** There is no record of who viewed which alert (**Code**). This is essential for sensitive location data.
 - **Key management.** Move `ENCRYPTION_KEY` from `.env` to a key service, with a key per region at Stage C.
-- **Paid abuse.** Add a daily spend cap per country, alongside current limits. Foreign rates can be much higher, and Instant SOS needs no login.
-- **Retention.** Queue archives and delivery rows contain encrypted phone numbers, so they need deletion rules.
-- **Security testing.** An independent penetration test before launch, and a tested incident response plan including breach notification times.
 - **Evidence recording (Phase 2).** Recording laws differ by country. Review before enabling outside India.
 
 ---
