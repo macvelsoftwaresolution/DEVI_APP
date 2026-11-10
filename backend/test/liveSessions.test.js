@@ -51,7 +51,7 @@ test('no key and no phone finds nothing', () => {
 });
 
 test('setting a session again moves it to its new phone in the index', () => {
-  const s = new LiveSessions();
+  const s = new LiveSessions({ now: clock().now });
   const a = session('a1', { userPhone: 'GUEST_abc' });
   s.set('a1', a);
   a.userPhone = '+919000000001';

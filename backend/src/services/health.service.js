@@ -33,8 +33,9 @@ const ok = (detail) => ({ status: 'ok', detail });
 const warn = (detail) => ({ status: 'warn', detail });
 const fail = (detail) => ({ status: 'fail', detail });
 
-const minBalance = (name, fallback) => {
-  const n = Number(process.env[name]);
+const minBalance = (env, name, fallback) => {
+  if (env[name] == null || String(env[name]).trim() === '') return fallback;
+  const n = Number(env[name]);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 };
 
@@ -102,7 +103,7 @@ export const defaultChecks = ({ db = supabase, notify = sosNotify, offline = sos
     const r = await getJson(fetchImpl, `https://api.plivo.com/v1/Account/${encodeURIComponent(id)}/`, { Authorization: basic(id, token) });
     if (!r.ok) return fail(`Plivo answered ${r.status}`);
     const balance = Number(r.body?.cash_credits);
-    const min = minBalance('PLIVO_MIN_BALANCE', 5);
+    const min = minBalance(env, 'PLIVO_MIN_BALANCE', 5);
     if (!Number.isFinite(balance)) return warn('balance unknown');
     if (balance < min) return fail(`balance ${balance.toFixed(2)} is below ${min}: +91 calls stop when it runs out`);
     return ok(`balance ${balance.toFixed(2)}`);
@@ -118,15 +119,19 @@ export const defaultChecks = ({ db = supabase, notify = sosNotify, offline = sos
     if (!account.ok) return fail(`Twilio answered ${account.status}`);
     if (account.body?.status && account.body.status !== 'active') return fail(`account ${account.body.status}`);
     const balance = Number(money.body?.balance);
-    const min = minBalance('TWILIO_MIN_BALANCE', 5);
+    const min = minBalance(env, 'TWILIO_MIN_BALANCE', 5);
     if (money.ok && Number.isFinite(balance) && balance < min) return fail(`balance ${balance.toFixed(2)} is below ${min}`);
     const shown = money.ok && Number.isFinite(balance) ? `balance ${balance.toFixed(2)}` : 'balance unknown';
     if (String(account.body?.type).toLowerCase() === 'trial') return warn(`trial account: calls reach verified numbers only (${shown})`);
     return ok(shown);
   },
 
+  // A placeholder or a typo here means every page fails, so it fails too
   async oncall() {
-    return env.ONCALL_PHONE ? ok('set') : warn('ONCALL_PHONE not set: failures page nobody');
+    const phone = String(env.ONCALL_PHONE || '').trim();
+    if (!phone) return warn('ONCALL_PHONE not set: failures page nobody');
+    if (!/^\+?[1-9]\d{9,14}$/.test(phone.replace(/[\s-]/g, ''))) return fail('ONCALL_PHONE is not a phone number (use +91 and 10 digits, no spaces or < >): every page fails');
+    return ok('set');
   },
 
   // A failing clean-up never stops an SOS, so it only warns

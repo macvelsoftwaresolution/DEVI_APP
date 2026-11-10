@@ -164,3 +164,10 @@ test('the deep check needs the health key or an admin login', () => {
   assert.equal(mayReadDeepHealth(req({}), ''), false);
   assert.equal(mayReadDeepHealth(req({}), undefined), false);
 });
+
+test('oncall: a placeholder or a typo fails, so it is noticed before a page is needed', async () => {
+  assert.equal((await checksWith({ env: { ONCALL_PHONE: '+91<developer number>' } }).oncall()).status, 'fail');
+  assert.equal((await checksWith({ env: { ONCALL_PHONE: '12345' } }).oncall()).status, 'fail');
+  assert.equal((await checksWith({ env: { ONCALL_PHONE: '+91 98765 43210' } }).oncall()).status, 'ok');
+  assert.equal((await checksWith({ env: { ONCALL_PHONE: '919876543210' } }).oncall()).status, 'ok');
+});
