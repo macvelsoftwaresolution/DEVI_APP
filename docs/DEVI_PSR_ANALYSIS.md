@@ -20,23 +20,43 @@ The most urgent finding is a bug. Most WhatsApp errors are treated as "token exp
 
 **An honest limit:** no system can promise a message reaches a phone that is switched off. What we can promise is stronger and testable: **no alert is ever dropped silently.** This needs a person on call 24x7 at the end of the chain, which DEVI does not have today. That is a business decision (section 13).
 
-### Scorecard (10 Nov 2026)
+### Scorecard (11 Nov 2026)
 
-Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5 Nov, when this report was written. Live tests on 10 Nov: health check, normal SOS, send marking (L3) and IVR signatures passed. WhatsApp delivery statuses (L4) did not arrive, because the Meta webhook is not subscribed to `messages` yet. The other live tests are still to run.
+Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5 Nov, when this report was written. The server-side live tests passed on 10 and 11 Nov (see "Live tests" below). One bug found live was fixed the same day. The app side (L9, L13) is not yet tested on a phone.
 
 | Area | Before | Now | What holds it back | To reach 4 or more |
 |---|---|---|---|---|
-| SOS delivery (no silent loss) | 2 | **3.5** | L1 to L5 closed in code, but most of it is not yet tested live. No SMS (L7), the app stops retrying when closed (L9), one API address (L10), no person at the end of the chain (L11). | Pass the live tests, subscribe the webhook, then L9 and L13 in the app. SMS in the next phase. |
+| SOS delivery (no silent loss) | 2 | **4** | L1 to L5 pass live: WhatsApp statuses, press 1 per guardian, redials, a restart during a call and a database outage. Still: no SMS (L7), one API address (L10), no person at the end of the chain (L11), and the app's background send (L9, L13) is not yet tested on a phone. | Test L9 and L13 on a phone. SMS in the next phase. |
 | Performance | 3 | **4** | The dashboard still runs in the SOS process. Evidence uploads sit in memory (P5, Phase 2). | Upload evidence straight to storage before Phase 2. |
 | Scalability | 1.5 | **2** | One process on one shared VPS, state in memory (S1), a slow retry worker (S2), provider limits unknown (S3). | Stage A: containers, Redis, a separate worker, a load test. |
 | Reliability and operations | 1.5 | **3** | Health check and monitor are in place, and development now has its own database (REL5). But no one is paged (no on-call person), production is on the Free plan without backups (REL4), and it runs on one shared VPS. | Paid Supabase with backups, a second server. |
-| Security | 3 | **4** | Signatures, token revoke, 2FA (operator accounts and the .env admin), retention, audit log and a spend cap are in code. Development and production are separate, and production started fresh on 10 Nov with new secrets. Still: no account deletion or privacy text, no penetration test, IVR signatures in log mode, and most new controls are not yet checked live. | Live tests, `IVR_SIGNATURE_MODE=enforce`, deletion and privacy text, a penetration test. |
+| Security | 3 | **4** | Checked live: IVR signatures enforced, admin 2FA, signing a user out of every device, the audit log. Development and production are separate, and production started fresh on 10 Nov with new secrets. Still: no account deletion or privacy text, no penetration test, Twilio signatures not yet seen live. | Deletion and privacy text, a penetration test. |
 | Country readiness | 1.5 | **1.5** | India time zone, English only, `+91` assumed, WhatsApp-only sign-in. | Section 9, per country. |
-| **Overall** | **2** | **3** | Code is ahead of what has been checked live, and the business decisions in section 13 are still open. | Live tests, then the business items above. |
+| **Overall** | **2** | **3** | What is built now works live. The rest is infrastructure (one server, Free plan, no backups) and the business decisions in section 13. | Paid Supabase with backups, Stage A, then the business items above. |
+
+### Live tests (production, 10 and 11 Nov 2026)
+
+Run on the live server with trial Twilio and Plivo accounts, so calls went only to verified numbers, and with no `ONCALL_PHONE` (no on-call person yet), so pages were logged, not sent.
+
+| Test | Result |
+|---|---|
+| Health check (`/api/health/deep`) | Pass: database, queue, worker, journal, WhatsApp, Plivo and retention OK. Twilio warns (trial, balance 0), on-call warns (not set). |
+| Normal SOS, send marking (L3) | Pass |
+| WhatsApp delivery statuses (L4) | Pass after the Meta app was subscribed to the WhatsApp Business Account. `sent`, `delivered` and `read` arrive. The location pin fails with 131047 (free-form message outside the 24-hour window). This is harmless, because the template already carries the map link. |
+| Press 1, each guardian on their own (L5) | Pass. Each guardian's press 1 is saved and shown on the dashboard with its time. |
+| Picked up without press 1, busy, no answer (L5) | Pass. Redialled after about 60, 120 and 300 seconds, then gave up after 3 redials. |
+| Server restart while a call rings (L5) | Pass. The watch job came back after about 300 seconds and redialled both guardians. |
+| SOS while the database is down (L2) | **Bug found and fixed.** The SOS was sent and journaled. But one press became three alerts, because the app's resends passed the duplicate check (it reads the database), so guardians were sent three times. Fixed in `11ba931`: a resend is answered from memory as a duplicate. Retest: one alert. |
+| Database back (L2 replay) | Pass. Every journaled alert was saved under its own id, and only failed sends went again. |
+| Dashboard (P3, S4) | Pass: home numbers and chart, status and date filters, paging, search by name, partial phone, place and id, detail page, CSV export. |
+| Admin 2FA, sign out devices, audit log | Pass. A wrong code is refused. A signed-out phone goes back to sign in and can still send SOS as a guest. Sign-ins, failed sign-ins, searches, views, exports and revokes are in `admin_audit`. |
+| IVR signatures enforced (F1) | Pass. `IVR_SIGNATURE_MODE=enforce` on 11 Nov, Plivo signatures verified and press 1 still works. Twilio was not used (trial, no balance), so check its signature on the first Twilio call. |
+
+Seen live, not fixed yet: an alert saved from the journal shows "GPS lat, lng" instead of a place name, because the place lookup is not run on replay. The CSV "Test" column is always "No", because nothing sets `is_test_mode` (there is no test SOS in the app).
 
 ### Fix status (checked against code on 10 Nov 2026, commit `980190f`)
 
-All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on the live server since these fixes.** Check that `980190f` is deployed and that pm2 uses `backend/ecosystem.config.cjs`.
+All 323 backend tests pass locally (11 Nov). The live tests above ran on `11ba931`, with pm2 using `backend/ecosystem.config.cjs`.
 
 **Done in code (11):**
 
@@ -60,7 +80,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 
 - **L3:** the send plan (who gets the SOS, and which sends the limits stopped) is saved encrypted in the same insert as the alert, with `dispatch_started_at`. Once every send has its retry job queued, the alert gets `dispatched_at`. An ACTIVE alert with no `dispatched_at` 30 seconds after it was taken on was cut off by a crash, restart or error. A resumer (`src/services/sosDispatch.service.js`, every 15 seconds, and at once when the app sends the SOS again) takes it on with a conditional update, so only one server sends it, and sends the saved plan. A crash after some sends were queued sends those twice, never zero times. Alerts older than 2 hours are not resumed. **Run `backend/db/sos-dispatch.sql` in Supabase before deploying.** Until then SOS works as before, without this protection, and every SOS logs an error.
 
-- **L2:** when saving the alert fails, the SOS is sent anyway from the request (`src/services/sosOffline.service.js`). It is kept in memory, so the app's retry is a duplicate, and written to an encrypted journal file on the server's disk (`src/services/sosJournal.js`, `SOS_JOURNAL_DIR`, default `backend/data/sos-journal`), with the result of each send. The app gets a normal 201 with `degraded: true`, and the on-call person is paged. For a logged-in user the numbers the app sent count as saved guardians, because the account cannot be read. Every 30 seconds, and at start, the journal is replayed. Each alert is saved under the id its messages already used, at its real time, and only the sends that did not get through are sent again, now with retry jobs. An alert closed during the outage is saved closed. One older than 2 hours is saved but not sent again.
+- **L2:** when saving the alert fails, the SOS is sent anyway from the request (`src/services/sosOffline.service.js`). It is kept in memory, so the app's retry is a duplicate (checked again just before sending, since the live test showed resends slipping past the database check), and written to an encrypted journal file on the server's disk (`src/services/sosJournal.js`, `SOS_JOURNAL_DIR`, default `backend/data/sos-journal`), with the result of each send. The app gets a normal 201 with `degraded: true`, and the on-call person is paged. For a logged-in user the numbers the app sent count as saved guardians, because the account cannot be read. Every 30 seconds, and at start, the journal is replayed. Each alert is saved under the id its messages already used, at its real time, and only the sends that did not get through are sent again, now with retry jobs. An alert closed during the outage is saved closed. One older than 2 hours is saved but not sent again.
   - Known limits: during the outage there is no retry queue, so a send that fails waits for the database. Press 1 and "I am safe" cannot be saved during the outage, and "I am safe" is lost if the server also restarts. The journal is per server and must survive a deploy, so do not delete `backend/data/`. Journal lines are encrypted with the field key, so a key rotation must keep the old key until the journal is empty.
 
 - **L4:** a WhatsApp Meta accepted is watched like a call. The webhook now reads each status (sent, delivered, read, failed) and saves it by message id in `whatsapp_statuses` (`db/whatsapp-status.sql`, no phone number stored). Delivered or read ends it. Failed is sent again with the usual gaps, unless the number is not on WhatsApp, in which case the call still goes. A template failure also pages. A watch job (about 5 minutes) covers a restart by reading the saved status. "Sent" but never delivered means the phone is off, so it is left to the call. No status at all means the webhook is not reaching the server, so it pages instead of sending every WhatsApp again. **Run `backend/db/whatsapp-status.sql` in Supabase, and check that the Meta webhook is subscribed to `messages`.**
@@ -92,7 +112,7 @@ All 138 backend tests pass locally (10 Nov). **No real SOS test has been run on 
 | Reliability (section 6) | REL1, REL2, REL3, REL5, REL6, REL7 | | REL4 |
 | Target design (section 7) | | | All building blocks |
 | Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
-| Security (section 10) | Names in call URLs, token revoke, operator accounts with 2FA, audit log, daily spend cap | IVR signatures (log mode, verified live), shared admin login (until `ADMIN_ENV_LOGIN=off`), retention (SOS history kept until the legal period is decided) | Separate secrets and database, account deletion and privacy text, key service, pentest |
+| Security (section 10) | Names in call URLs, IVR signatures (enforced 11 Nov), token revoke, operator accounts and the .env admin with 2FA, audit log, daily spend cap, separate development and production databases and secrets | Retention (SOS history kept until the legal period is decided) | Account deletion and privacy text, key service, pentest |
 
 ### How to read the evidence
 
@@ -426,7 +446,7 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 
 ## 10. Security
 
-*Status as of 10 Nov 2026. "Live" means checked on the production server that day, "Code" means done and unit tested but not yet checked live.*
+*Status as of 11 Nov 2026. "Live" means checked on the production server, "Code" means done and unit tested but not yet checked live.*
 
 ### In place
 
@@ -438,14 +458,14 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 | Meta webhook signatures (`WHATSAPP_APP_SECRET`) | Live | Before 10 Nov |
 | Private evidence, per-alert control and view tokens | Live | Before 10 Nov |
 | Rate limits on OTP, admin login and SOS (SOS never refused) | Live | L8 |
-| **IVR webhook signatures** (Plivo V3, Twilio) | Live, in log mode | `src/middlewares/ivrSignature.js`. Verified on real calls on 10 Nov. Switch to `IVR_SIGNATURE_MODE=enforce`. |
+| **IVR webhook signatures** (Plivo V3, Twilio) | Live, enforced | `src/middlewares/ivrSignature.js`. Verified on real calls on 10 Nov, `IVR_SIGNATURE_MODE=enforce` since 11 Nov. Plivo only so far: check Twilio on its first call. |
 | **No name, place or number in call URLs** | Live | One encrypted, alert-bound, 1-hour call token (`t=`). The call spoke the right name and place on 10 Nov. Works while the database is down. |
-| **Token revoke for app users** | Code | `users.token_version`. Sign out everywhere by the user (`POST /api/auth/logout-all`) or from the dashboard. A signed-out token still sends an SOS, as a guest. |
+| **Token revoke for app users** | Live | `users.token_version`. Sign out everywhere by the user (`POST /api/auth/logout-all`) or from the dashboard. A signed-out token still sends an SOS, as a guest. |
 | **Operator admin accounts with 2FA** | Code | `npm run admin:user`, password plus TOTP code, each code once, disable/reset/sign out everywhere. |
-| .env admin login | Code | `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` (`npm run admin:hash`, the password is typed by the admin), and since 10 Nov optional 2FA with `ADMIN_TOTP_SECRET` (`npm run admin:2fa`). With the key set, sign in needs the password and a 6-digit code, each code once. Operator accounts (`npm run admin:user`) stay available. |
+| .env admin login | Live (with 2FA) | `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` (`npm run admin:hash`, the password is typed by the admin), and since 10 Nov optional 2FA with `ADMIN_TOTP_SECRET` (`npm run admin:2fa`). With the key set, sign in needs the password and a 6-digit code, each code once. Operator accounts (`npm run admin:user`) stay available. |
 | **Deep health check behind a key** | Live | `HEALTH_CHECK_KEY`. Shows balances, so it is not public. The key was shared in a chat on 10 Nov: replace it before launch. |
 | **Retention** | Code | `db/retention.sql`, daily. SOS history is kept until a legal period is set (`RETENTION_SOS_DAYS`). Evidence in Cloudinary and pm2 logs are not covered. |
-| **Admin audit log** | Code | `db/audit.sql`, `src/services/audit.service.js`. Sign in and failed sign in, opening an SOS, its location or evidence, opening a user, searches, exports, resolve, notes, signing a user out. Ids only, never a number, name, place or search text. Each line is also in the server log. Read it in the SQL Editor. |
+| **Admin audit log** | Live | `db/audit.sql`, `src/services/audit.service.js`. Sign in and failed sign in, opening an SOS, its location or evidence, opening a user, searches, exports, resolve, notes, signing a user out. Ids only, never a number, name, place or search text. Each line is also in the server log. Read it in the SQL Editor. |
 | **Daily cap on SOS to unverified numbers** | Code | `SOS_UNVERIFIED_DAILY_CAP`, default `IN:1000,*:100` per IST day. Saved guardians are never capped. Reaching it pages and shows in the health check. In memory per server until Redis (S1). |
 | **Tests cannot reach real services** | Code | `test/setup.js` (run by `npm test`) points Supabase at a dead local address and blanks every provider key, whatever the local `.env` says. On 10 Nov the local `.env` pointed at the production project. |
 | **Honest about what DEVI is** | Code | 10 Nov, app: the terms (v4, every user accepts again) say no one at DEVI watches SOS alerts, DEVI does not send police or an ambulance, and to call 112 or 181. The SOS screen says the same, with a Call 112 button that uses the SIM. "Control room" and "safety desk" promises removed. To be reviewed by the legal advisor. |
