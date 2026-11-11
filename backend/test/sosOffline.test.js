@@ -149,6 +149,8 @@ const fakeStore = ({ failing = false, duplicateCode = false } = {}) => {
     },
     async resolveSosAlert(id, by) { resolved.push({ id, by }); },
     async markDispatched(id) { marked.push(id); },
+    placed: [],
+    async fillPlaceName(session) { this.placed.push(session.id); session.location = 'Satchiyapuram, Sivakasi'; return session; },
   };
 };
 
@@ -177,6 +179,9 @@ test('replay saves the alert under the same id and time, and resends only what d
   // The WhatsApp got through during the outage, the call did not
   assert.deepEqual(o.dispatch.calls[0].sends, [{ kind: 'ivr', phone: GUARDIAN }]);
   assert.deepEqual(await journal.readAll(), []);
+  // Live: the saved alert showed only "GPS lat, lng". The place is looked up before the resend.
+  assert.deepEqual(store.placed, [session.id]);
+  assert.equal(o.dispatch.calls[0].alert.location, 'Satchiyapuram, Sivakasi');
 });
 
 test('a second replay pass sends nothing more', async () => {

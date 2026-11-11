@@ -56,10 +56,10 @@ export default function SosListPage() {
       const res = await adminFetch(`/api/dashboard/incidents?${buildQuery(params, { page: 1, limit: 5000 })}`);
       const json = await res.json();
       if (!json.success) throw new Error(json.message);
-      const header = ['SOS ID', 'Date & Time (IST)', 'Status', 'User', 'Phone', 'User Type', 'Location', 'Latitude', 'Longitude', 'Resolved At (IST)', 'Resolved By', 'Test'];
+      const header = ['SOS ID', 'Date & Time (IST)', 'Status', 'User', 'Phone', 'User Type', 'Location', 'Latitude', 'Longitude', 'Resolved At (IST)', 'Resolved By'];
       const rows = json.items.map((i) => [
         i.id, i.displayTime, i.status, i.user.name, i.user.phone, i.user.isGuest ? 'Guest' : 'Registered',
-        i.location, i.latitude, i.longitude, i.resolvedTime, i.resolvedBy, i.isTest ? 'Yes' : 'No',
+        i.location, i.latitude, i.longitude, i.resolvedTime, i.resolvedBy,
       ]);
       const csv = [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n');
       const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
@@ -135,7 +135,6 @@ export default function SosListPage() {
                   <tr key={inc.id} className="click" onClick={() => navigate(`/sos/${inc.id}`)}>
                     <td className="mono">
                       {shortId(inc.id)}
-                      {inc.isTest && <span className="adm-badge amber" style={{ marginLeft: 6 }}>Test</span>}
                     </td>
                     <td>
                       <div className="adm-cell-main">{inc.user.name}</div>

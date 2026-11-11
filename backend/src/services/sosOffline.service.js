@@ -69,6 +69,9 @@ export const createSosOffline = ({
       throw e;
     }
     if (saved.duplicate) return 'already-saved';
+    // The place lookup did not run during the outage: the alert showed only "GPS lat, lng".
+    // Bounded wait, so a sent-again WhatsApp can carry the place name.
+    await store.fillPlaceName?.(saved);
 
     if (memory?.status === 'RESOLVED') {
       await store.resolveSosAlert(r.alertId, memory.resolvedBy || 'user');

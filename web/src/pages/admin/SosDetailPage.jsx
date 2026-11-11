@@ -46,7 +46,6 @@ export default function SosDetailPage() {
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             SOS {shortId(inc.id)} <StatusBadge status={inc.status} />
-            {inc.isTest && <span className="adm-badge amber">Test mode</span>}
           </h1>
           <p>Sent {inc.displayTime}</p>
         </div>
