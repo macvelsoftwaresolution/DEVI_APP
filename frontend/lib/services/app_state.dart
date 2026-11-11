@@ -490,8 +490,9 @@ class AppState extends ChangeNotifier {
     _autoSyncGuardians();
   }
 
+  // Never the last one: an SOS with no guardian reaches nobody (the dashboard has no one watching)
   void removeGuardian(int index) {
-    if (index >= 0 && index < _guardians.length) {
+    if (_guardians.length > 1 && index >= 0 && index < _guardians.length) {
       _guardians.removeAt(index);
       notifyListeners();
       _autoSyncGuardians();

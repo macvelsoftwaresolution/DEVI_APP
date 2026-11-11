@@ -100,6 +100,13 @@ router.put('/profile', optionalToken, async (req, res, next) => {
           message: 'Guardians must be an array of contacts',
         });
       }
+      // A signed-in user keeps at least one: an SOS with no guardian reaches nobody
+      if (req.user && guardians.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Keep at least one guardian. Add another guardian first.',
+        });
+      }
       if (guardians.length > MAX_GUARDIANS) {
         return res.status(400).json({
           success: false,

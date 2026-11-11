@@ -59,6 +59,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showDeleteGuardianDialog(int index, String name) {
+    // An SOS with no guardian reaches nobody: the last one stays until another is added
+    if (_appState.rawGuardians.length <= 1) {
+      _showSnack('You need at least one guardian for SOS. Add another guardian first, then remove $name.');
+      return;
+    }
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
