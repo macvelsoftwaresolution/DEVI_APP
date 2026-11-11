@@ -110,6 +110,21 @@ test('without the database the SOS is sent at once, kept in memory and journaled
   assert.equal(o.pages[0].key, 'database:down');
 });
 
+test('resends of the same SOS during the outage are duplicates, sent and journaled once', async () => {
+  const o = offline();
+  // Live: one press, the app resent twice while the failing database kept the first waiting
+  const first = await accept(o.service);
+  const again = await accept(o.service);
+  const samePhoneNewKey = await accept(o.service, { idempotencyKey: 'k2' });
+
+  assert.equal(again.duplicate, true);
+  assert.equal(again.session.id, first.session.id);
+  assert.equal(samePhoneNewKey.duplicate, true, 'same phone within 15 minutes is the same SOS');
+  assert.equal(o.dispatch.calls.length, 1, 'guardians get one WhatsApp and one call, not three');
+  const alerts = (await o.journal.readAll()).filter((r) => r.type === 'alert');
+  assert.equal(alerts.length, 1);
+});
+
 test('if the journal cannot be written either, the SOS is still sent', async () => {
   const journal = { append: async () => { throw new Error('disk full'); } };
   const o = offline({ journal });

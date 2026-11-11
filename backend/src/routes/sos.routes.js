@@ -89,7 +89,8 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
       console.log(`🔁 [IDEMPOTENT / DUPLICATE SOS CAUGHT] Session ID: ${existingSession.id}, User: ${maskPhone(userPhone)}. 🛑 Skipping duplicate SMS broadcast.`);
       // If the first request was cut off before its sends were queued, they go out now (L3).
       // Not awaited, and only takes it on when its sending stopped over 30 seconds ago.
-      sosDispatch.resume(existingSession.id);
+      // An SOS taken without the database is not in it yet: the journal replay finishes that one.
+      if (!existingSession.degraded) sosDispatch.resume(existingSession.id);
 
       // Hand the control token back only to the original device (same idempotency key)
       // or the logged-in owner, never to someone who only knows the phone number
@@ -172,7 +173,8 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
           overIpLimit: !!req.sosOverIpLimit,
         })
         : plan;
-      ({ session: alert, results } = await sosOffline.accept({
+      let duplicate;
+      ({ session: alert, results, duplicate } = await sosOffline.accept({
         userPhone,
         idempotencyKey: finalIdempotencyKey,
         latitude,
@@ -183,6 +185,8 @@ router.post('/trigger', sosTriggerLimiter, optionalToken, async (req, res, next)
         cause: saveError.code || saveError.message || 'unknown',
         onSession: announce,
       }));
+      // A resend of an SOS already sent without the database: answered, not sent again
+      if (duplicate) return replyDuplicate(alert);
     } else {
       // Lost a race with a request using the same key: that request sends the alerts
       if (alert.duplicate) return replyDuplicate(alert);
