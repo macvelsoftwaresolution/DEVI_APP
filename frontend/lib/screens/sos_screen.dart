@@ -15,7 +15,6 @@ import '../services/sos_background.dart';
 import '../services/sos_store.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/emergency_number_note.dart';
 import '../widgets/emergency_sound_card.dart';
 import '../widgets/location_prompt_dialog.dart';
 import '../widgets/sign_in_prompt_sheet.dart';
@@ -817,11 +816,6 @@ class _SosScreenState extends State<SosScreen>
                       onSendNow: _sendNow,
                     ),
                   ),
-
-              const SizedBox(height: 10),
-
-              // What SOS does and does not do, and the emergency number
-              EmergencyNumberNote(compact: isShortScreen),
 
               const SizedBox(height: 10),
 
