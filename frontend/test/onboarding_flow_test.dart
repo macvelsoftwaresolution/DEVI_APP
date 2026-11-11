@@ -38,19 +38,25 @@ void main() {
     expect(find.byType(Checkbox), findsNothing);
     expect(find.textContaining('By tapping Agree & Continue'), findsOneWidget);
 
-    // Prominent disclosure is on the terms page itself, before any system permission prompt
-    expect(find.text('Location, calls & contacts'), findsOneWidget);
-    expect(find.textContaining('never uploaded'), findsOneWidget);
-    expect(find.textContaining('Only once, no tracking'), findsOneWidget);
-    // Evidence recording is off until Phase 2: no camera / microphone line
-    expect(find.textContaining('Video and audio'), findsNothing);
+    // The permission disclosure is its own step after the terms, not on this page
+    expect(find.text('Location, calls & contacts'), findsNothing);
+    expect(find.textContaining('Permissions are asked next'), findsOneWidget);
     // Honest about what DEVI is: no one watches alerts, call 112 in danger
     expect(find.text('DEVI is not an emergency service'), findsOneWidget);
     expect(find.textContaining('No one at DEVI watches SOS alerts'), findsOneWidget);
     expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
 
-    // The button is both the agreement and the acceptance of the disclosure
+    // Agree & Continue accepts the terms, then the prominent disclosure (Google Play) opens
     await tester.tap(find.text('Agree & Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Location, calls & contacts'), findsOneWidget);
+    expect(find.textContaining('never uploaded'), findsOneWidget);
+    expect(find.textContaining('Only once, no tracking'), findsOneWidget);
+    // Evidence recording is off until Phase 2: no camera / microphone line
+    expect(find.textContaining('Video and audio'), findsNothing);
+    expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
+
+    await tester.tap(find.text('Continue'));
     await tester.pumpAndSettle();
     expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isTrue);
 
@@ -118,7 +124,7 @@ void main() {
     expect(await OnboardingService.isSetupDone(), isFalse);
   });
 
-  testWidgets('no permission is asked before Agree & Continue; the tap asks them, then quick setup', (tester) async {
+  testWidgets('no permission is asked before Continue on the disclosure; Continue asks them, then quick setup', (tester) async {
     var permissionCalls = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(const MethodChannel('com.devi.app/sms'), (call) async {
@@ -136,9 +142,35 @@ void main() {
 
     await tester.tap(find.text('Agree & Continue'));
     await tester.pumpAndSettle();
+    expect(permissionCalls, 0, reason: 'the disclosure is shown first, still no system prompt');
 
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
     expect(permissionCalls, greaterThan(0), reason: 'the tap that accepts the disclosure asks for the permissions');
     expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isTrue);
+    expect(find.byType(QuickSetupScreen), findsOneWidget);
+  });
+
+  testWidgets('"Not now" on the disclosure asks no permission and still goes to quick setup', (tester) async {
+    var permissionCalls = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('com.devi.app/sms'), (call) async {
+      permissionCalls++;
+      return true;
+    });
+    tester.view.physicalSize = const Size(1440, 3200);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(const MaterialApp(home: TermsScreen(isLoggedIn: false)));
+    await tester.tap(find.text('Agree & Continue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Not now'));
+    await tester.pumpAndSettle();
+
+    expect(permissionCalls, 0);
+    expect(await OnboardingService.hasAcceptedPermissionDisclosure(), isFalse);
+    expect(await OnboardingService.hasAcceptedCurrentTerms(), isTrue);
     expect(find.byType(QuickSetupScreen), findsOneWidget);
   });
 
