@@ -14,6 +14,10 @@ class TermsContent {
   // TODO(legal): add the official support / grievance email before release
   static const String contactEmail = '';
 
+  // Public pages on the web portal (web/public/privacy, web/public/delete-account)
+  static const String privacyUrl = 'https://devi.macvelsoftware.com/privacy/';
+  static const String deleteAccountUrl = 'https://devi.macvelsoftware.com/delete-account/';
+
   static const List<TermsSection> sections = [
     TermsSection(
       'What DEVI does',

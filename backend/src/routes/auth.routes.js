@@ -5,6 +5,7 @@ import { verifyToken, issueUserToken } from '../middlewares/auth.middleware.js';
 import { otpLimiter } from '../middlewares/rateLimiter.js';
 import { normalizePhone } from '../utils/phone.js';
 import { sessions } from '../services/sessions.service.js';
+import { accountDeletion } from '../services/accountDeletion.service.js';
 
 const router = Router();
 
@@ -129,6 +130,42 @@ router.post('/logout-all', verifyToken, async (req, res, next) => {
     if (version == null) return res.status(404).json({ success: false, message: 'Account not found.' });
     console.log(`🔒 [SIGNED OUT EVERYWHERE] User ${req.user.id}`);
     res.status(200).json({ success: true, message: 'Signed out on every device.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/account/delete - Deletes the account with its guardians, SOS history and evidence.
+// Used by the app and by the public web page (Play Store asks for both), so it takes a fresh
+// WhatsApp code (POST /otp/send, purpose "login") rather than a token: a stolen token alone
+// cannot delete an account. The code is checked before anything else is said about the account.
+router.post('/account/delete', otpLimiter, async (req, res, next) => {
+  try {
+    const { phone, otp } = req.body || {};
+    const cleanPhone = typeof phone === 'string' ? normalizePhone(phone) : null;
+    if (!cleanPhone) {
+      return res.status(400).json({ success: false, message: 'Enter a valid mobile number for a supported country' });
+    }
+
+    if (!(await OtpService.verifyCode(cleanPhone, otp))) {
+      return res.status(401).json({ success: false, message: 'Wrong or expired code. Please try again.' });
+    }
+
+    const user = await UserService.findUserByPhone(cleanPhone);
+    if (!user || user.isGuest) {
+      return res.status(404).json({ success: false, message: 'No DEVI account uses this number.' });
+    }
+
+    const out = await accountDeletion.deleteAccount(user.id);
+    if (out.ok) {
+      return res.status(200).json({ success: true, message: 'Your account and its data have been deleted.' });
+    }
+    const [status, message] = {
+      NOT_FOUND: [404, 'No DEVI account uses this number.'],
+      SOS_IN_PROGRESS: [409, 'An SOS alert is still being sent to your guardians. Mark yourself safe, then try again in 15 minutes.'],
+      EVIDENCE: [503, 'Could not delete your account right now. Please try again later.'],
+    }[out.reason];
+    res.status(status).json({ success: false, reason: out.reason, message });
   } catch (err) {
     next(err);
   }

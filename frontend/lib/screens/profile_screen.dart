@@ -14,6 +14,7 @@ import '../widgets/input_field.dart';
 import '../widgets/devi_button.dart';
 import '../widgets/devi_logo.dart';
 import '../widgets/otp_sheet.dart';
+import '../widgets/permission_disclosure_dialog.dart';
 import 'sos_screen.dart';
 
 class _ContactSuggestion {
@@ -59,7 +60,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<_ContactSuggestion> _filteredSuggestions = [];
   int? _activeSuggestionGuardianIndex; // 0, 1, 2... for guardian slots only
   bool _isLoadingContacts = false;
-  bool _hasRequestedContactsPermission = false;
 
   @override
   void initState() {
@@ -654,13 +654,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_allContactSuggestions.isNotEmpty || _isLoadingContacts) return;
     _isLoadingContacts = true;
     try {
-      final hasPerm = await FlutterContacts.permissions.has(PermissionType.read);
-      if (!hasPerm) {
-        final status = await FlutterContacts.permissions.request(PermissionType.read);
-        if (status != PermissionStatus.granted && status != PermissionStatus.limited) {
-          _isLoadingContacts = false;
-          return;
-        }
+      // Never asks: the permission is asked from the contacts icon, after its disclosure
+      if (!await FlutterContacts.permissions.has(PermissionType.read)) {
+        _isLoadingContacts = false;
+        return;
       }
       final contacts = await FlutterContacts.getAll(
         properties: {ContactProperty.phone, ContactProperty.name},
@@ -704,13 +701,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    if (_allContactSuggestions.isEmpty && !_isLoadingContacts && !_hasRequestedContactsPermission) {
-      _hasRequestedContactsPermission = true;
-      _initContacts().then((_) {
-        if (mounted) _onPhoneChanged(value, guardianIndex: guardianIndex);
-      });
-      return;
-    }
+    // Suggestions only when contacts were already allowed; typing never pops a permission dialog
+    if (_allContactSuggestions.isEmpty) return;
 
     final prefixMatches = _allContactSuggestions
         .where((c) => c.phoneNumber.startsWith(query))
@@ -749,6 +741,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _pickContactFromBook(int guardianIndex) async {
     try {
+      // The picker returns the contact, but reading its name and number needs the permission
+      if (!await ensureContactsPermission(context)) return;
+      _initContacts();
+      if (!mounted) return;
       final contact = await FlutterContacts.native.showPicker(
         properties: {ContactProperty.phone, ContactProperty.name},
       );

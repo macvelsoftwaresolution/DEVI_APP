@@ -168,6 +168,26 @@ class ApiService {
     }
   }
 
+  // --- Account: delete the account, its guardians and SOS history. Needs a WhatsApp code
+  // (sendOtp(phone, 'login')). Returns null when deleted, else the message to show. ---
+  Future<String?> deleteAccount(String phone, String otp) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/auth/account/delete'),
+            headers: _headers,
+            body: jsonEncode({'phone': phone, 'otp': otp}),
+          )
+          .timeout(const Duration(seconds: 20));
+      final body = jsonDecode(res.body);
+      if (res.statusCode == 200 && body['success'] == true) return null;
+      return body['message'] ?? 'Could not delete your account. Please try again.';
+    } catch (e) {
+      debugPrint('API Delete Account Error: $e');
+      return 'Unable to reach server. Please check your internet and try again.';
+    }
+  }
+
   // --- Auth: Fresh token for a saved session. True: renewed. False: the server refused it,
   // the user must sign in again. Null: server not reached, so the saved session stays. ---
   Future<bool?> refreshSession() async {

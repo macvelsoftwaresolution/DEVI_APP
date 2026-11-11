@@ -1,10 +1,14 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../legal/terms_content.dart';
+import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../theme/app_colors.dart';
 import '../utils/phone_utils.dart';
 import '../widgets/add_guardian_dialog.dart';
+import '../widgets/otp_sheet.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 
@@ -113,6 +117,128 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: const Text('Log Out', style: TextStyle(color: Colors.white)),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showSnack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(behavior: SnackBarBehavior.floating, content: Text(text)),
+    );
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    try {
+      final ok = await launchUrl(Uri.parse(TermsContent.privacyUrl), mode: LaunchMode.externalApplication);
+      if (!ok) _showSnack('Open ${TermsContent.privacyUrl} in your browser.');
+    } catch (_) {
+      _showSnack('Open ${TermsContent.privacyUrl} in your browser.');
+    }
+  }
+
+  /// Play Store account deletion: confirm, WhatsApp code, then the server deletes the account,
+  /// guardians and SOS history. The same flow is on the web at TermsContent.deleteAccountUrl.
+  Future<void> _onDeleteAccount() async {
+    final phone = _appState.phone;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete account?'),
+        content: const Text(
+          'This permanently deletes your profile, your guardians and your SOS history. '
+          'It cannot be undone.\n\n'
+          'We will send a code to your number on WhatsApp to confirm it is you.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.emergencyRed,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            child: const Text('Send code', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final sent = await ApiService.instance.sendOtp(phone, 'login');
+    if (!mounted) return;
+    if (sent['success'] != true) {
+      _showSnack(sent['message']?.toString() ?? 'Could not send the code. Please try again.');
+      return;
+    }
+
+    final deleted = await showOtpSheet(
+      context,
+      phone: phone,
+      onVerify: (code) => ApiService.instance.deleteAccount(phone, code),
+      onResend: () async {
+        final again = await ApiService.instance.sendOtp(phone, 'login');
+        return again['success'] == true ? null : again['message']?.toString();
+      },
+    );
+    if (deleted != true || !mounted) return;
+
+    await AppState.instance.clearAfterAccountDeleted();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text('Your DEVI account and its data have been deleted.'),
+      ),
+    );
+  }
+
+  Widget _buildPrivacyTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    Color color = AppColors.primaryNavy,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10.0),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: color)),
+                      const SizedBox(height: 2),
+                      Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -581,6 +707,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       );
                     }),
                 ],
+
+                const SizedBox(height: 24),
+                const Text(
+                  'PRIVACY & ACCOUNT',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textMuted,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildPrivacyTile(
+                  icon: Icons.privacy_tip_outlined,
+                  title: 'Privacy policy',
+                  subtitle: 'What DEVI collects and who sees it',
+                  onTap: _openPrivacyPolicy,
+                ),
+                if (!isGuest)
+                  _buildPrivacyTile(
+                    icon: Icons.delete_forever_outlined,
+                    title: 'Delete account',
+                    subtitle: 'Delete your profile, guardians and SOS history',
+                    color: AppColors.emergencyRed,
+                    onTap: _onDeleteAccount,
+                  ),
 
                 const SizedBox(height: 20),
               ],

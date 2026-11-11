@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delete DEVI Account</title>
+<meta name="description" content="Delete your DEVI women safety account and its data.">
+<!--
+  Public account deletion page (Play Console → App content → Data safety → Delete account URL:
+  https://devi.macvelsoftware.com/delete-account/).
+  Same API as the app's Settings → Delete account: POST /api/auth/otp/send, then POST /api/auth/account/delete.
+  The site CSP allows only same-origin scripts, so the script is delete.js next to this file.
+-->
+<style>
+  :root {
+    --bg: #f7f8fc; --surface: #ffffff; --fg: #16192e; --muted: #5b6475; --line: #e5e7eb;
+    --accent: #c81e3a; --accent-soft: #fdecef; --ok: #0f766e; --ok-soft: #e6f6f4;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1117; --surface: #171a23; --fg: #e8eaf0; --muted: #9aa3b5; --line: #2a2f3c;
+            --accent: #ff6b81; --accent-soft: #3a1820; --ok: #5eead4; --ok-soft: #10302c; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 40px 16px 64px; }
+  .brand { color: var(--accent); font-weight: 700; letter-spacing: .08em; font-size: 13px; text-transform: uppercase; }
+  h1 { font-size: clamp(26px, 6vw, 34px); line-height: 1.15; margin: 6px 0 12px; }
+  h2 { font-size: 17px; margin: 28px 0 8px; }
+  ul { padding-left: 22px; margin: 6px 0; }
+  li { margin: 3px 0; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-top: 24px; }
+  label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  input { width: 100%; font: inherit; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px;
+          background: var(--bg); color: var(--fg); }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+  button { margin-top: 16px; width: 100%; font: inherit; font-weight: 700; padding: 12px; border: 0; border-radius: 10px;
+           background: var(--accent); color: #fff; cursor: pointer; }
+  button[disabled] { opacity: .55; cursor: default; }
+  button.link { background: none; color: var(--accent); width: auto; padding: 0; margin-top: 12px; font-weight: 600; }
+  .check { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; font-size: 14px; }
+  .check input { width: auto; margin-top: 4px; }
+  .msg { margin-top: 14px; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+  .msg.error { background: var(--accent-soft); }
+  .msg.ok { background: var(--ok-soft); color: var(--ok); font-weight: 600; }
+  [hidden] { display: none !important; }
+  .meta { color: var(--muted); font-size: 14px; }
+  a { color: var(--accent); }
+  footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">DEVI · Women Safety</div>
+  <h1>Delete your DEVI account</h1>
+  <p class="meta">DEVI app by Macvel Software Solutions. You can also do this in the app: Settings → Delete account.</p>
+
+  <h2>What is deleted</h2>
+  <ul>
+    <li>Your profile: name, mobile number and address</li>
+    <li>Your guardians’ names and numbers</li>
+    <li>Your SOS history: alert times, locations and addresses, and control room notes</li>
+  </ul>
+
+  <h2>What is not deleted</h2>
+  <ul>
+    <li>WhatsApp messages already delivered to your guardians stay on their phones.</li>
+    <li>Records needed for an ongoing police case or legal request are kept only as long as the law requires.</li>
+    <li>Short-lived technical records without your name (sign-in code records, delivery statuses) are removed automatically within 30 days.</li>
+  </ul>
+  <p class="meta">Deletion happens at once and cannot be undone. While an SOS is still being sent, wait until you have marked yourself safe.</p>
+
+  <div class="card">
+    <form id="phone-step" novalidate>
+      <label for="phone">Registered mobile number</label>
+      <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required>
+      <p class="hint">Include the country code. A 10-digit number is read as India (+91). We send a 6-digit code on WhatsApp to prove it is your number.</p>
+      <button type="submit" id="send-btn">Send code on WhatsApp</button>
+    </form>
+
+    <form id="code-step" novalidate hidden>
+      <label for="otp">6-digit code sent to <span id="phone-shown"></span></label>
+      <input id="otp" name="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+      <label class="check"><input type="checkbox" id="confirm"> <span>I understand my account and SOS history will be permanently deleted.</span></label>
+      <button type="submit" id="delete-btn" disabled>Delete my account</button>
+      <button type="button" class="link" id="back-btn">Use a different number</button>
+    </form>
+
+    <div id="msg" class="msg" role="status" aria-live="polite" hidden></div>
+  </div>
+
+  <p class="meta" style="margin-top:24px">No access to that WhatsApp number? Write to us using the contact in our <a href="/privacy/#delete">privacy policy</a>.</p>
+
+  <footer>
+    In an emergency, call 112 (Police) or 1091 (Women Helpline).
+  </footer>
+</main>
+<script src="delete.js"></script>
+</body>
+</html>

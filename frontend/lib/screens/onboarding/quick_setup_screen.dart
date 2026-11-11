@@ -9,6 +9,7 @@ import '../../utils/phone_utils.dart';
 import '../../widgets/country_prefix.dart';
 import '../../widgets/devi_button.dart';
 import '../../widgets/input_field.dart';
+import '../../widgets/permission_disclosure_dialog.dart';
 import '../login_screen.dart';
 import '../sos_screen.dart';
 import 'onboarding_flow.dart';
@@ -85,12 +86,9 @@ class _QuickSetupScreenState extends State<QuickSetupScreen> {
   }
 
   /// Contacts permission is asked with the other permissions after terms. When it was
-  /// denied there, it is asked again only when the user taps the contacts icon.
-  Future<bool> _ensureContactsPermission() async {
-    if (await FlutterContacts.permissions.has(PermissionType.read)) return true;
-    final status = await FlutterContacts.permissions.request(PermissionType.read);
-    return status == PermissionStatus.granted || status == PermissionStatus.limited;
-  }
+  /// denied there, it is asked again only when the user taps the contacts icon, after
+  /// its own disclosure.
+  Future<bool> _ensureContactsPermission() => ensureContactsPermission(context);
 
   Future<void> _initContacts() async {
     if (_allContactSuggestions.isNotEmpty || _isLoadingContacts) return;

@@ -244,6 +244,23 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// After the account was deleted on the server: signs out and also forgets the guardians,
+  /// setup name and guest alerts kept on this phone. The accepted terms stay.
+  Future<void> clearAfterAccountDeleted() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in [_keyGuestGuardians, _keySetupName, _keyGuestAlerts]) {
+        await _secureStorage.delete(key: key);
+        await prefs.remove(key);
+      }
+    } catch (e) {
+      debugPrint('Error clearing local data after account deletion: $e');
+    }
+    setupName = '';
+    _setupGuardians.clear();
+    await clearSession();
+  }
+
   Future<void> clearSession() async {
     try {
       final prefs = await SharedPreferences.getInstance();
