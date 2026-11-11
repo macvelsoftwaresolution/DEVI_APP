@@ -3,6 +3,7 @@ import { encryptField as enc, decryptField as dec } from '../utils/encryption.js
 import { liveTrackSessions } from './live-sessions.js';
 import { readCoords } from '../utils/coords.js';
 import { evidenceLink } from '../utils/evidence.js';
+import { WhatsAppSends, lineFor } from './whatsappSends.service.js';
 
 /**
  * Admin dashboard (view only): stats, SOS records and users (P3, S4).
@@ -301,11 +302,12 @@ export const DashboardService = {
     if (!alert) return null;
 
     const [incident] = await toIncidents([alert]);
-    const [g, a] = await Promise.all([
+    const [g, a, wa] = await Promise.all([
       incident.userId
         ? supabase.from('guardians').select('id, user_id, name, mobile_number, created_at').eq('user_id', incident.userId).order('created_at', { ascending: true })
         : Promise.resolve({ data: [] }),
       supabase.from('sos_guardian_acks').select('id, alert_id, phone, acknowledged_at').eq('alert_id', alert.id),
+      WhatsAppSends.forAlert(alert.id),
     ]);
     if (g.error) fail('guardians', g.error);
     // db/guardian-acks.sql not run yet must not take the page down
@@ -315,9 +317,12 @@ export const DashboardService = {
     const acks = (a.error ? [] : a.data || []).map((r) => ({ phone: dec(r.phone, 'sos_guardian_acks.phone', r.id), time: formatIst(r.acknowledged_at) }));
     return {
       ...incident,
-      guardians: saved.map((s) => ({ ...s, ackTime: acks.find((x) => x.phone === s.phone)?.time || null })),
+      // whatsapp: { status: accepted | sent | delivered | read | failed, attempts, errorCode, reason } or null
+      guardians: saved.map((s) => ({ ...s, ackTime: acks.find((x) => x.phone === s.phone)?.time || null, whatsapp: lineFor(wa, s.phone) })),
       // Numbers not on the saved list: guest SOS, control room, or a guardian removed since
       otherAcks: acks.filter((x) => !saved.some((s) => s.phone === x.phone)),
+      // The same for WhatsApp, without numbers (only their blind index is kept)
+      otherWhatsapp: [...wa.values()].filter((line) => !saved.some((s) => lineFor(wa, s.phone) === line)),
     };
   },
 

@@ -19,6 +19,27 @@ const WHATSAPP_REASON_TEXT = {
 
 const RESOLVED_BY_TEXT = { user: 'User (marked safe)', admin: 'Admin' };
 
+// Meta's delivery status of the SOS WhatsApp to one recipient, from the server (whatsappSends.service.js)
+const WHATSAPP_STATUS = {
+  read: ['green', 'WhatsApp read'],
+  delivered: ['green', 'WhatsApp delivered'],
+  sent: ['amber', 'WhatsApp sent, not delivered yet (phone off or offline)'],
+  accepted: ['amber', 'WhatsApp accepted by Meta, no status yet'],
+  failed: ['red', 'WhatsApp failed'],
+};
+
+function WhatsAppLine({ line }) {
+  if (!line) return <div className="adm-cell-sub muted">No WhatsApp recorded</div>;
+  const [color, text] = WHATSAPP_STATUS[line.status] || ['amber', line.status];
+  return (
+    <div className="adm-cell-sub" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+      <span className={`adm-badge ${color}`}><MessageCircle size={12} /> {text}</span>
+      {line.attempts > 1 && <span className="muted">{line.attempts} tries</span>}
+      {line.reason && <span className="muted">{line.reason}</span>}
+    </div>
+  );
+}
+
 export default function SosDetailPage() {
   const { alertId } = useParams();
   const { data, error, loading } = useAdminData(`/api/dashboard/incidents/${encodeURIComponent(alertId)}`);
@@ -136,11 +157,26 @@ export default function SosDetailPage() {
                   <div className="adm-cell-main">{g.name}</div>
                   <div className="adm-cell-sub mono">{g.phone}</div>
                   {g.ackTime && <div className="adm-cell-sub">Acknowledged on call, {g.ackTime}</div>}
+                  <WhatsAppLine line={g.whatsapp} />
                 </div>
                 <a href={`tel:${g.phone}`} className="adm-btn icon sm ghost" aria-label={`Call ${g.name}`}><Phone size={15} /></a>
               </div>
             ))}
           </div>
+
+          {inc.otherWhatsapp?.length > 0 && (
+            <div className="adm-card">
+              <div className="adm-card-head"><h2>WhatsApp to other numbers</h2><span className="muted">{inc.otherWhatsapp.length}</span></div>
+              <div className="adm-card-body muted" style={{ fontSize: 12, paddingBottom: 0 }}>
+                Numbers not on the saved guardian list (guest SOS, control room, or a guardian removed since). Only a fingerprint of the number is kept.
+              </div>
+              {inc.otherWhatsapp.map((line, i) => (
+                <div key={i} className="adm-list-row">
+                  <div style={{ flex: 1, minWidth: 0 }}><WhatsAppLine line={line} /></div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {inc.otherAcks?.length > 0 && (
             <div className="adm-card">

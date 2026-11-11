@@ -86,7 +86,9 @@ const retries = (q) => [...q.jobs.values()].filter((j) => !j.message.watch);
 
 const make = (queue, { saved = null, savedThrows = false, alertStatus = 'ACTIVE', whatsapp } = {}) => {
   const pages = [];
+  const recorded = [];
   const notify = createSosNotify({
+    recordSend: (r) => recorded.push(r),
     queue,
     random: () => 0.5,
     senders: { whatsapp: whatsapp || (async () => ({ success: true, messageId: 'wamid.1' })) },
@@ -95,7 +97,7 @@ const make = (queue, { saved = null, savedThrows = false, alertStatus = 'ACTIVE'
     getMessageStatus: async () => { if (savedThrows) throw new Error('db down'); return saved; },
     page: (p) => pages.push(p),
   });
-  return { notify, pages };
+  return { notify, pages, recorded };
 };
 
 test('an accepted WhatsApp leaves a watch job, saved before its send job is deleted', async () => {
@@ -108,6 +110,13 @@ test('an accepted WhatsApp leaves a watch job, saved before its send job is dele
   assert.equal(watch.message.kind, 'whatsapp');
   assert.equal(plain(watch).messageId, 'wamid.1');
   assert.deepEqual(q.log, [['send', 1], ['send', 2], ['delete', 1]]);
+});
+
+test('an accepted WhatsApp is recorded with its alert, number and attempt, for the dashboard', async () => {
+  const q = fakeQueue();
+  const { notify, recorded } = make(q);
+  await notify.dispatch('whatsapp', job);
+  assert.deepEqual(recorded, [{ alertId: 'a1', phone: '+919876543210', messageId: 'wamid.1', attempt: 0 }]);
 });
 
 test('delivered or read ends it: the watch job is deleted, nothing is sent again', async () => {

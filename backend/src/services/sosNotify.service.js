@@ -1,6 +1,7 @@
 import { QueueService } from './queue.service.js';
 import { WhatsAppService, classifyMetaError } from './whatsapp.service.js';
 import { WhatsAppStatus } from './whatsappStatus.service.js';
+import { WhatsAppSends } from './whatsappSends.service.js';
 import { ivrService } from './ivr.service.js';
 import { SosService } from './sos.service.js';
 import { Encryption } from '../utils/encryption.js';
@@ -104,6 +105,8 @@ export const createSosNotify = ({
   getMessageStatus = savedMessageStatus,
   page = (p) => pager.page(p),
   random = Math.random,
+  // Which WhatsApp went to whom, for the dashboard (whatsappSends.service.js). Never throws.
+  recordSend = (s) => WhatsAppSends.record(s),
 } = {}) => {
   // Not awaited: a page must never hold back a send. page() never rejects.
   const pageAlert = (job, reason) => { page({ key: `alert:${job.alertId}`, reason, alert: job }); };
@@ -166,6 +169,8 @@ export const createSosNotify = ({
       activeCalls.set(out.callId, { job, attempt, at: now, provider: out.provider, watchId });
     } else if (kind === 'whatsapp' && out.messageId) {
       forgetOld(activeMessages, now);
+      // Not awaited: the dashboard record must not hold back the send
+      recordSend({ alertId: job.alertId, phone: job.phone, messageId: out.messageId, attempt });
       const watched = { ...job, messageId: out.messageId };
       const watchId = await enqueue('whatsapp', watched, { attempt, delay: MESSAGE_WATCH_SECONDS, watch: true });
       activeMessages.set(out.messageId, { job, attempt, at: now, watchId });
