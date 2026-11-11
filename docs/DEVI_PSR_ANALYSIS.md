@@ -28,7 +28,7 @@ Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5
 |---|---|---|---|---|
 | SOS delivery (no silent loss) | 2 | **4** | L1 to L5 pass live: WhatsApp statuses, press 1 per guardian, redials, a restart during a call and a database outage. The app keeps and sends the SOS when killed or offline (L9, L13). Still: the SOS WhatsApp is held back by Meta until the Utility template is live (only the call reaches guardians today), no SMS (L7), one API address (L10), no person at the end of the chain (L11). | Utility SOS template live. SMS in the next phase. |
 | Performance | 3 | **4** | The dashboard still runs in the SOS process. Evidence uploads sit in memory (P5, Phase 2). | Upload evidence straight to storage before Phase 2. |
-| Scalability | 1.5 | **2** | One process on one shared VPS, state in memory (S1), a slow retry worker (S2), provider limits unknown (S3). | Stage A: containers, Redis, a separate worker, a load test. |
+| Scalability | 1.5 | **2** | One process on one shared VPS, state in memory (S1), a slow retry worker (S2), provider limits unknown (S3). The first load test (11 Nov) lost no SOS at 1,000, but ran from a laptop, so it says little about server speed. | Stage A: containers, Redis, a separate worker. A load test from the server's network. |
 | Reliability and operations | 1.5 | **3** | Health check and monitor are in place, and development now has its own database (REL5). But no one is paged (no on-call person), production is on the Free plan without backups (REL4), and it runs on one shared VPS. | Paid Supabase with backups, a second server. |
 | Security | 3 | **4** | Checked live: IVR signatures enforced, admin 2FA, signing a user out of every device, the audit log. Development and production are separate, and production started fresh on 10 Nov with new secrets. Account deletion and a privacy page are in code (11 Nov), not yet tested live. Still: no penetration test, Twilio signatures not yet seen live. | Test deletion live, legal review of the privacy text, a penetration test. |
 | Country readiness | 1.5 | **1.5** | India time zone, English only, `+91` assumed, WhatsApp-only sign-in. | Section 9, per country. |
@@ -126,7 +126,7 @@ Each finding says how we know it:
 - **Notes:** from project notes up to 4 Nov 2026, not rechecked today.
 - **Assumption:** a planning estimate, not a measurement.
 
-**No load test has ever been run.** This report has no production traffic numbers, and capacity figures are calculated.
+**One load test so far** (11 Nov, development database, see section 12). This report has no production traffic numbers, and capacity figures are calculated.
 
 ---
 
@@ -567,6 +567,26 @@ These are proposals to agree on, not current numbers.
 - **Alert with no proof reaches a person:** within 5 minutes.
 - **Data lost on failure:** none for accepted alerts.
 - **Recovery after a regional failure:** under 15 minutes (Stage B).
+
+### Load test (11 Nov 2026)
+
+`backend/scripts/load-test.js`: guest SOS with made-up guardians, each with its own idempotency key, then "I am safe" on each. Run from a laptop against a local server on the **development** database (Free plan), with no WhatsApp, call or Google Maps keys, so nothing was sent or billed. The script refuses the production API.
+
+| Run | SOS answered | Throughput | Latency p50 / p95 / p99 | Saved without the database |
+|---|---|---|---|---|
+| 20 SOS, 5 at once | 20/20 | 1.2/s | 3.8 s / 5.7 s / 5.8 s | 0 |
+| 300 SOS, 50 at once | 300/300 | 16.7/s | 2.5 s / 4.1 s / 4.8 s | 0 |
+| 1,000 SOS, 100 at once | 1,000/1,000 | 31/s | 2.8 s / 4.1 s / 5.9 s | 8 |
+
+"I am safe" for all 1,000 took 6 seconds (166/s, p99 1.3 s). The server used about 250 MB of memory.
+
+What it shows:
+
+- **No SOS was lost.** At 100 at once, 8 saves (0.8%) failed with `ECONNRESET` from Supabase. L2 took them: sent from the request, journaled, and all 8 saved (closed) about a minute later.
+- **Latency here is the laptop's network, not the server.** One Supabase query took 340 to 1,100 ms from the laptop, and an SOS makes about 5 to 8 queries one after another (duplicate check, save, place name, queue jobs, sent mark). From the server the same work should take well under a second. Fewer round trips (one queue call for all of an alert's jobs) would help everywhere.
+- **16 "sent" marks failed** under load (L3). Those alerts would be sent again by the resumer if still active: twice, never zero.
+- **The per-IP limit on unverified numbers is a risk in India.** From one IP, sends to numbers the SOS itself supplied stop after 30 a minute (L8: saved guardians are never limited). Indian mobile networks put many users behind one public IP (carrier-grade NAT), so a busy hour could hold back real guest SOS. Consider a higher limit, or keying it on the device as well as the IP.
+- Not tested: WhatsApp and call providers under load (their own limits, S3), the retry worker draining a large queue (S2), and a run from the server.
 
 ### Tests to run
 
