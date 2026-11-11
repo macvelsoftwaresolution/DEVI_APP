@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase.js';
 import cloudinary from '../config/cloudinary.js';
 import { parseEvidenceRef } from '../utils/evidence.js';
 import { liveTrackSessions } from './live-sessions.js';
+import { sessions as tokenSessions } from './sessions.service.js';
 
 /**
  * Account deletion (Play Store "delete account" rule, DPDP).
@@ -34,7 +35,7 @@ export const blockingAlert = (alerts, now = Date.now()) =>
 const destroyEvidence = (ref) =>
   cloudinary.uploader.destroy(ref.publicId, { resource_type: ref.resourceType, type: ref.type, invalidate: true });
 
-export const createAccountDeletion = ({ db = supabase, destroy = destroyEvidence, sessions = liveTrackSessions, now = Date.now } = {}) => ({
+export const createAccountDeletion = ({ db = supabase, destroy = destroyEvidence, sessions = liveTrackSessions, tokens = tokenSessions, now = Date.now } = {}) => ({
   /**
    * Deletes the account with this users.id and everything that belongs to it.
    * Returns { ok: true } or { ok: false, reason: 'NOT_FOUND' | 'SOS_IN_PROGRESS' | 'EVIDENCE' }.
@@ -72,6 +73,8 @@ export const createAccountDeletion = ({ db = supabase, destroy = destroyEvidence
     if (dError) throw Object.assign(new Error(dError.message), { code: dError.code });
 
     for (const alert of alerts || []) sessions.delete(alert.id);
+    // Its tokens stop at once on this server, within a minute on others (sessions.service.js)
+    tokens.forgetUser?.(userId);
     console.log(`🗑️ [ACCOUNT DELETED] User ${userId}, ${alerts?.length || 0} alert(s)`);
     return { ok: true };
   },

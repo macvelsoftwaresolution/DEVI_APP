@@ -15,6 +15,9 @@ import { encryptField as enc, decryptField as dec } from '../utils/encryption.js
  */
 
 const USER_CACHE_MS = 60 * 1000;
+// The version of a user who has no row: the account was deleted. No token carries it, so every
+// token of a deleted account is refused (a token is only made for a user row that exists).
+export const DELETED_VERSION = -1;
 const ADMIN_REFRESH_MS = 60 * 1000;
 const MISSING = new Set(['42703', '42P01', 'PGRST204', 'PGRST205']);
 
@@ -30,7 +33,8 @@ export const createSessions = ({ db = supabase, now = Date.now } = {}) => {
   let adminTimer = null;
 
   return {
-    // The user's current token version, 0 before db/login-security.sql, null when unknown
+    // The user's current token version, 0 before db/login-security.sql, DELETED_VERSION when the
+    // account is gone, null when unknown
     async userTokenVersion(userId) {
       if (!userId) return null;
       const hit = userVersions.get(userId);
@@ -41,7 +45,10 @@ export const createSessions = ({ db = supabase, now = Date.now } = {}) => {
           if (MISSING.has(error.code)) { logMissing(error); return 0; }
           return null;
         }
-        if (!data) return null;
+        if (!data) {
+          userVersions.set(userId, { v: DELETED_VERSION, at: now() });
+          return DELETED_VERSION;
+        }
         const v = Number(data.token_version) || 0;
         userVersions.set(userId, { v, at: now() });
         if (userVersions.size > 50_000) userVersions.delete(userVersions.keys().next().value);
@@ -49,6 +56,11 @@ export const createSessions = ({ db = supabase, now = Date.now } = {}) => {
       } catch (_) {
         return null;
       }
+    },
+
+    // The account was deleted: its tokens stop now on this server
+    forgetUser(userId) {
+      userVersions.set(userId, { v: DELETED_VERSION, at: now() });
     },
 
     // Signs the user out on every device. Returns the new version, or throws.

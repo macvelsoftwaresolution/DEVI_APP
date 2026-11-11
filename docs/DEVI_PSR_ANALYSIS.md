@@ -30,7 +30,7 @@ Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5
 | Performance | 3 | **4** | The dashboard still runs in the SOS process. Evidence uploads sit in memory (P5, Phase 2). | Upload evidence straight to storage before Phase 2. |
 | Scalability | 1.5 | **2** | One process on one shared VPS, state in memory (S1), a slow retry worker (S2), provider limits unknown (S3). | Stage A: containers, Redis, a separate worker, a load test. |
 | Reliability and operations | 1.5 | **3** | Health check and monitor are in place, and development now has its own database (REL5). But no one is paged (no on-call person), production is on the Free plan without backups (REL4), and it runs on one shared VPS. | Paid Supabase with backups, a second server. |
-| Security | 3 | **4** | Checked live: IVR signatures enforced, admin 2FA, signing a user out of every device, the audit log. Development and production are separate, and production started fresh on 10 Nov with new secrets. Still: no account deletion or privacy text, no penetration test, Twilio signatures not yet seen live. | Deletion and privacy text, a penetration test. |
+| Security | 3 | **4** | Checked live: IVR signatures enforced, admin 2FA, signing a user out of every device, the audit log. Development and production are separate, and production started fresh on 10 Nov with new secrets. Account deletion and a privacy page are in code (11 Nov), not yet tested live. Still: no penetration test, Twilio signatures not yet seen live. | Test deletion live, legal review of the privacy text, a penetration test. |
 | Country readiness | 1.5 | **1.5** | India time zone, English only, `+91` assumed, WhatsApp-only sign-in. | Section 9, per country. |
 | **Overall** | **2** | **3** | What is built now works live. The rest is infrastructure (one server, Free plan, no backups) and the business decisions in section 13. | Paid Supabase with backups, Stage A, then the business items above. |
 
@@ -115,7 +115,7 @@ All 323 backend tests pass locally (11 Nov). The live tests above ran on `11ba93
 | Reliability (section 6) | REL1, REL2, REL3, REL5, REL6, REL7 | | REL4 |
 | Target design (section 7) | | | All building blocks |
 | Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
-| Security (section 10) | Names in call URLs, IVR signatures (enforced 11 Nov), token revoke, operator accounts and the .env admin with 2FA, audit log, daily spend cap, separate development and production databases and secrets | Retention (SOS history kept until the legal period is decided) | Account deletion and privacy text, key service, pentest |
+| Security (section 10) | Names in call URLs, IVR signatures (enforced 11 Nov), token revoke, operator accounts and the .env admin with 2FA, audit log, daily spend cap, separate development and production databases and secrets | Retention (SOS history kept until the legal period is decided), account deletion and privacy page (code, not yet live) | Key service, pentest |
 
 ### How to read the evidence
 
@@ -472,6 +472,7 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 | **Daily cap on SOS to unverified numbers** | Code | `SOS_UNVERIFIED_DAILY_CAP`, default `IN:1000,*:100` per IST day. Saved guardians are never capped. Reaching it pages and shows in the health check. In memory per server until Redis (S1). |
 | **Tests cannot reach real services** | Code | `test/setup.js` (run by `npm test`) points Supabase at a dead local address and blanks every provider key, whatever the local `.env` says. On 10 Nov the local `.env` pointed at the production project. |
 | **Honest about what DEVI is** | Code | 10 Nov, app: the terms (v4, every user accepts again) say no one at DEVI watches SOS alerts, DEVI does not send police or an ambulance, and to call 112 or 181. The SOS screen says the same, with a Call 112 button that uses the SIM. "Control room" and "safety desk" promises removed. To be reviewed by the legal advisor. |
+| **Account deletion** | Code | 11 Nov. In the app (Settings) and on the web for Google Play (`web/public/delete-account/`), both through `POST /api/auth/account/delete` with a fresh WhatsApp code, so a stolen token alone cannot delete an account. Deletes the user, guardians, SOS history, press 1 records and evidence files (`src/services/accountDeletion.service.js`). Refused while an alert may still be sending, and for 15 minutes after "I am safe". The account's tokens stop at once: a user with no row now counts as deleted, not as "database down" (`sessions.service.js`). Guests have no deletion: their data is under a random id. |
 | **Separate development and production** | Live | Development: Supabase project `devi-dev` and its own secrets in the local `.env`. Production: `devi-app`, `.env` only on the server. |
 | **Production fresh start with new secrets** | Live | 10 Nov: the live server had been started with an `ENCRYPTION_KEY` that was not in its `.env`. Before launch, all production data was deleted (`db/fresh-start-2026-11-10.sql`) and the server restarted with new `JWT_SECRET`, `ADMIN_JWT_SECRET`, `SOS_LINK_SECRET`, `ADMIN_SECRET_KEY`, `ENCRYPTION_KEY` (id 1) and `HEALTH_CHECK_KEY`. The Supabase secret key was kept: it was only on the server. Keep `ENCRYPTION_KEY` in a password manager: without it the data cannot be read. |
 
@@ -480,7 +481,7 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 | Item | Why it matters | Who decides |
 |---|---|---|
 | Supabase paid plan and backups | The project is on the Free plan: no automatic backups, and it pauses when idle (REL4). | Business |
-| Support contact, account deletion, privacy policy | Not in the app or backend today. Play Store and DPDP require them. | Business, then code |
+| Support contact, privacy policy | Account deletion and a privacy page are done (11 Nov). The privacy text needs a legal review, and a support contact is still needed. | Business |
 | Guardian consent | Guardians are third parties whose numbers we store. Guardian verification solves this and L12 together. | Business, then code |
 | Penetration test and incident response plan | Independent test before launch, and a plan with breach notification times. | Business |
 | Live provider accounts | Twilio and Plivo are trial accounts. New auth tokens change the IVR signatures, so test again in log mode first. | Business |

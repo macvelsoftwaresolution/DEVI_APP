@@ -29,7 +29,8 @@ export const signUserToken = (user, phone, tv = 0) =>
 
 // A token at the user's current version (login, sign up, refresh)
 export const issueUserToken = async (user, phone) =>
-  signUserToken(user, phone, (await sessions.userTokenVersion(user.id)) ?? 0);
+  // Never below 0: a token must not carry the deleted-account version
+  signUserToken(user, phone, Math.max(0, (await sessions.userTokenVersion(user.id)) ?? 0));
 
 // False only when the user was signed out after this token was made. Unknown (database down)
 // counts as still good. Tokens from before versions carry none, which is version 0.
