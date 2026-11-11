@@ -22,11 +22,11 @@ The most urgent finding is a bug. Most WhatsApp errors are treated as "token exp
 
 ### Scorecard (11 Nov 2026)
 
-Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5 Nov, when this report was written. The server-side live tests passed on 10 and 11 Nov (see "Live tests" below). One bug found live was fixed the same day. On a phone (11 Nov), the restart part of L13 passed. The offline send (L9) and an offline "I Am Safe" are being tested again in the right order. The same day showed that the SOS WhatsApp template is in the Marketing category, so Meta holds it back (131049): a Utility template is being approved.
+Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5 Nov, when this report was written. The server-side live tests passed on 10 and 11 Nov (see "Live tests" below). One bug found live was fixed the same day. The app side (L9, L13) passed on a phone on 11 Nov. The same day showed that the SOS WhatsApp template is in the Marketing category, so Meta holds it back (131049): a Utility template is being approved.
 
 | Area | Before | Now | What holds it back | To reach 4 or more |
 |---|---|---|---|---|
-| SOS delivery (no silent loss) | 2 | **4** | L1 to L5 pass live: WhatsApp statuses, press 1 per guardian, redials, a restart during a call and a database outage. After a restart the app shows "I Am Safe" again and closes the alert (L13). Still: the offline send (L9) is being tested again on a phone, and the SOS WhatsApp is held back by Meta until the Utility template is live (only the call reaches guardians today), no SMS (L7), one API address (L10), no person at the end of the chain (L11). | Utility SOS template live. SMS in the next phase. |
+| SOS delivery (no silent loss) | 2 | **4** | L1 to L5 pass live: WhatsApp statuses, press 1 per guardian, redials, a restart during a call and a database outage. The app keeps and sends the SOS when killed or offline (L9, L13). Still: the SOS WhatsApp is held back by Meta until the Utility template is live (only the call reaches guardians today), no SMS (L7), one API address (L10), no person at the end of the chain (L11). | Utility SOS template live. SMS in the next phase. |
 | Performance | 3 | **4** | The dashboard still runs in the SOS process. Evidence uploads sit in memory (P5, Phase 2). | Upload evidence straight to storage before Phase 2. |
 | Scalability | 1.5 | **2** | One process on one shared VPS, state in memory (S1), a slow retry worker (S2), provider limits unknown (S3). | Stage A: containers, Redis, a separate worker, a load test. |
 | Reliability and operations | 1.5 | **3** | Health check and monitor are in place, and development now has its own database (REL5). But no one is paged (no on-call person), production is on the Free plan without backups (REL4), and it runs on one shared VPS. | Paid Supabase with backups, a second server. |
@@ -99,7 +99,7 @@ All 323 backend tests pass locally (11 Nov). The live tests above ran on `11ba93
 
 **Partly done (2):**
 
-- **L9, L13 (app):** the SOS in progress is saved on the phone in encrypted storage (`frontend/lib/services/sos_store.dart`) before the first send: pending with its request, then active with the alert id and control token. After a restart the app shows "I Am Safe" again and can close the alert, and a pending SOS is sent again with the same idempotency key. On Android a WorkManager task (`sos_background.dart`) sends a pending SOS as soon as there is internet, even when the app is closed or killed, with the location saved at the press. An "I am safe" that could not reach the server is sent on the next start. SOS older than a day are dropped. *Android phone, 11 Nov: "I Am Safe" came back after killing the app and closed the alert. The SOS pressed in airplane mode and sent in the background, and an "I Am Safe" pressed offline, are being tested again in the right order.*
+- **L9, L13 (app):** the SOS in progress is saved on the phone in encrypted storage (`frontend/lib/services/sos_store.dart`) before the first send: pending with its request, then active with the alert id and control token. After a restart the app shows "I Am Safe" again and can close the alert, and a pending SOS is sent again with the same idempotency key. On Android a WorkManager task (`sos_background.dart`) sends a pending SOS as soon as there is internet, even when the app is closed or killed, with the location saved at the press. An "I am safe" that could not reach the server is sent on the next start. SOS older than a day are dropped. *Passed on an Android phone on 11 Nov: an SOS pressed in airplane mode, with the app then killed, was sent in the background when the network came back, without opening the app. "I Am Safe" came back after killing the app and closed the alert. An "I Am Safe" pressed offline closed the alert on the next start, and the redials stopped.*
 
 - **L7:** still open: SMS. Planned for the next phase with MSG91. The committed code has no SMS today.
 
@@ -109,7 +109,7 @@ All 323 backend tests pass locally (11 Nov). The live tests above ran on `11ba93
 
 | Area | Done | Partly done | Open |
 |---|---|---|---|
-| Message loss (section 3) | L1, L2, L3, L4, L5, L6, L8, L9 and L13 (app: restart tested on a phone, offline send being retested) | L7 (SMS), L11 (paged, not staffed) | L10, L12 |
+| Message loss (section 3) | L1, L2, L3, L4, L5, L6, L8, L9 and L13 (app, tested on a phone) | L7 (SMS), L11 (paged, not staffed) | L10, L12 |
 | Performance (section 4) | P1, P2, P3, P4 | | P5 |
 | Scalability (section 5) | S4, S5 | | S1, S2, S3 |
 | Reliability (section 6) | REL1, REL2, REL3, REL5, REL6, REL7 | | REL4 |
