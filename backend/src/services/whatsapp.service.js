@@ -18,10 +18,21 @@ export const classifyMetaError = (error) => {
   const code = Number(error.code);
   if (code === 190) return 'TOKEN_EXPIRED';
   if (code === 131026) return 'NOT_ON_WHATSAPP';
+  // "Healthy ecosystem engagement": Meta's per-person limit on Marketing templates. Meta says not
+  // to send again for 24 hours. On an SOS it means the template is in the Marketing category.
+  if (code === 131049) return 'MARKETING_LIMIT';
   if (RATE_LIMIT_CODES.has(code)) return 'RATE_LIMITED';
   if (code >= 132000 && code < 133000) return 'TEMPLATE_PROBLEM';
   return 'META_ERROR';
 };
+
+// The approved SOS template. Set in .env to move to a new template without a deploy. The template
+// must be Utility: Meta holds back Marketing templates per person (131049), even for an SOS.
+// Its body takes the named variables {{name}}, {{location_link}} and {{alert_time}}.
+export const sosTemplate = (env = process.env) => ({
+  name: String(env.WHATSAPP_SOS_TEMPLATE || 'devi_safety').trim(),
+  language: String(env.WHATSAPP_SOS_TEMPLATE_LANG || 'en_US').trim(),
+});
 
 export const WhatsAppService = {
   /**
@@ -76,7 +87,7 @@ export const WhatsAppService = {
       hour12: true,
     });
 
-    // Send via Meta Approved Utility Template: devi_safety
+    const template = sosTemplate();
     try {
       const templatePayload = {
         messaging_product: 'whatsapp',
@@ -84,9 +95,9 @@ export const WhatsAppService = {
         to: clean,
         type: 'template',
         template: {
-          name: 'devi_safety',
+          name: template.name,
           language: {
-            code: 'en_US',
+            code: template.language,
           },
           components: [
             {
@@ -128,7 +139,7 @@ export const WhatsAppService = {
       const data = await response.json().catch(() => ({}));
 
       if (response.ok && data.messages && data.messages.length > 0) {
-        console.log(`✅ [APPROVED TEMPLATE DISPATCHED: devi_safety] ID: ${data.messages[0].id} to +${maskPhone(clean)}`);
+        console.log(`✅ [APPROVED TEMPLATE DISPATCHED: ${template.name}] ID: ${data.messages[0].id} to +${maskPhone(clean)}`);
 
         // Native WhatsApp location pin as a follow-up; not awaited so it never delays the SOS response
         if (hasValidCoords) {

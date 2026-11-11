@@ -151,6 +151,16 @@ test('failed because the number is not on WhatsApp: not sent again', async () =>
   assert.equal(q.jobs.size, 0);
 });
 
+test('held back by Meta (131049, Marketing template): not sent again for 24 hours, pages, the call carries it', async () => {
+  const q = fakeQueue();
+  const { notify, pages } = make(q);
+  await notify.dispatch('whatsapp', job);
+  // Live, 11 Nov: devi_safety is a Marketing template, and every SOS WhatsApp failed with 131049
+  assert.equal(await notify.messageStatus({ messageId: 'wamid.1', status: 'failed', errorCode: 131049 }), 'permanent');
+  assert.equal(q.jobs.size, 0);
+  assert.deepEqual(pages.map((p) => p.key), ['whatsapp:MARKETING_LIMIT']);
+});
+
 test('failed on a template problem: pages the on-call person and is sent again', async () => {
   const q = fakeQueue();
   const { notify, pages } = make(q);
