@@ -66,7 +66,8 @@ const FIELD = 'pgmq.sos_notify';
 
 // Failures of this one number that no retry can fix. An expired token, a template problem or missing
 // provider settings stop every alert until someone fixes them, so those jobs stay and keep retrying.
-const PERMANENT_WHATSAPP = new Set(['NOT_ON_WHATSAPP', 'PHONE_EMPTY']);
+// MARKETING_LIMIT (131049): Meta will not deliver it again within 24 hours, so the call carries it.
+const PERMANENT_WHATSAPP = new Set(['NOT_ON_WHATSAPP', 'PHONE_EMPTY', 'MARKETING_LIMIT']);
 const PERMANENT_IVR = new Set(['Invalid phone number']);
 // WhatsApp failures that stop every alert, not just this one: the on-call person is paged
 const SYSTEM_WHATSAPP = new Set(['TOKEN_EXPIRED', 'TEMPLATE_PROBLEM', 'CREDENTIALS_MISSING']);
@@ -176,6 +177,9 @@ export const createSosNotify = ({
   const messageFailed = async (job, attempt, errorCode) => {
     const reason = errorCode != null ? classifyMetaError({ code: errorCode }) : 'META_ERROR';
     const { messageId, ...base } = job;
+    if (reason === 'MARKETING_LIMIT') {
+      page({ key: 'whatsapp:MARKETING_LIMIT', reason: 'Meta held back an SOS WhatsApp (131049): the SOS template is in the Marketing category. Use a Utility template (WHATSAPP_SOS_TEMPLATE)' });
+    }
     if (PERMANENT_WHATSAPP.has(reason)) {
       console.warn(`⚠️ [SOS WHATSAPP] Alert ${job.alertId} to ${maskPhone(job.phone)} undeliverable (${errorCode}, ${reason}): not sent again, the call still goes`);
       return 'permanent';

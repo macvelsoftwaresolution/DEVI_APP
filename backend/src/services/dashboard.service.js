@@ -118,7 +118,6 @@ const toIncident = (alert, user) => {
     createdAt: alert.created_at,
     displayTime: formatIst(alert.created_at),
     status,
-    isTest: !!alert.is_test_mode,
     latitude: coords.latitude,
     longitude: coords.longitude,
     accuracy: coords.latitude !== null ? (alert.accuracy ?? null) : null,

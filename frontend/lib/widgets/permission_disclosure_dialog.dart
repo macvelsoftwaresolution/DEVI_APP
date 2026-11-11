@@ -115,7 +115,7 @@ class PermissionDisclosurePoints extends StatelessWidget {
       children: [
         _Point(
           icon: Icons.my_location_rounded,
-          text: 'Your location is sent to your guardians and the DEVI control room. Only once, no tracking.',
+          text: 'Your location is sent to your guardians when you press SOS. Only once, no tracking.',
         ),
         if (kEvidenceRecordingEnabled)
           _Point(

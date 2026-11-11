@@ -11,8 +11,11 @@ import '../services/emergency_media_service.dart';
 import '../services/location_service.dart';
 import '../services/onboarding_service.dart';
 import '../services/sms_service.dart';
+import '../services/sos_background.dart';
+import '../services/sos_store.dart';
 import '../services/sound_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/emergency_number_note.dart';
 import '../widgets/emergency_sound_card.dart';
 import '../widgets/location_prompt_dialog.dart';
 import '../widgets/sign_in_prompt_sheet.dart';
@@ -75,6 +78,7 @@ class _SosScreenState extends State<SosScreen>
       _activeAlertId = _appState.activeAlertId;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _restoreSavedSos();
       await _ensureLocationOn();
       // A guest who tapped "Later" after their last SOS is asked once more, never during an SOS
       if (mounted && _appState.isGuest && !_isEmergencyActive &&
@@ -82,6 +86,51 @@ class _SosScreenState extends State<SosScreen>
         await showSignInPromptSheet(context, isReminder: true);
       }
     });
+  }
+
+  // --- After a restart: bring back the SOS the app was killed with (L9, L13) ---
+  Future<void> _restoreSavedSos() async {
+    if (_isEmergencyActive) return; // still in memory: nothing was lost
+    final saved = await SosStore.load();
+    if (saved == null || !mounted) return;
+    final api = ApiService.instance;
+    if (saved.alertId != null && saved.controlToken != null) {
+      api.rememberControlToken(saved.alertId!, saved.controlToken!);
+    }
+
+    // "I am safe" that could not be sent: send it now, show nothing
+    if (saved.resolvePending && saved.alertId != null) {
+      if (await api.resolveEmergencyAlert(saved.alertId!)) await SosStore.clear();
+      return;
+    }
+
+    debugPrint('🔁 [SOS RESTORED] ${saved.isPending ? 'Not yet delivered, sending again' : 'Active alert ${saved.alertId}'}');
+    setState(() {
+      _isEmergencyActive = true;
+      _activeIdempotencyKey = saved.idempotencyKey;
+      _activeAlertId = saved.alertId;
+      _sosDeliveryPending = saved.isPending;
+      _sosRetryAttempt = 0;
+    });
+    _appState.setActiveEmergency(saved.alertId ?? 'SOS_${saved.startedAt.millisecondsSinceEpoch}');
+
+    final request = saved.request;
+    if (saved.isPending && request != null) {
+      // Same request and key, fresh GPS when there is one
+      Future<Map<String, dynamic>?> sendSos(LocationResult loc) {
+        final body = Map<String, dynamic>.from(request);
+        if (loc.latitude != null && loc.longitude != null) {
+          body['latitude'] = loc.latitude;
+          body['longitude'] = loc.longitude;
+          body['accuracy'] = loc.accuracy;
+          body['location'] = loc.mapsUrl ?? loc.displayText;
+          body['captured_at'] = loc.capturedAt?.toIso8601String();
+        }
+        return api.sendSosPayload(body);
+      }
+      SosBackground.schedule();
+      _retrySosDelivery(sendSos, saved.idempotencyKey);
+    }
   }
 
   @override
@@ -241,8 +290,8 @@ class _SosScreenState extends State<SosScreen>
           ),
           content: const Text(
             kEvidenceRecordingEnabled
-                ? 'This will finish the emergency evidence and mark your alert as RESOLVED for the safety desk.'
-                : 'This will mark your alert as RESOLVED for the safety desk.',
+                ? 'This will finish the emergency evidence, close your alert and stop the calls to your guardians.'
+                : 'This will close your alert and stop the calls and messages to your guardians.',
             style: TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.4),
           ),
           actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -268,7 +317,14 @@ class _SosScreenState extends State<SosScreen>
       if (confirmed != true) return;
     }
 
-    final alertId = _activeAlertId ?? _appState.activeAlertId;
+    // The background task may have delivered it while the screen still showed "not sent"
+    final saved = await SosStore.load();
+    if (saved?.alertId != null && saved?.controlToken != null) {
+      ApiService.instance.rememberControlToken(saved!.alertId!, saved.controlToken!);
+    }
+    final shownId = _activeAlertId ?? _appState.activeAlertId;
+    final alertId = saved?.alertId ?? ((shownId != null && !shownId.startsWith('SOS_')) ? shownId : null);
+    await SosBackground.cancel();
 
     setState(() {
       _isEmergencyActive = false;
@@ -289,9 +345,18 @@ class _SosScreenState extends State<SosScreen>
     await EmergencyMediaService.instance.stopEmergencyRecording();
     await EmergencyForegroundService.stop();
 
-    // 2. Resolve the alert in the backend
+    // 2. Resolve the alert in the backend. Offline: kept, and tried again on the next app start,
+    // so the server stops calling the guardians as soon as it can be told.
     if (alertId != null && alertId.isNotEmpty) {
-      await ApiService.instance.resolveEmergencyAlert(alertId);
+      final told = await ApiService.instance.resolveEmergencyAlert(alertId);
+      if (told) {
+        await SosStore.clear();
+      } else {
+        await SosStore.markResolvePending();
+      }
+    } else {
+      // Never reached the server: nothing to close, and nothing more must be sent
+      await SosStore.clear();
     }
 
     if (mounted) {
@@ -412,20 +477,24 @@ class _SosScreenState extends State<SosScreen>
       // The same idempotency key is reused on every retry, so the server never creates a
       // second alert or sends WhatsApp twice for one SOS.
       final idempotencyKey = _activeIdempotencyKey!;
-      Future<Map<String, dynamic>?> sendSos(LocationResult loc) {
-        return ApiService.instance.triggerEmergencyAlert(
-          userPhone: _appState.phone.isNotEmpty ? _appState.phone : 'INSTANT_SOS',
-          userName: _appState.name.isNotEmpty ? _appState.name : defaultUserName,
-          location: loc.mapsUrl ?? loc.displayText,
-          latitude: loc.latitude,
-          longitude: loc.longitude,
-          accuracy: loc.accuracy,
-          idempotencyKey: idempotencyKey,
-          capturedAt: loc.capturedAt,
-          contactsAlerted: contactStrings,
-          emergencyContacts: guardianPhones,
-        );
-      }
+      Map<String, dynamic> payloadFor(LocationResult loc) => ApiService.sosPayload(
+            userPhone: _appState.phone.isNotEmpty ? _appState.phone : 'INSTANT_SOS',
+            userName: _appState.name.isNotEmpty ? _appState.name : defaultUserName,
+            location: loc.mapsUrl ?? loc.displayText,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            accuracy: loc.accuracy,
+            idempotencyKey: idempotencyKey,
+            capturedAt: loc.capturedAt,
+            contactsAlerted: contactStrings,
+            emergencyContacts: guardianPhones,
+          );
+      Future<Map<String, dynamic>?> sendSos(LocationResult loc) =>
+          ApiService.instance.sendSosPayload(payloadFor(loc));
+
+      // Saved before the first send: if the app is killed from here on, the SOS is still sent
+      // (sos_background.dart) and shown again on the next start (L9, L13)
+      await SosStore.savePending(idempotencyKey: idempotencyKey, request: payloadFor(locResult));
 
       final alertData = await sendSos(locResult);
       final delivered = alertData != null && alertData['id'] != null;
@@ -441,6 +510,8 @@ class _SosScreenState extends State<SosScreen>
         _onSosDeliveryFailed();
         _retrySosDelivery(sendSos, idempotencyKey);
         _appState.setActiveEmergency(alertId);
+        // Keeps trying when the app is closed or killed, as soon as there is internet
+        SosBackground.schedule();
       }
 
       // 5. Emergency Auto-Call: only when the server was not reached (it uses the SIM, not internet).
@@ -478,6 +549,9 @@ class _SosScreenState extends State<SosScreen>
     _appState.setActiveEmergency(alertId);
     // Guests: keep proof of this alert so it moves to their account when they sign in
     _appState.rememberGuestAlert(alertId);
+    // Kept on the phone: after a restart "I Am Safe" still closes this alert (L13)
+    await SosStore.markDelivered(alertId, ApiService.instance.sosControlToken(alertId));
+    await SosBackground.cancel();
   }
 
   // --- Read the server's WhatsApp result and remember who was NOT reached ---
@@ -744,7 +818,12 @@ class _SosScreenState extends State<SosScreen>
                     ),
                   ),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
+
+              // What SOS does and does not do, and the emergency number
+              EmergencyNumberNote(compact: isShortScreen),
+
+              const SizedBox(height: 10),
 
               // Bottom Emergency Sound Card (Independent Reusable Widget)
               const EmergencySoundCard(),

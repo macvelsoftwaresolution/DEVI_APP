@@ -287,7 +287,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 2),
                 const Text(
-                  'Upload your photo so the safety desk can recognize you',
+                  'Upload your photo so you can be recognized in an alert',
                   style: TextStyle(
                     fontSize: 11,
                     color: AppColors.textMuted,
@@ -1087,7 +1087,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             SizedBox(width: 5),
                             Flexible(
                               child: Text(
-                                'Helps the safety desk recognize you',
+                                'Helps you be recognized in an alert',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,

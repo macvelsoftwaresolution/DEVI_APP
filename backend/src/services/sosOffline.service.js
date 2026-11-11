@@ -26,6 +26,8 @@ import { toLatLng, hasFix } from '../utils/coords.js';
 
 const REPLAY_EVERY_MS = 30_000;
 export const REPLAY_AFTER_MS = 60_000;
+// Same window as SosService.findExistingSos: the same phone within 15 minutes is the same SOS
+const DUPLICATE_WINDOW_MS = 15 * 60 * 1000;
 const NO_LOCATION_TEXT = 'Location not yet available';
 
 const displayTime = (iso) => {
@@ -67,6 +69,9 @@ export const createSosOffline = ({
       throw e;
     }
     if (saved.duplicate) return 'already-saved';
+    // The place lookup did not run during the outage: the alert showed only "GPS lat, lng".
+    // Bounded wait, so a sent-again WhatsApp can carry the place name.
+    await store.fillPlaceName?.(saved);
 
     if (memory?.status === 'RESOLVED') {
       await store.resolveSosAlert(r.alertId, memory.resolvedBy || 'user');
@@ -89,6 +94,13 @@ export const createSosOffline = ({
      * onSession(session): called before the sends, for the dashboard.
      */
     async accept({ userPhone, idempotencyKey, latitude, longitude, accuracy, location, plan, cause, onSession }) {
+      // The app resends while the failing database keeps the first request waiting. Each resend
+      // passed the duplicate check (it reads the database) and became a second SOS to the same
+      // guardians. The first one to get here is in memory: the rest are its duplicates. No await
+      // between this check and sessions.set below, so two requests cannot both pass it.
+      const existing = sessions.findActive({ idempotencyKey, userPhone }, DUPLICATE_WINDOW_MS);
+      if (existing) return { session: existing, duplicate: true, results: [] };
+
       const alertId = crypto.randomUUID();
       const createdAt = new Date(now()).toISOString();
       const coords = toLatLng(latitude, longitude);

@@ -7,8 +7,9 @@ class TermsContent {
   TermsContent._();
 
   // v3: evidence recording (camera + microphone) removed until Phase 2
-  static const String version = 'v3-draft';
-  static const String lastUpdated = 'October 2026';
+  // v4: no one at DEVI watches alerts; guardians are the ones who help; call 112 in danger
+  static const String version = 'v4-draft';
+  static const String lastUpdated = 'November 2026';
   static const String company = 'Macvel Software Solutions';
 
   // TODO(legal): add the official support / grievance email before release
@@ -21,15 +22,17 @@ class TermsContent {
   static const List<TermsSection> sections = [
     TermsSection(
       'What DEVI does',
-      'DEVI helps you ask for help in an emergency. When you press SOS, DEVI sends an alert '
-          'with your location at that moment to the guardians you add, and records it for the '
-          'DEVI emergency control room.',
+      'DEVI helps you ask for help in an emergency. When you press SOS, DEVI sends a WhatsApp '
+          'message with your location at that moment to the guardians you add, and calls them. '
+          'Your guardians are the people who help you.',
     ),
     TermsSection(
-      'DEVI is not a replacement for police or ambulance',
-      'DEVI depends on your phone, battery, GPS, mobile network, internet and WhatsApp. '
-          'An alert can be delayed or fail to reach someone. In danger, also call the '
-          'police or a women\'s helpline directly.',
+      'DEVI is not an emergency service',
+      'No one at DEVI watches SOS alerts or answers them, day or night. DEVI does not send '
+          'police or an ambulance. DEVI depends on your phone, battery, GPS, mobile network, '
+          'internet and WhatsApp, and an alert can be delayed or fail to reach someone.\n'
+          'In danger, call 112 (emergency) or 181 (women\'s helpline) yourself, as well as '
+          'pressing SOS.',
     ),
     TermsSection(
       'What we collect and why',
@@ -42,7 +45,8 @@ class TermsContent {
     TermsSection(
       'Who can see your SOS data',
       'Your guardians (a WhatsApp message with a map link to your SOS location), and authorised DEVI '
-          'control room staff. We do not sell your data. Police may receive it only when '
+          'staff when they look into a problem or a request from you. Every such access is logged. '
+          'We do not sell your data. Police may receive it only when '
           'you or your guardians ask for help, or when the law requires it.',
     ),
     TermsSection(
