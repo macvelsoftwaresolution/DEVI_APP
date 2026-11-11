@@ -56,7 +56,6 @@ Run on the live server with trial Twilio and Plivo accounts, so calls went only 
 
 Fixed after the tests (`f2aec9a`): an alert saved from the journal now gets its place name. The unused "Test" column is gone from the CSV and the dashboard (the app's test SOS is a preview and sends nothing).
 
-Seen live, earlier: an alert saved from the journal shows "GPS lat, lng" instead of a place name, because the place lookup is not run on replay. The CSV "Test" column is always "No", because nothing sets `is_test_mode` (there is no test SOS in the app).
 
 ### Fix status (checked against code on 10 Nov 2026, commit `980190f`)
 
