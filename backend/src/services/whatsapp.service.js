@@ -28,11 +28,22 @@ export const classifyMetaError = (error) => {
 
 // The approved SOS template. Set in .env to move to a new template without a deploy. The template
 // must be Utility: Meta holds back Marketing templates per person (131049), even for an SOS.
-// Its body takes the named variables {{name}}, {{location_link}} and {{alert_time}}.
+// devi_agent_welcome (Utility, approved 12 Nov 2026) has a fixed header and footer and a body with
+// the named variables {{name}}, {{name1}}, {{name2}} (all the person's name), {{location}}, {{time}}.
 export const sosTemplate = (env = process.env) => ({
-  name: String(env.WHATSAPP_SOS_TEMPLATE || 'devi_safety').trim(),
+  name: String(env.WHATSAPP_SOS_TEMPLATE || 'devi_agent_welcome').trim(),
   language: String(env.WHATSAPP_SOS_TEMPLATE_LANG || 'en_US').trim(),
 });
+
+// Body parameters for the SOS template. Meta refuses the send (132000) unless every named
+// variable of the template is given, so this must match the approved body exactly.
+export const sosBodyParameters = (name, location, time) => [
+  { type: 'text', parameter_name: 'name', text: name },
+  { type: 'text', parameter_name: 'name1', text: name },
+  { type: 'text', parameter_name: 'location', text: location },
+  { type: 'text', parameter_name: 'time', text: time },
+  { type: 'text', parameter_name: 'name2', text: name },
+];
 
 export const WhatsAppService = {
   /**
@@ -102,24 +113,8 @@ export const WhatsAppService = {
           components: [
             {
               type: 'body',
-              parameters: [
-                {
-                  type: 'text',
-                  parameter_name: 'name',
-                  text: victimName || 'DEVI User',
-                },
-                {
-                  type: 'text',
-                  parameter_name: 'location_link',
-                  // The SOS location only (no live tracking link)
-                  text: googleMapsUrl,
-                },
-                {
-                  type: 'text',
-                  parameter_name: 'alert_time',
-                  text: alertTime,
-                },
-              ],
+              // The SOS location only (no live tracking link)
+              parameters: sosBodyParameters(victimName || 'DEVI User', googleMapsUrl, alertTime),
             },
           ],
         },

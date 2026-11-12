@@ -16,8 +16,8 @@ import { maskPhone } from '../utils/logMask.js';
  * is resolved or any guardian pressed 1, because a person already has it.
  * A page never throws: its failure is logged and the caller carries on.
  *
- * The WhatsApp uses the SOS template (devi_safety), the only one approved today, so a system page
- * reads "DEVI system: <problem> has triggered an emergency alert". An ops template is a later step.
+ * The WhatsApp uses the SOS template (devi_agent_welcome), the only one approved today, so a system page
+ * reads "Emergency alert: DEVI system: <problem> has triggered an SOS". An ops template is a later step.
  */
 
 export const PAGE_REPEAT_MS = 15 * 60 * 1000;

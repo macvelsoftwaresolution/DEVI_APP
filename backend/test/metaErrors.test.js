@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyMetaError, sosTemplate } from '../src/services/whatsapp.service.js';
+import { classifyMetaError, sosTemplate, sosBodyParameters } from '../src/services/whatsapp.service.js';
 import { createSosNotify } from '../src/services/sosNotify.service.js';
 
 // Meta's documented error shape: type is "OAuthException" for errors that have nothing to do with the token
@@ -45,7 +45,15 @@ test('a call with no provider configured keeps its retry job', async () => {
   assert.deepEqual(await firstSendFailsWith({ success: false, error: 'Invalid phone number' }, 'ivr'), [7]);
 });
 
-test('the SOS template comes from .env, devi_safety in en_US by default', () => {
-  assert.deepEqual(sosTemplate({}), { name: 'devi_safety', language: 'en_US' });
+test('the SOS template comes from .env, devi_agent_welcome in en_US by default', () => {
+  assert.deepEqual(sosTemplate({}), { name: 'devi_agent_welcome', language: 'en_US' });
   assert.deepEqual(sosTemplate({ WHATSAPP_SOS_TEMPLATE: ' devi_sos_alert ', WHATSAPP_SOS_TEMPLATE_LANG: 'en' }), { name: 'devi_sos_alert', language: 'en' });
+});
+
+test('the SOS body gives every variable of devi_agent_welcome, the name three times', () => {
+  const params = sosBodyParameters('Priya', 'https://maps.google.com/?q=13.08,80.27', '09:41 PM');
+  assert.deepEqual(Object.fromEntries(params.map((p) => [p.parameter_name, p.text])), {
+    name: 'Priya', name1: 'Priya', location: 'https://maps.google.com/?q=13.08,80.27', time: '09:41 PM', name2: 'Priya',
+  });
+  assert.ok(params.every((p) => p.type === 'text'));
 });
