@@ -29,10 +29,10 @@ Out of 5, for where DEVI stands today against the goal at the top. "Before" is 5
 | SOS delivery (no silent loss) | 2 | **4** | L1 to L5 pass live: WhatsApp statuses, press 1 per guardian, redials, a restart during a call and a database outage. The app keeps and sends the SOS when killed or offline (L9, L13). Still: the SOS WhatsApp is held back by Meta until the Utility template is live (only the call reaches guardians today), no SMS (L7), one API address (L10), no person at the end of the chain (L11). | Utility SOS template live. SMS in the next phase. |
 | Performance | 3 | **4** | The dashboard still runs in the SOS process. Evidence uploads sit in memory (P5, Phase 2). | Upload evidence straight to storage before Phase 2. |
 | Scalability | 1.5 | **2** | One process on one shared VPS, state in memory (S1), a slow retry worker (S2), provider limits unknown (S3). The first load test (11 Nov) lost no SOS at 1,000, but ran from a laptop, so it says little about server speed. | Stage A: containers, Redis, a separate worker. A load test from the server's network. |
-| Reliability and operations | 1.5 | **3** | Health check and monitor are in place, and development now has its own database (REL5). But no one is paged (no on-call person), production is on the Free plan without backups (REL4), and it runs on one shared VPS. | Paid Supabase with backups, a second server. |
+| Reliability and operations | 1.5 | **3** | Health check and monitor are in place, and development now has its own database (REL5). Production Supabase is on Pro with daily backups since 14 Nov (REL4). But no one is paged (no on-call person), and it runs on one shared VPS. | A second server. |
 | Security | 3 | **4** | Checked live: IVR signatures enforced, admin 2FA, signing a user out of every device, the audit log. Development and production are separate, and production started fresh on 10 Nov with new secrets. Account deletion and a privacy page are in code (11 Nov), not yet tested live. Still: no penetration test, Twilio signatures not yet seen live. | Test deletion live, legal review of the privacy text, a penetration test. |
 | Country readiness | 1.5 | **1.5** | India time zone, English only, `+91` assumed, WhatsApp-only sign-in. | Section 9, per country. |
-| **Overall** | **2** | **3** | What is built now works live. The rest is infrastructure (one server, Free plan, no backups) and the business decisions in section 13. | Paid Supabase with backups, Stage A, then the business items above. |
+| **Overall** | **2** | **3** | What is built now works live. The rest is infrastructure (one server) and the business decisions in section 13. | Stage A, then the business items above. |
 
 ### Live tests (production, 10 and 11 Nov 2026)
 
@@ -112,7 +112,7 @@ All 323 backend tests pass locally (11 Nov). The live tests above ran on `11ba93
 | Message loss (section 3) | L1, L2, L3, L4, L5, L6, L8, L9 and L13 (app, tested on a phone) | L7 (SMS), L11 (paged, not staffed) | L10, L12 |
 | Performance (section 4) | P1, P2, P3, P4 | | P5 |
 | Scalability (section 5) | S4, S5 | | S1, S2, S3 |
-| Reliability (section 6) | REL1, REL2, REL3, REL5, REL6, REL7 | | REL4 |
+| Reliability (section 6) | REL1, REL2, REL3, REL4, REL5, REL6, REL7 | | |
 | Target design (section 7) | | | All building blocks |
 | Country readiness (section 9) | `'Tamil Nadu'` fallback | | Time zone, language, `+91`, SMS OTP |
 | Security (section 10) | Names in call URLs, IVR signatures (enforced 11 Nov), token revoke, operator accounts and the .env admin with 2FA, audit log, daily spend cap, separate development and production databases and secrets | Retention (SOS history kept until the legal period is decided), account deletion and privacy page (code, not yet live) | Key service, pentest |
@@ -166,7 +166,7 @@ An SOS runs in this order (**Code**, `backend/src/routes/sos.routes.js`):
 
 ### Hosting today (**Notes**)
 
-One process (`devi-backend`) under pm2 on a Hostinger VPS, shared with other apps. One API hostname. One Supabase project, shared by the development team and production. Twilio is on a Trial account, so its backup calls reach only verified numbers. Plivo is prepaid.
+One process (`devi-backend`) under pm2 on a Hostinger VPS, shared with other apps. One API hostname. Supabase: production `devi-app` on Pro, development `devi-dev` on Free in its own organization (REL4, REL5). Twilio is on a Trial account, so its backup calls reach only verified numbers. Plivo is on the Professional plan (prepaid) since 14 Nov. Its account is India-region, so it calls numbers inside India only: other countries go through Twilio alone.
 
 ---
 
@@ -304,6 +304,7 @@ No code cleans `a_sos_notify` (**Code**).
 **REL3. Deploys interrupt alerts.** There is no graceful shutdown (**Code**). A restart cuts sends in progress. Other apps also share this box and pm2, so they compete for its resources (**Notes**).
 
 **REL4. Backups are unconfirmed.** Our Supabase plan is not known. Free has no automatic backups and pauses after a week idle. Pro keeps 7 days of daily backups, and Point-in-Time Recovery is a paid add-on.
+*Done on 14 Nov 2026: the `Devi_APP` organization (project `devi-app`) is on Pro with Micro compute, about $29.50 a month with GST. `devi-dev` was moved to its own Free organization (`Devi_DEV`) so it is not billed. Daily backups are kept 7 days: check Database → Backups shows them. Spend cap is on, so usage above the Pro quota slows the project instead of billing: check Usage monthly. Point-in-Time Recovery and the Postgres version upgrade are left for later.*
 
 **REL5. Development and production share a database (Notes).** One mistake or test can damage real alerts. A full data wipe has already happened twice in testing, which is fine now but not after launch.
 *Done on 10 Nov 2026: development uses its own Supabase project (`devi-dev`) with its own secrets in the local `.env`. Production keeps the `devi-app` project, with its `.env` only on the server. Tests cannot reach either (`test/setup.js`).*
@@ -461,7 +462,7 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 | Meta webhook signatures (`WHATSAPP_APP_SECRET`) | Live | Before 10 Nov |
 | Private evidence, per-alert control and view tokens | Live | Before 10 Nov |
 | Rate limits on OTP, admin login and SOS (SOS never refused) | Live | L8 |
-| **IVR webhook signatures** (Plivo V3, Twilio) | Live, enforced | `src/middlewares/ivrSignature.js`. Verified on real calls on 10 Nov, `IVR_SIGNATURE_MODE=enforce` since 11 Nov. Plivo only so far: check Twilio on its first call. |
+| **IVR webhook signatures** (Plivo V3, Twilio) | Live, log mode | `src/middlewares/ivrSignature.js`. Verified on real calls on 10 Nov. On 14 Nov the live `.env` had no `IVR_SIGNATURE_MODE`, so it runs in the default `log` mode, not `enforce` as noted before. Set it to `enforce` once real calls show no `[IVR SIGNATURE]` warnings. Plivo only so far: check Twilio on its first call. |
 | **No name, place or number in call URLs** | Live | One encrypted, alert-bound, 1-hour call token (`t=`). The call spoke the right name and place on 10 Nov. Works while the database is down. |
 | **Token revoke for app users** | Live | `users.token_version`. Sign out everywhere by the user (`POST /api/auth/logout-all`) or from the dashboard. A signed-out token still sends an SOS, as a guest. |
 | **Operator admin accounts with 2FA** | Code | `npm run admin:user`, password plus TOTP code, each code once, disable/reset/sign out everywhere. |
@@ -480,11 +481,10 @@ Add a country only when its checklist passes. `ALLOWED_COUNTRIES` already suppor
 
 | Item | Why it matters | Who decides |
 |---|---|---|
-| Supabase paid plan and backups | The project is on the Free plan: no automatic backups, and it pauses when idle (REL4). | Business |
 | Support contact, privacy policy | Account deletion and a privacy page are done (11 Nov). The privacy text needs a legal review, and a support contact is still needed. | Business |
 | Guardian consent | Guardians are third parties whose numbers we store. Guardian verification solves this and L12 together. | Business, then code |
 | Penetration test and incident response plan | Independent test before launch, and a plan with breach notification times. | Business |
-| Live provider accounts | Twilio and Plivo are trial accounts. New auth tokens change the IVR signatures, so test again in log mode first. | Business |
+| Live provider accounts | Plivo is on the Professional plan since 14 Nov (same number +91 22 6423 8885 and keys). Twilio is still a trial account. New auth tokens change the IVR signatures, so test again in log mode first. | Business |
 
 ### Later, for multi-country
 
@@ -514,7 +514,8 @@ Status as of 10 Nov 2026:
 - [x] Longer retries with growing gaps and randomness (L6, REL7).
 - [x] Alerts for `GAVE UP`, queue depth, balances and token health (REL1, REL2).
 - [x] Deep health check, graceful shutdown, worker error handling (REL1, REL3, REL6).
-- [ ] Upgrade Twilio, confirm the Supabase plan and backups, and check the WhatsApp tier.
+- [x] Supabase on Pro with daily backups (14 Nov), Plivo on Professional (14 Nov).
+- [ ] Upgrade Twilio, and check the WhatsApp tier.
 - [x] Separate development and production (REL5).
 - [x] Call status drives retries and escalation (L5). *Redial, provider switch, restart-safe watch jobs, press 1 per guardian and paging.*
 - [ ] Real SOS test on the live server, after deploying `980190f`.
