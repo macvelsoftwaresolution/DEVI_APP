@@ -123,6 +123,10 @@ test('a busy guardian is redialled on the same provider', async () => {
 test('a retry after a failed Plivo call tries Twilio first, Plivo stays as backup', () => {
   assert.deepEqual(ivrService.providerOrder('+919876543210'), ['plivo', 'twilio']);
   assert.deepEqual(ivrService.providerOrder('+919876543210', 'plivo'), ['twilio', 'plivo']);
-  assert.deepEqual(ivrService.providerOrder('+971501234567', 'twilio'), ['plivo', 'twilio']);
-  assert.deepEqual(ivrService.providerOrder('+971501234567', 'plivo'), ['twilio', 'plivo']);
+});
+
+test('numbers outside India go through Twilio only: the India-region Plivo account cannot call them', () => {
+  assert.deepEqual(ivrService.providerOrder('+971501234567'), ['twilio']);
+  assert.deepEqual(ivrService.providerOrder('+971501234567', 'twilio'), ['twilio']);
+  assert.deepEqual(ivrService.providerOrder('+971501234567', 'plivo'), ['twilio']);
 });

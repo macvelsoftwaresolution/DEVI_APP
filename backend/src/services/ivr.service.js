@@ -95,12 +95,13 @@ class IvrService {
     return clean;
   }
 
-  // Indian numbers go through Plivo (cheaper in India), every other country through Twilio.
-  // If the preferred provider is not configured or the call fails, the other one is tried:
-  // an SOS call costing more is better than no call.
+  // Indian numbers go through Plivo (cheaper in India), with Twilio as backup: an SOS call
+  // costing more is better than no call. Every other country goes through Twilio only: our Plivo
+  // account is India-region, and Indian telecom rules let it call numbers inside India only.
   // avoid: the provider whose last call failed, tried last this time
   providerOrder(to, avoid = null) {
-    const order = to.startsWith('+91') ? ['plivo', 'twilio'] : ['twilio', 'plivo'];
+    if (!to.startsWith('+91')) return ['twilio'];
+    const order = ['plivo', 'twilio'];
     return avoid === order[0] ? [...order].reverse() : order;
   }
 
@@ -150,7 +151,7 @@ class IvrService {
   }
 
   /**
-   * Dispatches emergency IVR call: Plivo for +91 numbers, Twilio for the rest (with fallback)
+   * Dispatches emergency IVR call: Plivo for +91 numbers (Twilio as backup), Twilio for the rest
    */
   async triggerEmergencyCall({ recipientPhone, victimName = 'A user', locationText = '', sosId = '', avoidProvider = null }) {
     if (!this.twilioClient && !this.plivoClient) {

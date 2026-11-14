@@ -113,7 +113,7 @@ export const defaultChecks = ({ db = supabase, notify = sosNotify, offline = sos
   async twilio() {
     const sid = env.TWILIO_ACCOUNT_SID;
     const token = env.TWILIO_AUTH_TOKEN;
-    if (!sid || !token || sid.includes('PASTE_')) return warn('not configured: calls outside +91 go through Plivo only');
+    if (!sid || !token || sid.includes('PASTE_')) return warn('not configured: calls outside +91 fail, and +91 calls have no backup');
     const auth = { Authorization: basic(sid, token) };
     const base = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}`;
     const [account, money] = await Promise.all([getJson(fetchImpl, `${base}.json`, auth), getJson(fetchImpl, `${base}/Balance.json`, auth)]);

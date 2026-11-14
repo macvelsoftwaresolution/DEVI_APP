@@ -313,7 +313,7 @@ The server also sends `connected`, `joined`, `left`, `pong` and `error` to a sin
 - The `/track` guardian page exists, but this message does not link to it today.
 
 ### 5.4 IVR Call (`ivr.service.js`, `ivr.routes.js`)
-- **Routing:** `+91` numbers go through Plivo, others through Twilio. If one is missing or fails, the other is tried.
+- **Routing:** `+91` numbers go through Plivo, with Twilio as backup if Plivo is missing or fails. Others go through Twilio only: the Plivo account is India-region and can call numbers inside India only.
 - **Call:** Speaks the name and an easy-to-hear place ("Anna Nagar, Chennai"). Coordinates, plus codes and door numbers are dropped.
 - **Press 1:** Saved in `sos_guardian_acks` and shown on the dashboard. The encrypted ack token, bound to the alert, means a fake request saves nothing.
 - `PUBLIC_API_URL` must point to the backend. `PUBLIC_BASE_URL` is the web site and voice webhooks fail there.
